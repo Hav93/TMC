@@ -23,14 +23,10 @@ export default defineConfig({
   },
   build: {
     outDir: 'dist',
-    sourcemap: true,
+    sourcemap: false,
     minify: 'esbuild',
     rollupOptions: {
       output: {
-        // 使用时间戳强制浏览器更新缓存
-        entryFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
-        chunkFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
-        assetFileNames: `assets/[name]-[hash]-${Date.now()}.[ext]`,
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
           antd: ['antd', '@ant-design/icons'],
@@ -40,10 +36,7 @@ export default defineConfig({
     },
   },
   esbuild: {
-    // 生产环境移除console.log和debugger
-    drop: process.env.NODE_ENV === 'production' ? ['console', 'debugger'] : [],
-    // 保留console.error和console.warn用于错误追踪
-    pure: process.env.NODE_ENV === 'production' ? ['console.log', 'console.debug', 'console.info'] : [],
+    logOverride: { 'this-is-undefined-in-esm': 'silent' }
   },
   optimizeDeps: {
     include: ['react', 'react-dom', 'antd', 'echarts'],
