@@ -51,7 +51,7 @@ RUN npm install
 # 复制前端代码并构建
 COPY app/frontend/ ./
 # 增加 Node.js 内存限制并构建
-RUN NODE_OPTIONS="--max-old-space-size=4096" npx vite build
+RUN NODE_OPTIONS=--max-old-space-size=4096 npx vite build
 
 # 最终镜像
 FROM python:3.11-slim
