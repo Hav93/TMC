@@ -50,7 +50,10 @@ RUN npm install
 
 # 复制前端代码并构建
 COPY app/frontend/ ./
-RUN NODE_OPTIONS=--max-old-space-size=4096 npx vite build
+
+# 设置环境变量并构建
+ENV NODE_ENV=production
+RUN npm run build 2>&1 || (echo "Build failed. Checking files:" && ls -la && echo "Package.json:" && cat package.json && exit 1)
 
 # 最终镜像
 FROM python:3.11-slim
