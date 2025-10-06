@@ -1393,9 +1393,9 @@ class MultiClientManager:
             if rule.time_filter_type == 'all_messages':
                 message_limit = None  # all_messages 模式不限制消息数量
             elif rule.time_filter_type in ['time_range', 'from_time']:
-                message_limit = 500   # 指定时间范围获取中等数量
+                message_limit = 100000   # 指定时间范围获取大量消息
             else:
-                message_limit = 100   # 其他情况限制较少
+                message_limit = 100000   # 其他情况也获取大量消息
             
             time_filter = {
                 'start_time': start_time,
