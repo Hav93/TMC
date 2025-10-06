@@ -1525,13 +1525,20 @@ class MultiClientManager:
                 offset_date=time_filter.get('end_time')
             ):
                 # 应用时间过滤
+                message_time = message.date.replace(tzinfo=message.date.tzinfo or timezone.utc)
+                
                 if 'start_time' in time_filter and 'end_time' in time_filter and time_filter['start_time'] is not None:
-                    message_time = message.date.replace(tzinfo=message.date.tzinfo or timezone.utc)
+                    # 如果消息时间早于开始时间，说明已经超出范围，直接停止
+                    if message_time < time_filter['start_time']:
+                        self.logger.info(f"⏹️ 消息时间 {message_time} 早于开始时间 {time_filter['start_time']}，停止获取")
+                        break
+                    
+                    # 检查是否在时间范围内
                     if not (time_filter['start_time'] <= message_time <= time_filter['end_time']):
                         continue
+                        
                 elif 'end_time' in time_filter and time_filter['start_time'] is None:
                     # 只有结束时间限制，没有开始时间限制（all_messages模式）
-                    message_time = message.date.replace(tzinfo=message.date.tzinfo or timezone.utc)
                     if message_time > time_filter['end_time']:
                         continue
                 
