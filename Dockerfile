@@ -51,9 +51,14 @@ RUN npm install
 # 复制前端代码并构建
 COPY app/frontend/ ./
 
+# 调试信息
+RUN echo "=== Checking vite.config.ts ===" && cat vite.config.ts
+RUN echo "=== Checking tsconfig files ===" && ls -la tsconfig*.json
+RUN echo "=== Checking src directory ===" && ls -la src/
+
 # 设置环境变量并构建
 ENV NODE_ENV=production
-RUN npm run build 2>&1 || (echo "Build failed. Checking files:" && ls -la && echo "Package.json:" && cat package.json && exit 1)
+RUN npm run build --verbose 2>&1 | tee build.log || (echo "=== BUILD FAILED ===" && cat build.log && exit 1)
 
 # 最终镜像
 FROM python:3.11-slim
