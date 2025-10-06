@@ -51,6 +51,9 @@ RUN npm install
 # 复制前端代码并构建
 COPY app/frontend/ ./
 
+# 调试：检查 Logs 目录是否被复制
+RUN echo "=== Checking pages directory ===" && ls -la src/pages/ && echo "=== Checking Logs directory ===" && ls -la src/pages/Logs/ 2>&1 || echo "Logs directory not found!"
+
 # 设置环境变量并构建
 ENV NODE_ENV=production
 RUN npm run build
