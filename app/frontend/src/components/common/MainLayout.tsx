@@ -48,10 +48,10 @@ const menuItems = [
     description: '配置和管理消息转发规则',
   },
   {
-    key: '/logs',
+    key: '/system-logs',
     icon: <FileTextOutlined />,
     label: '消息日志',
-    path: '/logs',
+    path: '/system-logs',
     title: '📝 消息日志',
     description: '查看消息转发历史记录',
   },

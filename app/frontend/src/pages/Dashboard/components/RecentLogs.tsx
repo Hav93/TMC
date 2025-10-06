@@ -109,7 +109,7 @@ const RecentLogs: React.FC<RecentLogsProps> = ({ logs, loading = false }) => {
           type="link"
           size="small"
           icon={<EyeOutlined />}
-          onClick={() => navigate('/logs')}
+          onClick={() => navigate('/system-logs')}
         >
           查看全部
         </Button>

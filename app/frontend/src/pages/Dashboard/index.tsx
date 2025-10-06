@@ -719,7 +719,7 @@ const Dashboard: React.FC = () => {
                   type="text"
                   size="small"
                   style={{ color: '#1890ff' }}
-                  onClick={() => navigate('/logs')}
+                  onClick={() => navigate('/system-logs')}
                 >
                   查看全部
                 </Button>
@@ -758,7 +758,7 @@ const Dashboard: React.FC = () => {
               type="text"
               size="small"
               style={{ color: '#1890ff' }}
-              onClick={() => navigate('/logs')}
+              onClick={() => navigate('/system-logs')}
             >
               查看详情
             </Button>

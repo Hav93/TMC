@@ -90,7 +90,7 @@ const AppContent: React.FC = () => {
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="rules/*" element={<RulesPage />} />
-                <Route path="logs" element={<LogsPage />} />
+                <Route path="system-logs" element={<LogsPage />} />
                 <Route path="chats" element={<ChatsPage />} />
                 <Route path="clients" element={<ClientManagement />} />
                 <Route path="users" element={<UserManagement />} />
