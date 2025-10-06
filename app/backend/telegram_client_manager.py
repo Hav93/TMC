@@ -457,6 +457,12 @@ class TelegramClientManager:
             # 性能优化：提前检查消息有效性
             if not message or not hasattr(message, 'peer_id'):
                 return
+            
+            # 过滤服务消息（如置顶、加入群组等系统消息）
+            from telethon.tl.types import MessageService
+            if isinstance(message, MessageService):
+                self.logger.debug(f"⏭️ 跳过服务消息: {message.id} (类型: {type(message.action).__name__})")
+                return
                 
             # 修复聊天ID转换问题 - 更准确的转换逻辑
             from telethon.tl.types import PeerChannel, PeerChat, PeerUser
