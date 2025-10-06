@@ -19,7 +19,7 @@ import PrivateRoute from './components/common/PrivateRoute';
 // Pages
 import Dashboard from './pages/Dashboard/index';
 import RulesPage from './pages/Rules/index';
-import LogsPage from './pages/Logs/index';
+import LogsPage from './pages/SystemLogs/index';
 import SettingsPage from './pages/Settings/index';
 import ChatsPage from './pages/Chats/index';
 import ClientManagement from './pages/ClientManagement/index';
