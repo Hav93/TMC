@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 日志
+logs/
+*.log
+
+# 数据库
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Telegram会话
+sessions/
+*.session
+*.session-journal
+
+# 数据目录
+data/
+temp/
+config/*.json
+config/*.yaml
+!config/app.config.example
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+app/frontend/dist/
+app/frontend/.vite/
+
+# 测试覆盖率
+.coverage
+htmlcov/
+.pytest_cache/
+.nyc_output/
+coverage/
+
+# 构建产物
+*.pyc
+*.pyo
+*.pyd
+
+# OS
+Thumbs.db
+.DS_Store
+
+# 归档
+_archived/
+
+# 用户文件
+docker-compose.user.yml
+.env.user.example

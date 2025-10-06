@@ -1,0 +1,60 @@
+/* Header样式 - 支持主题切换 */
+
+/* 日间模式Header */
+.theme-light .layout-header,
+.theme-light .ant-layout-header {
+  background: var(--color-bg-container) !important;
+  border-bottom: 1px solid var(--color-border-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.theme-light .header-content {
+  color: var(--color-text-secondary) !important;
+}
+
+.theme-light .header-title {
+  color: var(--color-text-primary) !important;
+}
+
+.theme-light .header-description {
+  color: var(--color-text-secondary) !important;
+}
+
+.theme-light .user-info,
+.theme-light .user-info span {
+  color: var(--color-text-primary) !important;
+}
+
+/* 夜间模式Header */
+.theme-dark .layout-header,
+.theme-dark .ant-layout-header {
+  background: var(--color-bg-secondary) !important;
+  border-bottom: 1px solid var(--color-border-light);
+  box-shadow: var(--shadow-sm);
+}
+
+.theme-dark .header-content {
+  color: var(--color-text-secondary) !important;
+}
+
+.theme-dark .header-title {
+  color: var(--color-text-primary) !important;
+}
+
+.theme-dark .header-description {
+  color: var(--color-text-secondary) !important;
+}
+
+.theme-dark .user-info,
+.theme-dark .user-info span {
+  color: var(--color-text-primary) !important;
+}
+
+/* Avatar颜色 - 根据主题调整 */
+.theme-light .ant-avatar {
+  background-color: var(--color-primary-500) !important;
+}
+
+.theme-dark .ant-avatar {
+  background-color: var(--color-primary-600) !important;
+}

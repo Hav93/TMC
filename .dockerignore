@@ -1,0 +1,59 @@
+# Git
+.git
+.gitignore
+.github
+
+# 归档文件
+_archived
+
+# 文档
+*.md
+!README.md
+LICENSE
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# 日志和数据
+logs/
+data/
+sessions/
+temp/
+
+# 前端
+app/frontend/node_modules
+app/frontend/dist
+app/frontend/.vite
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+.eggs/
+*.egg
+
+# 环境变量
+.env
+.env.*
+!.env.example
+
+# 临时文件
+*.log
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# 脚本和用户文件
+cleanup.ps1
+.env.user.example
+GITHUB_SETUP.md
+RELEASE_NOTES.md
+

@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  tmc:
+    image: hav93/tmc:latest
+    container_name: tmc
+    restart: always
+    ports:
+      - "${APP_PORT:-9393}:9393"
+    environment:
+      # 时区配置
+      - TZ=${TZ:-Asia/Shanghai}
+      
+      # Telegram API配置（必填，从 https://my.telegram.org 获取）
+      - API_ID=${API_ID}
+      - API_HASH=${API_HASH}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - PHONE_NUMBER=${PHONE_NUMBER}
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+      
+      # JWT认证配置（可选但推荐自定义）
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-please-change-me}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
+      
+      # 代理配置（可选，外网环境通常不需要）
+      - ENABLE_PROXY=${ENABLE_PROXY:-false}
+      - PROXY_TYPE=${PROXY_TYPE:-http}
+      - PROXY_HOST=${PROXY_HOST:-127.0.0.1}
+      - PROXY_PORT=${PROXY_PORT:-7890}
+      
+      # 权限配置（NAS推荐，避免权限问题）
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      
+      # 数据库配置
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///data/bot.db}
+      
+      # 日志级别
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      
+    volumes:
+      # 重要数据目录（建议使用绝对路径）
+      - ${DATA_PATH:-./data}:/app/data              # 数据库和数据文件（重要）
+      - ${LOGS_PATH:-./logs}:/app/logs              # 应用日志
+      - ${SESSIONS_PATH:-./sessions}:/app/sessions  # Telegram会话文件（重要：登录状态）
+      - ${TEMP_PATH:-./temp}:/app/temp              # 临时文件
+      - ${CONFIG_PATH:-./config}:/app/config        # 配置文件目录
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9393/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    
+    networks:
+      - tmc-network
+
+networks:
+  tmc-network:
+    name: tmc-network
+    driver: bridge

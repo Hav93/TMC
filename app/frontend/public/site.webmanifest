@@ -1,0 +1,31 @@
+{
+  "name": "TMC - Telegram Message Central",
+  "short_name": "TMC",
+  "description": "强大的Telegram消息转发和管理中心",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/tmc-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "theme_color": "#667eea",
+  "background_color": "#0a0e27",
+  "display": "standalone",
+  "start_url": "/",
+  "orientation": "portrait"
+}
+
