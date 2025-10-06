@@ -50,18 +50,7 @@ RUN npm install
 
 # 复制前端代码并构建
 COPY app/frontend/ ./
-
-# 调试：显示文件结构
-RUN echo "=== Frontend files ===" && ls -la
-
-# 调试：显示package.json内容
-RUN echo "=== package.json ===" && cat package.json
-
-# 调试：显示已安装的依赖
-RUN echo "=== node_modules ===" && ls -la node_modules | head -20
-
-# 增加 Node.js 内存限制并构建（显示详细输出）
-RUN set -x && NODE_OPTIONS=--max-old-space-size=4096 npx vite build || (echo "=== Vite build failed ===" && cat package.json && exit 1)
+RUN NODE_OPTIONS=--max-old-space-size=4096 npx vite build
 
 # 最终镜像
 FROM python:3.11-slim
