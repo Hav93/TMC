@@ -17,16 +17,16 @@ import { AuthProvider } from './contexts/AuthContext';
 import PrivateRoute from './components/common/PrivateRoute';
 
 // Pages
-import Dashboard from './pages/Dashboard';
-import RulesPage from './pages/Rules';
-import LogsPage from './pages/Logs';
-import SettingsPage from './pages/Settings';
-import ChatsPage from './pages/Chats';
-import ClientManagement from './pages/ClientManagement';
-import UserManagement from './pages/UserManagement';
-import LoginPage from './pages/Login';
-import ContainerLogs from './pages/ContainerLogs';
-import ProfilePage from './pages/Profile';
+import Dashboard from './pages/Dashboard/index';
+import RulesPage from './pages/Rules/index';
+import LogsPage from './pages/Logs/index';
+import SettingsPage from './pages/Settings/index';
+import ChatsPage from './pages/Chats/index';
+import ClientManagement from './pages/ClientManagement/index';
+import UserManagement from './pages/UserManagement/index';
+import LoginPage from './pages/Login/index';
+import ContainerLogs from './pages/ContainerLogs/index';
+import ProfilePage from './pages/Profile/index';
 
 // Styles
 import './styles/index.css';
