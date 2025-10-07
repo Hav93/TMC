@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 from pathlib import Path
+from version import get_version
 
 # 统一配置文件加载器
 class ConfigLoader:
@@ -42,8 +43,8 @@ class Config:
     
     # === 应用信息 ===
     APP_NAME = os.getenv('APP_NAME', 'TMC (Telegram Message Central)')
-    APP_VERSION = os.getenv('APP_VERSION', '1.0.0')
-    APP_DESCRIPTION = os.getenv('APP_DESCRIPTION', 'Telegram消息中心 - TMC v1.0')
+    APP_VERSION = os.getenv('APP_VERSION', get_version())
+    APP_DESCRIPTION = os.getenv('APP_DESCRIPTION', f'Telegram消息中心 - TMC v{get_version()}')
     
     # === Telegram API 配置 ===
     try:

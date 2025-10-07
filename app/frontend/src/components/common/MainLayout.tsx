@@ -202,7 +202,7 @@ const MainLayout: React.FC = () => {
           flexDirection: 'column',
         }}
       >
-        {/* Logo区域 (TMC v1.0) */}
+        {/* Logo区域 (TMC v1.1) */}
         <div
           className="sidebar-logo"
           style={{
@@ -270,7 +270,7 @@ const MainLayout: React.FC = () => {
             textAlign: 'center',
             fontWeight: 500,
           }}>
-            v{systemInfo?.version || '1.0.0'}
+            v{systemInfo?.version || '1.1.0'}
           </div>
         </div>
 

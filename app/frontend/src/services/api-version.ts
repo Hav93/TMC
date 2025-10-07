@@ -28,7 +28,7 @@ export const API_VERSIONS: Record<ApiVersion, VersionedApi> = {
   v1: {
     version: 'v1',
     base: API_BASE,
-    description: 'TMC API v1.0 - 当前稳定版本',
+    description: 'TMC API v1.1 - 当前稳定版本',
   },
   v2: {
     version: 'v2',

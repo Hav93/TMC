@@ -1,0 +1,71 @@
+.detail-modal .ant-modal-body {
+  padding: 20px 24px;
+}
+
+.detail-modal .ant-descriptions-bordered .ant-descriptions-item-label {
+  background-color: var(--detail-label-bg, #fafafa);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.detail-modal .ant-descriptions-bordered .ant-descriptions-item-content {
+  background-color: var(--detail-content-bg, #ffffff);
+  word-break: break-word;
+}
+
+/* 暗色主题适配 */
+[data-theme='dark'] .detail-modal .ant-descriptions-bordered .ant-descriptions-item-label {
+  background-color: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+[data-theme='dark'] .detail-modal .ant-descriptions-bordered .ant-descriptions-item-content {
+  background-color: rgba(255, 255, 255, 0.02);
+  color: rgba(255, 255, 255, 0.85);
+}
+
+[data-theme='dark'] .detail-modal .ant-descriptions-bordered {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* 消息内容背景 */
+:root {
+  --message-content-bg: #f5f5f5;
+  --error-message-bg: #fff2f0;
+  --error-message-color: #cf1322;
+}
+
+[data-theme='dark'] {
+  --message-content-bg: rgba(255, 255, 255, 0.04);
+  --error-message-bg: rgba(255, 77, 79, 0.1);
+  --error-message-color: #ff7875;
+  --detail-label-bg: rgba(255, 255, 255, 0.04);
+  --detail-content-bg: rgba(255, 255, 255, 0.02);
+}
+
+/* 代码文本样式 */
+.detail-modal .ant-typography code {
+  background-color: rgba(150, 150, 150, 0.1);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 13px;
+}
+
+/* 标签样式 */
+.detail-modal .ant-tag {
+  margin: 0;
+  font-weight: 500;
+}
+
+/* 段落样式 */
+.detail-modal .ant-typography {
+  margin-bottom: 0;
+}
+
+.detail-modal .ant-descriptions-item-content .ant-typography-expand,
+.detail-modal .ant-descriptions-item-content .ant-typography-collapse {
+  color: var(--primary-color, #1890ff);
+  cursor: pointer;
+  margin-left: 8px;
+}
+

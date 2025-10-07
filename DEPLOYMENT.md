@@ -1,14 +1,14 @@
 # TMC 部署指南
 
-本文档介绍如何使�?Docker Hub 预构建镜像快速部�?TMC�?
+本文档介绍如何使�?Docker Hub 预构建镜像快速部�?TMC�?
 
 ---
 
-## 🚀 快速开�?
+## 🚀 快速开�?
 
 ### 前置要求
-- Docker �?Docker Compose
-- Telegram API 凭证（从 https://my.telegram.org 获取�?
+- Docker �?Docker Compose
+- Telegram API 凭证（从 https://my.telegram.org 获取�?
 
 ### 部署步骤
 
@@ -20,7 +20,7 @@ mkdir tmc && cd tmc
 
 #### 2. 下载配置文件
 
-创建 `docker-compose.yml` 文件�?
+创建 `docker-compose.yml` 文件�?
 
 ```yaml
 version: '3.8'
@@ -41,17 +41,17 @@ services:
       - PHONE_NUMBER=${PHONE_NUMBER}
       - ADMIN_USER_IDS=${ADMIN_USER_IDS}
       
-      # JWT密钥（建议自定义�?
+      # JWT密钥（建议自定义�?
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-change-me}
       
       # 代理配置（可选）
       - ENABLE_PROXY=false
       
-      # 权限配置（NAS推荐�?
+      # 权限配置（NAS推荐�?
       - PUID=${PUID:-1000}
       - PGID=${PGID:-1000}
       
-      # 数据库配�?
+      # 数据库配�?
       - DATABASE_URL=sqlite:///data/bot.db
       
       # 日志级别
@@ -74,10 +74,10 @@ services:
 
 #### 3. 创建环境变量文件
 
-创建 `.env` 文件�?
+创建 `.env` 文件�?
 
 ```bash
-# Telegram API 配置（从 https://my.telegram.org 获取�?
+# Telegram API 配置（从 https://my.telegram.org 获取�?
 API_ID=your_api_id
 API_HASH=your_api_hash
 BOT_TOKEN=your_bot_token
@@ -103,12 +103,12 @@ docker compose up -d
 
 #### 5. 访问系统
 
-打开浏览器访�? http://localhost:9393
+打开浏览器访�? http://localhost:9393
 
 **默认账号**:
-- 用户�? `admin`
+- 用户�? `admin`
 - 密码: `admin123`
-- ⚠️ **首次登录后请立即修改密码�?*
+- ⚠️ **首次登录后请立即修改密码�?*
 
 ---
 
@@ -124,9 +124,9 @@ docker compose up -d
 | `PHONE_NUMBER` | 管理员手机号 | `+8613800138000` |
 | `ADMIN_USER_IDS` | 管理员用户ID | `123456789` |
 
-### 可选配�?
+### 可选配�?
 
-| 环境变量 | 说明 | 默认�?|
+| 环境变量 | 说明 | 默认�?|
 |---------|------|--------|
 | `JWT_SECRET_KEY` | JWT加密密钥 | `your-secret-key-change-me` |
 | `PUID` | 运行用户ID | `1000` |
@@ -136,7 +136,7 @@ docker compose up -d
 
 ### 代理配置（可选）
 
-如果需要代理访�?Telegram�?
+如果需要代理访�?Telegram�?
 
 ```env
 ENABLE_PROXY=true
@@ -204,53 +204,53 @@ netstat -tuln | grep 9393
 
 ### 2. 登录失败
 
-- 检查数据库是否正常初始�?
+- 检查数据库是否正常初始�?
 - 确认 JWT_SECRET_KEY 配置正确
-- 尝试删除 `data/` 目录重新初始�?
+- 尝试删除 `data/` 目录重新初始�?
 
 ### 3. Telegram 连接失败
 
-- 检�?API_ID、API_HASH、BOT_TOKEN 是否正确
+- 检�?API_ID、API_HASH、BOT_TOKEN 是否正确
 - 如果在国内，确认代理配置是否正确
-- 检查网络连�?
+- 检查网络连�?
 
-### 4. 权限问题（NAS�?
+### 4. 权限问题（NAS�?
 
-如果遇到文件权限错误�?
+如果遇到文件权限错误�?
 
 ```bash
 # 查看当前用户ID
 id
 
-# 设置正确�?PUID �?PGID
-# �?.env 文件中设置为你的用户ID
+# 设置正确�?PUID �?PGID
+# �?.env 文件中设置为你的用户ID
 ```
 
 ---
 
 ## 🔐 安全建议
 
-1. **修改默认密码**: 首次登录后立即修�?admin 密码
-2. **自定�?JWT 密钥**: 使用强随机密�?
+1. **修改默认密码**: 首次登录后立即修�?admin 密码
+2. **自定�?JWT 密钥**: 使用强随机密�?
    ```bash
    # 生成随机密钥
    openssl rand -hex 32
    ```
 3. **限制端口访问**: 使用反向代理（Nginx）并启用 HTTPS
-4. **定期备份**: 备份 `data/`、`sessions/` �?`config/` 目录
-5. **更新镜像**: 定期拉取最新镜像获取安全更�?
+4. **定期备份**: 备份 `data/`、`sessions/` �?`config/` 目录
+5. **更新镜像**: 定期拉取最新镜像获取安全更�?
 
 ---
 
 ## 📊 目录说明
 
-| 目录 | 说明 | 是否需要备�?|
+| 目录 | 说明 | 是否需要备�?|
 |------|------|------------|
-| `data/` | 数据库文�?| �?必须 |
-| `sessions/` | Telegram 会话 | �?必须 |
-| `config/` | 配置文件 | �?推荐 |
-| `logs/` | 应用日志 | �?可�?|
-| `temp/` | 临时文件 | �?不需�?|
+| `data/` | 数据库文�?| �?必须 |
+| `sessions/` | Telegram 会话 | �?必须 |
+| `config/` | 配置文件 | �?推荐 |
+| `logs/` | 应用日志 | �?可�?|
+| `temp/` | 临时文件 | �?不需�?|
 
 ---
 
@@ -295,9 +295,9 @@ server {
 
 ### Synology DSM
 
-1. 打开 **Container Manager**（原Docker套件�?
-2. �?**项目** 中点�?**新建**
-3. 设置项目名称�?`tmc`
+1. 打开 **Container Manager**（原Docker套件�?
+2. �?**项目** 中点�?**新建**
+3. 设置项目名称�?`tmc`
 4. 粘贴上述 `docker-compose.yml` 内容
 5. 配置环境变量
 6. 点击 **完成** 启动
@@ -305,19 +305,19 @@ server {
 ### QNAP
 
 1. 打开 **Container Station**
-2. 点击 **创建** �?**创建应用**
+2. 点击 **创建** �?**创建应用**
 3. 粘贴 `docker-compose.yml` 内容
-4. 配置环境变量和存储路�?
+4. 配置环境变量和存储路�?
 5. 启动应用
 
-### 威联�?群晖 权限设置
+### 威联�?群晖 权限设置
 
 ```bash
-# 设置正确的所有�?
+# 设置正确的所有�?
 sudo chown -R 1000:1000 ./data ./sessions ./config
 
 # 或使用你的用户ID
-id  # 查看你的 UID �?GID
+id  # 查看你的 UID �?GID
 sudo chown -R YOUR_UID:YOUR_GID ./data ./sessions ./config
 ```
 
@@ -326,7 +326,7 @@ sudo chown -R YOUR_UID:YOUR_GID ./data ./sessions ./config
 ## 📞 获取帮助
 
 - **GitHub Issues**: https://github.com/your-repo/tmc/issues
-- **文档**: 查看项目�?`PROJECT_STATUS.md`
+- **文档**: 查看项目�?`PROJECT_STATUS.md`
 - **Docker Hub**: https://hub.docker.com/r/hav93/tmc
 
 ---
@@ -339,13 +339,13 @@ sudo chown -R YOUR_UID:YOUR_GID ./data ./sessions ./config
 docker exec tmc cat /app/VERSION
 ```
 
-### 更新到最新版�?
+### 更新到最新版�?
 
 ```bash
 # 1. 备份数据
 tar -czf tmc-backup-$(date +%Y%m%d).tar.gz data sessions config
 
-# 2. 拉取最新镜�?
+# 2. 拉取最新镜�?
 docker compose pull
 
 # 3. 重启容器
@@ -357,7 +357,7 @@ docker compose logs -f
 
 ---
 
-**最后更�?*: 2025-10-06  
-**当前版本**: v1.0.0  
-**镜像版本**: hav93/tmc:latest, hav93/tmc:1.0.0
+**最后更新**: 2025-10-07  
+**当前版本**: v1.1.0  
+**镜像版本**: hav93/tmc:latest, hav93/tmc:1.1.0
 

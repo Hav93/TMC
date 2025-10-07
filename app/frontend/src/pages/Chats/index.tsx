@@ -12,7 +12,6 @@ import {
   Upload,
   message,
   Select,
-  Modal
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import TableEmpty from '../../components/common/TableEmpty';
@@ -29,8 +28,10 @@ import {
   LockOutlined,
   UnlockOutlined,
   RobotOutlined,
-  UserAddOutlined
+  UserAddOutlined,
+  MessageOutlined,
 } from '@ant-design/icons';
+import { DetailModal, createChatDetailItems } from '../../components/DetailModal';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { chatsApi } from '../../services/chats';
 import type { Chat, ClientInfo, RefreshChatsResponse } from '../../types/api';
@@ -43,6 +44,8 @@ const ChatsPage: React.FC = () => {
   const { colors } = useThemeContext();
   const [searchText, setSearchText] = useState('');
   const [selectedClient, setSelectedClient] = useState<string>('all');
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [selectedChat, setSelectedChat] = useState<Chat | null>(null);
 
   // 获取聊天列表
   const { data: chatsData, isLoading, refetch } = useQuery({
@@ -308,31 +311,8 @@ const ChatsPage: React.FC = () => {
               type="primary"
               size="small"
               onClick={() => {
-                const chatTypeText = record.type === 'private' ? '私聊' :
-                                   record.type === 'group' ? '群组' :
-                                   record.type === 'supergroup' ? '超级群组' :
-                                   record.type === 'channel' ? '频道' : record.type;
-                
-                const isPrivateGroup = record.type === 'group' || record.type === 'supergroup';
-                const hasInviteLink = !!record.invite_link;
-                const isPublic = record.username || hasInviteLink;
-                let privacyStatus = '';
-                
-                if (record.type === 'private') {
-                  privacyStatus = '私聊';
-                } else if (record.type === 'channel') {
-                  privacyStatus = isPublic ? '公开频道' : '私密频道';
-                } else if (isPrivateGroup) {
-                  privacyStatus = isPublic ? '公开群组' : '私密群组';
-                }
-                
-                const chatDetails = `聊天名称: ${record.title || record.first_name || '未知聊天'}${record.username ? `\n用户名: @${record.username}` : ''}\nID: ${record.id}\n类型: ${chatTypeText}\n隐私状态: ${privacyStatus}${record.description ? `\n描述: ${record.description}` : ''}${record.type !== 'private' && record.members_count ? `\n成员数: ${record.members_count.toLocaleString()}` : ''}\n状态: ${record.is_active !== false ? '活跃' : '非活跃'}\n最后活动: ${record.last_activity ? new Date(record.last_activity).toLocaleString() : '未知'}${record.invite_link ? `\n邀请链接: ${record.invite_link}` : ''}`;
-                
-                Modal.info({
-                  title: '聊天详情',
-                  content: chatDetails,
-                  okText: '我知道了',
-                });
+                setSelectedChat(record);
+                setDetailVisible(true);
               }}
             >
               详情
@@ -457,6 +437,20 @@ const ChatsPage: React.FC = () => {
           }}
         />
       </Card>
+
+      {/* 聊天详情模态框 */}
+      {selectedChat && (
+        <DetailModal
+          visible={detailVisible}
+          onClose={() => {
+            setDetailVisible(false);
+            setSelectedChat(null);
+          }}
+          title="聊天详情"
+          icon={<MessageOutlined />}
+          items={createChatDetailItems(selectedChat)}
+        />
+      )}
     </div>
   );
 };

@@ -30,10 +30,37 @@
 /* Log Line Styles */
 .log-line {
   transition: background-color 0.2s;
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border-radius: 4px;
 }
 
 .log-line:hover {
   background: var(--color-bg-hover, rgba(255, 255, 255, 0.05)) !important;
+}
+
+/* 结构化日志样式 */
+.log-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.log-emoji {
+  font-size: 16px;
+  margin-right: 8px;
+}
+
+.log-content {
+  margin-left: 24px;
+  margin-bottom: 4px;
+}
+
+.log-entities {
+  margin-left: 24px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border, rgba(128, 128, 128, 0.2));
 }
 
 .log-default {

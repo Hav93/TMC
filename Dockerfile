@@ -78,6 +78,9 @@ COPY --from=backend-builder /usr/local/bin /usr/local/bin
 # 复制后端代码
 COPY app/backend/ /app/
 
+# 复制版本文件到容器
+COPY VERSION /app/VERSION
+
 # 从builder复制前端构建产物
 COPY --from=frontend-builder /build/dist /app/frontend/dist
 

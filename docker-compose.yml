@@ -2,6 +2,9 @@ version: '3.8'
 
 services:
   tmc:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: hav93/tmc:latest
     container_name: tmc
     restart: always

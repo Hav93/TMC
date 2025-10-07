@@ -118,6 +118,10 @@ class TelegramClientManager:
         self.login_session = None
         self.login_state = "idle"  # idle, waiting_code, waiting_password, completed
         
+        # 日志队列 - 用于备份失败的日志记录（在运行时初始化）
+        self.failed_log_queue = None
+        self.log_retry_task = None
+        
         # 日志 - 使用统一的日志管理器，消息转发日志会写入 enhanced_bot.log
         self.logger = get_logger(f"client.{client_id}", "enhanced_bot.log")
     
@@ -205,6 +209,9 @@ class TelegramClientManager:
     async def _run_client(self):
         """运行客户端主逻辑"""
         try:
+            # 初始化日志队列（在事件循环中）
+            self.failed_log_queue = asyncio.Queue(maxsize=1000)
+            
             # 创建客户端
             await self._create_client()
             
@@ -586,12 +593,12 @@ class TelegramClientManager:
             # 执行转发
             await self._forward_message(rule, message, text_to_forward)
             
-            # 记录日志
-            await self._log_message(rule.id, message, "success", None, rule.name, rule.target_chat_id)
+            # 记录日志（使用重试机制）
+            await self._log_message_with_retry(rule.id, message, "success", None, rule.name, rule.target_chat_id)
             
         except Exception as e:
             self.logger.error(f"规则处理失败: {e}")
-            await self._log_message(rule.id, message, "failed", str(e), rule.name)
+            await self._log_message_with_retry(rule.id, message, "failed", str(e), rule.name)
     
     def _check_message_type(self, rule: ForwardRule, message) -> bool:
         """检查消息类型是否符合规则"""
@@ -776,6 +783,24 @@ class TelegramClientManager:
             self.logger.error(f"❌ 转发消息失败: {e}", exc_info=True)
             raise
     
+    async def _log_message_with_retry(self, rule_id: int, message, status: str, error_message: str = None, rule_name: str = None, target_chat_id: str = None, max_retries: int = 3):
+        """记录消息日志（带重试机制）"""
+        for attempt in range(max_retries):
+            try:
+                await self._log_message(rule_id, message, status, error_message, rule_name, target_chat_id)
+                if attempt > 0:
+                    self.logger.info(f"✅ 日志记录重试成功（第{attempt + 1}次尝试）")
+                return  # 成功则退出
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 0.5  # 递增等待时间：0.5s, 1s, 1.5s
+                    self.logger.warning(f"⚠️ 日志记录失败（第{attempt + 1}次尝试），{wait_time}秒后重试: {e}")
+                    await asyncio.sleep(wait_time)
+                else:
+                    self.logger.error(f"❌ 日志记录最终失败（已重试{max_retries}次）: {e}")
+                    # 最后尝试：将失败的日志信息保存到备用队列
+                    await self._save_to_log_queue(rule_id, message, status, error_message, rule_name, target_chat_id)
+    
     async def _log_message(self, rule_id: int, message, status: str, error_message: str = None, rule_name: str = None, target_chat_id: str = None):
         """记录消息日志"""
         try:
@@ -828,6 +853,94 @@ class TelegramClientManager:
                 
         except Exception as e:
             self.logger.error(f"记录消息日志失败: {e}")
+            raise  # 重新抛出异常以便重试机制捕获
+    
+    async def _save_to_log_queue(self, rule_id: int, message, status: str, error_message: str = None, rule_name: str = None, target_chat_id: str = None):
+        """将失败的日志保存到备用队列"""
+        try:
+            # 检查队列是否已初始化
+            if self.failed_log_queue is None:
+                self.logger.error("❌ 日志队列未初始化，无法保存")
+                return
+            
+            log_data = {
+                'rule_id': rule_id,
+                'message': message,
+                'status': status,
+                'error_message': error_message,
+                'rule_name': rule_name,
+                'target_chat_id': target_chat_id,
+                'timestamp': time.time()
+            }
+            
+            if self.failed_log_queue.full():
+                # 队列满时，移除最旧的记录
+                try:
+                    self.failed_log_queue.get_nowait()
+                    self.logger.warning("⚠️ 日志队列已满，移除最旧记录")
+                except:
+                    pass
+            
+            await self.failed_log_queue.put(log_data)
+            self.logger.info(f"📝 日志已保存到备用队列（队列大小: {self.failed_log_queue.qsize()}）")
+            
+            # 启动重试任务（如果尚未启动）
+            if self.log_retry_task is None or self.log_retry_task.done():
+                self.log_retry_task = asyncio.create_task(self._process_failed_log_queue())
+                
+        except Exception as e:
+            self.logger.error(f"❌ 保存到日志队列失败: {e}")
+    
+    async def _process_failed_log_queue(self):
+        """处理备用日志队列中的失败日志（后台任务）"""
+        self.logger.info("🔄 启动日志队列处理任务")
+        
+        while not self.failed_log_queue.empty() or self.running:
+            try:
+                # 等待获取队列中的日志数据
+                try:
+                    log_data = await asyncio.wait_for(self.failed_log_queue.get(), timeout=30)
+                except asyncio.TimeoutError:
+                    # 30秒内没有新数据，继续等待
+                    if not self.running:
+                        break
+                    continue
+                
+                # 检查日志是否过期（超过1小时）
+                if time.time() - log_data['timestamp'] > 3600:
+                    self.logger.warning(f"⚠️ 日志记录已过期（超过1小时），跳过")
+                    continue
+                
+                # 尝试重新记录日志
+                try:
+                    await self._log_message(
+                        log_data['rule_id'],
+                        log_data['message'],
+                        log_data['status'],
+                        log_data['error_message'],
+                        log_data['rule_name'],
+                        log_data['target_chat_id']
+                    )
+                    self.logger.info(f"✅ 队列日志重试成功")
+                except Exception as e:
+                    # 重试失败，重新放回队列（但添加重试计数）
+                    retry_count = log_data.get('retry_count', 0) + 1
+                    if retry_count < 5:  # 最多重试5次
+                        log_data['retry_count'] = retry_count
+                        await asyncio.sleep(retry_count * 10)  # 递增等待时间
+                        await self.failed_log_queue.put(log_data)
+                        self.logger.warning(f"⚠️ 队列日志重试失败（第{retry_count}次），重新放回队列: {e}")
+                    else:
+                        self.logger.error(f"❌ 队列日志最终失败（已重试{retry_count}次），放弃: {e}")
+                
+                # 处理完成，短暂休息
+                await asyncio.sleep(1)
+                
+            except Exception as e:
+                self.logger.error(f"❌ 处理日志队列时发生错误: {e}")
+                await asyncio.sleep(5)
+        
+        self.logger.info("🛑 日志队列处理任务已停止")
     
     async def _update_monitored_chats(self):
         """更新监听的聊天列表"""

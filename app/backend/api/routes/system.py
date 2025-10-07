@@ -163,13 +163,16 @@ async def stream_container_logs(
     levels: Optional[str] = Query(default=None, description="以逗号分隔的级别过滤，如: INFO,WARNING,ERROR"),
     keyword: Optional[str] = Query(default=None, description="关键字过滤（包含匹配，不区分大小写）"),
     tail: Optional[int] = Query(default=500, description="加载最近N行历史日志，0表示不加载历史"),
+    structured: Optional[bool] = Query(default=True, description="是否返回结构化日志数据"),
 ):
     """
-    实时流式传输应用日志（SSE）
+    实时流式传输应用日志（SSE）- 增强版
     
     使用Server-Sent Events实时推送应用日志到前端
+    支持结构化日志解析，提取操作类型、实体信息等
     """
     from fastapi.responses import StreamingResponse
+    from utils import LogParser
 
     # 解析过滤条件
     source_filters: Optional[Set[str]] = (
@@ -193,6 +196,20 @@ async def stream_container_logs(
             level_regex = re.compile(r"\|\s*(DEBUG|INFO|WARNING|ERROR|CRITICAL)\s*\|")
             # 正则用于解析时间戳：2025-10-06 12:00:00 或 2025-10-06 12:00:00.123
             timestamp_regex = re.compile(r"^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)")
+            
+            # 日志黑名单：不展示的日志模式
+            log_blacklist_patterns = [
+                r'检查前端目录:',  # 前端目录检查日志
+                r'前端目录存在，挂载静态文件服务',  # 前端目录挂载日志
+                r'^\[SQL:',  # SQL查询语句（错误的多行输出）
+                r'^\[parameters:',  # SQL参数（错误的多行输出）
+                r'^FROM users\s*$',  # SQL语句片段（错误的多行输出）
+                r'^FROM telegram_clients\s*$',  # SQL语句片段
+                r'^FROM forward_rules\s*$',  # SQL语句片段
+                r'^WHERE \w+\.',  # SQL WHERE子句（错误的多行输出）
+                r'^\(Background on this error',  # SQLAlchemy错误链接
+            ]
+            blacklist_regex = re.compile('|'.join(f'({p})' for p in log_blacklist_patterns))
 
             def discover_log_files() -> Set[str]:
                 files = set()
@@ -239,32 +256,51 @@ async def stream_container_logs(
                                     if not line:
                                         continue
                                     
-                                    # 解析时间戳
-                                    timestamp_match = timestamp_regex.match(line)
-                                    log_timestamp = timestamp_match.group(1) if timestamp_match else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                                    
-                                    # 解析级别
-                                    level_match = level_regex.search(line)
-                                    level_val = level_match.group(1) if level_match else None
-                                    
-                                    # 级别过滤
-                                    if level_filters and (level_val is None or level_val.upper() not in level_filters):
-                                        logger.debug(f"级别过滤跳过: {line[:50]}")
+                                    # 黑名单过滤：跳过噪音日志
+                                    if blacklist_regex.search(line):
                                         continue
                                     
-                                    # 关键字过滤
-                                    if keyword_lc and (keyword_lc not in line.lower()):
-                                        logger.debug(f"关键字过滤跳过: {line[:50]}")
-                                        continue
-                                    
-                                    log_data = {
-                                        'type': 'log',
-                                        'message': line,
-                                        'timestamp': log_timestamp,
-                                        'source': fname,
-                                        'level': (level_val or 'INFO')
-                                    }
-                                    yield f"data: {json.dumps(log_data)}\n\n"
+                                    # 使用新的解析器进行结构化解析
+                                    if structured:
+                                        parsed = LogParser.parse(line)
+                                        
+                                        # 级别过滤
+                                        if level_filters and parsed['level'] not in level_filters:
+                                            continue
+                                        
+                                        # 关键字过滤
+                                        if keyword_lc and keyword_lc not in line.lower():
+                                            continue
+                                        
+                                        # 发送结构化日志
+                                        log_data = {
+                                            'type': 'log',
+                                            'source': fname,
+                                            **parsed  # 包含所有解析的字段
+                                        }
+                                        yield f"data: {json.dumps(log_data)}\n\n"
+                                    else:
+                                        # 兼容旧格式（非结构化）
+                                        timestamp_match = timestamp_regex.match(line)
+                                        log_timestamp = timestamp_match.group(1) if timestamp_match else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                        
+                                        level_match = level_regex.search(line)
+                                        level_val = level_match.group(1) if level_match else None
+                                        
+                                        if level_filters and (level_val is None or level_val.upper() not in level_filters):
+                                            continue
+                                        
+                                        if keyword_lc and (keyword_lc not in line.lower()):
+                                            continue
+                                        
+                                        log_data = {
+                                            'type': 'log',
+                                            'message': line,
+                                            'timestamp': log_timestamp,
+                                            'source': fname,
+                                            'level': (level_val or 'INFO')
+                                        }
+                                        yield f"data: {json.dumps(log_data)}\n\n"
                             
                             # 打开文件用于后续实时读取
                             fh = open(fpath, 'r', encoding='utf-8', errors='ignore')
@@ -301,27 +337,44 @@ async def stream_container_logs(
                                             if not line:
                                                 continue
                                             
-                                            # 解析时间戳
-                                            timestamp_match = timestamp_regex.match(line)
-                                            log_timestamp = timestamp_match.group(1) if timestamp_match else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                                            
-                                            level_match = level_regex.search(line)
-                                            level_val = level_match.group(1) if level_match else None
-                                            
-                                            if level_filters and (level_val is None or level_val.upper() not in level_filters):
-                                                continue
-                                            
-                                            if keyword_lc and (keyword_lc not in line.lower()):
-                                                continue
-                                            
-                                            log_data = {
-                                                'type': 'log',
-                                                'message': line,
-                                                'timestamp': log_timestamp,
-                                                'source': fname,
-                                                'level': (level_val or 'INFO')
-                                            }
-                                            yield f"data: {json.dumps(log_data)}\n\n"
+                                            # 使用结构化解析
+                                            if structured:
+                                                parsed = LogParser.parse(line)
+                                                
+                                                if level_filters and parsed['level'] not in level_filters:
+                                                    continue
+                                                
+                                                if keyword_lc and keyword_lc not in line.lower():
+                                                    continue
+                                                
+                                                log_data = {
+                                                    'type': 'log',
+                                                    'source': fname,
+                                                    **parsed
+                                                }
+                                                yield f"data: {json.dumps(log_data)}\n\n"
+                                            else:
+                                                # 兼容旧格式
+                                                timestamp_match = timestamp_regex.match(line)
+                                                log_timestamp = timestamp_match.group(1) if timestamp_match else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                                
+                                                level_match = level_regex.search(line)
+                                                level_val = level_match.group(1) if level_match else None
+                                                
+                                                if level_filters and (level_val is None or level_val.upper() not in level_filters):
+                                                    continue
+                                                
+                                                if keyword_lc and (keyword_lc not in line.lower()):
+                                                    continue
+                                                
+                                                log_data = {
+                                                    'type': 'log',
+                                                    'message': line,
+                                                    'timestamp': log_timestamp,
+                                                    'source': fname,
+                                                    'level': (level_val or 'INFO')
+                                                }
+                                                yield f"data: {json.dumps(log_data)}\n\n"
                                     
                                     fh = open(fpath, 'r', encoding='utf-8', errors='ignore')
                                     fh.seek(0, os.SEEK_END)
@@ -360,31 +413,50 @@ async def stream_container_logs(
                                     line = raw.rstrip()
                                     if not line:
                                         continue
-
-                                    # 解析时间戳
-                                    timestamp_match = timestamp_regex.match(line)
-                                    log_timestamp = timestamp_match.group(1) if timestamp_match else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-                                    # 解析级别
-                                    level_match = level_regex.search(line)
-                                    level_val = level_match.group(1) if level_match else None
-
-                                    # 级别过滤
-                                    if level_filters and (level_val is None or level_val.upper() not in level_filters):
+                                    
+                                    # 黑名单过滤：跳过噪音日志
+                                    if blacklist_regex.search(line):
                                         continue
 
-                                    # 关键字过滤
-                                    if keyword_lc and (keyword_lc not in line.lower()):
-                                        continue
+                                    # 使用结构化解析（实时日志）
+                                    if structured:
+                                        parsed = LogParser.parse(line)
+                                        
+                                        if level_filters and parsed['level'] not in level_filters:
+                                            continue
+                                        
+                                        if keyword_lc and keyword_lc not in line.lower():
+                                            continue
+                                        
+                                        log_data = {
+                                            'type': 'log',
+                                            'source': fname,
+                                            **parsed
+                                        }
+                                        yield f"data: {json.dumps(log_data)}\n\n"
+                                    else:
+                                        # 兼容旧格式
+                                        # 黑名单已经在上面过滤，这里不需要重复
+                                        timestamp_match = timestamp_regex.match(line)
+                                        log_timestamp = timestamp_match.group(1) if timestamp_match else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-                                    log_data = {
-                                        'type': 'log',
-                                        'message': line,
-                                        'timestamp': log_timestamp,
-                                        'source': fname,
-                                        'level': (level_val or 'INFO')
-                                    }
-                                    yield f"data: {json.dumps(log_data)}\n\n"
+                                        level_match = level_regex.search(line)
+                                        level_val = level_match.group(1) if level_match else None
+
+                                        if level_filters and (level_val is None or level_val.upper() not in level_filters):
+                                            continue
+
+                                        if keyword_lc and (keyword_lc not in line.lower()):
+                                            continue
+
+                                        log_data = {
+                                            'type': 'log',
+                                            'message': line,
+                                            'timestamp': log_timestamp,
+                                            'source': fname,
+                                            'level': (level_val or 'INFO')
+                                        }
+                                        yield f"data: {json.dumps(log_data)}\n\n"
 
                                 file_positions[fname] = fh.tell()
                         else:

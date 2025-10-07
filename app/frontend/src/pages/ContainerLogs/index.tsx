@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Card, Button, Space, Switch, Typography, Tag, Select, Input, Tabs } from 'antd';
+import { Card, Button, Space, Switch, Typography, Tag, Select, Input, Tabs, message, Modal } from 'antd';
 import { 
   ReloadOutlined, 
   PauseCircleOutlined, 
@@ -8,6 +8,7 @@ import {
   DownloadOutlined 
 } from '@ant-design/icons';
 import { useThemeContext } from '../../theme';
+import SmartLogItem from './SmartLogItem';
 import './styles.css';
 
 const { Title, Text } = Typography;
@@ -19,6 +20,15 @@ interface LogEntry {
   timestamp?: string;
   source?: string;
   level?: 'DEBUG' | 'INFO' | 'WARNING' | 'ERROR' | 'CRITICAL' | string;
+  // 结构化字段（新增）
+  module?: string;
+  function?: string;
+  line_number?: number;
+  emoji?: string;
+  action_type?: string;
+  entities?: Record<string, any>;
+  severity_score?: number;
+  raw?: string;
 }
 
 const ContainerLogs: React.FC = () => {
@@ -56,6 +66,10 @@ const ContainerLogs: React.FC = () => {
   const [selectedSources, setSelectedSources] = useState<string[]>([]); // 空数组表示显示所有源
   const [selectedLevels, setSelectedLevels] = useState<string[]>([]);
   const [keyword, setKeyword] = useState<string>('');
+  const [showStructured, setShowStructured] = useState<boolean>(true); // 是否显示结构化信息
+  const [contextModalVisible, setContextModalVisible] = useState(false);
+  const [contextLogs, setContextLogs] = useState<LogEntry[]>([]);
+  const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
@@ -344,6 +358,25 @@ const ContainerLogs: React.FC = () => {
     return null;
   };
 
+  // 查看日志上下文
+  const handleShowContext = (log: LogEntry) => {
+    setSelectedLog(log);
+    
+    // 查找相关日志（前后5条）
+    const logIndex = displayLogs.findIndex(l => l.timestamp === log.timestamp && l.message === log.message);
+    if (logIndex !== -1) {
+      const start = Math.max(0, logIndex - 5);
+      const end = Math.min(displayLogs.length, logIndex + 6);
+      setContextLogs(displayLogs.slice(start, end));
+      setContextModalVisible(true);
+    }
+  };
+
+  // 复制日志
+  const handleCopyLog = (log: LogEntry) => {
+    message.success('日志已复制到剪贴板');
+  };
+
   return (
     <div className="container-logs-page">
       <Card
@@ -383,6 +416,12 @@ const ContainerLogs: React.FC = () => {
                 }}
               />
             </div>
+            <Switch
+              checkedChildren="结构化"
+              unCheckedChildren="原始"
+              checked={showStructured}
+              onChange={setShowStructured}
+            />
             <Switch
               checkedChildren="自动滚动"
               unCheckedChildren="自动滚动"
@@ -509,27 +548,63 @@ const ContainerLogs: React.FC = () => {
             </div>
           ) : (
             displayLogs.map((log, index) => (
-              <div 
-                key={index} 
-                className={`log-line ${getLogClass(log.level, log.type, log.message)} ${isHighlightLog(log.message) ? 'highlighted' : ''}`}
-              >
-                {activeTab === 'all' && log.source && (
-                  <span className="log-source">
-                    [{log.source}]
-                  </span>
-                )}
-                {getLogIcon(log.message) && (
-                  <span className="log-icon">
-                    {getLogIcon(log.message)}
-                  </span>
-                )}
-                <span className="log-message">{log.message}</span>
-              </div>
+              <SmartLogItem
+                key={`${log.timestamp}-${index}`}
+                log={log}
+                index={index}
+                showSource={activeTab === 'all'}
+                isStructured={showStructured}
+                onCopyLog={handleCopyLog}
+                onShowContext={handleShowContext}
+              />
             ))
           )}
           <div ref={logsEndRef} />
         </div>
       </Card>
+
+      {/* 日志上下文模态框 */}
+      <Modal
+        title={
+          <Space>
+            <span>日志上下文</span>
+            {selectedLog && (
+              <Tag color="blue">{selectedLog.timestamp}</Tag>
+            )}
+          </Space>
+        }
+        open={contextModalVisible}
+        onCancel={() => setContextModalVisible(false)}
+        footer={null}
+        width={1000}
+        bodyStyle={{ maxHeight: '600px', overflow: 'auto' }}
+      >
+        {contextLogs.map((log, index) => {
+          const isSelected = selectedLog && 
+            log.timestamp === selectedLog.timestamp && 
+            log.message === selectedLog.message;
+          
+          return (
+            <div 
+              key={index}
+              style={{
+                background: isSelected ? colors.info + '20' : 'transparent',
+                border: isSelected ? `2px solid ${colors.info}` : '1px solid transparent',
+                borderRadius: '6px',
+                marginBottom: '8px'
+              }}
+            >
+              <SmartLogItem
+                log={log}
+                index={index}
+                showSource={true}
+                isStructured={showStructured}
+                onCopyLog={handleCopyLog}
+              />
+            </div>
+          );
+        })}
+      </Modal>
     </div>
   );
 };

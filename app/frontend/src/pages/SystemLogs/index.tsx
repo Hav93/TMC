@@ -24,13 +24,16 @@ import {
   ImportOutlined,
   DeleteOutlined,
   EyeOutlined,
-  ExclamationCircleOutlined
+  ExclamationCircleOutlined,
+  MessageOutlined,
 } from '@ant-design/icons';
+import { DetailModal, createMessageDetailItems } from '../../components/DetailModal';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { logsApi } from '../../services/logs';
 import { chatsApi } from '../../services/chats';
 import type { MessageLog, LogFilters } from '../../types/rule';
 import type { Dayjs } from 'dayjs';
+import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 
 const { Title } = Typography;
@@ -47,6 +50,8 @@ const LogsPage: React.FC = () => {
   });
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [autoRefresh, setAutoRefresh] = useState(true); // 默认开启自动刷新
+  const [detailVisible, setDetailVisible] = useState(false);
+  const [selectedLog, setSelectedLog] = useState<MessageLog | null>(null);
 
   // 获取日志列表 - 添加自动刷新
   const { data: logsData, isLoading, refetch } = useQuery({
@@ -128,12 +133,14 @@ const LogsPage: React.FC = () => {
     setFilters(prev => ({ ...prev, search: value, page: 1 }));
   };
 
-  const handleDateChange = (dates: [Dayjs, Dayjs] | null) => {
-    if (dates && dates.length === 2) {
+  const handleDateChange = (dates: [Dayjs | null, Dayjs | null] | null) => {
+    if (dates && dates[0] && dates[1]) {
+      const startDate = dates[0];
+      const endDate = dates[1];
       setFilters(prev => ({
         ...prev,
-        start_date: dates[0].format('YYYY-MM-DD'),
-        end_date: dates[1].format('YYYY-MM-DD'),
+        start_date: startDate!.format('YYYY-MM-DD'),
+        end_date: endDate!.format('YYYY-MM-DD'),
         page: 1
       }));
     } else {
@@ -183,7 +190,7 @@ const LogsPage: React.FC = () => {
     return <Tag color={config.color}>{config.text}</Tag>;
   };
 
-  const columns = [
+  const columns: ColumnsType<MessageLog> = [
     {
       title: '时间',
       dataIndex: 'created_at',
@@ -204,7 +211,7 @@ const LogsPage: React.FC = () => {
         text: name,
         value: name,
       })),
-      onFilter: (value: string | number | boolean, record: MessageLog) => (record.rule_name || '未知规则') === value,
+      onFilter: (value, record: MessageLog) => (record.rule_name || '未知规则') === String(value),
       render: (text: string) => (
         <span style={{ color: colors.textPrimary, fontWeight: 'bold' }}>{text || '未知规则'}</span>
       ),
@@ -222,9 +229,9 @@ const LogsPage: React.FC = () => {
         text: chat,
         value: chat,
       })),
-      onFilter: (value: string | number | boolean, record: MessageLog) => {
+      onFilter: (value, record: MessageLog) => {
         const displayName = getChatDisplayName(record.source_chat_id || '');
-        return displayName === value;
+        return displayName === String(value);
       },
       render: (_: string, record: MessageLog) => {
         const displayName = getChatDisplayName(record.source_chat_id || '');
@@ -244,9 +251,9 @@ const LogsPage: React.FC = () => {
         text: chat,
         value: chat,
       })),
-      onFilter: (value: string | number | boolean, record: MessageLog) => {
+      onFilter: (value, record: MessageLog) => {
         const displayName = getChatDisplayName(record.target_chat_id || '');
-        return displayName === value;
+        return displayName === String(value);
       },
       render: (_: string, record: MessageLog) => {
         const displayName = getChatDisplayName(record.target_chat_id || '');
@@ -296,17 +303,8 @@ const LogsPage: React.FC = () => {
               size="small"
               icon={<EyeOutlined />}
               onClick={() => {
-                const statusText = record.status === 'success' ? '成功' : 
-                                 record.status === 'failed' ? '失败' : 
-                                 record.status === 'filtered' ? '已过滤' : record.status;
-                
-                const messageDetails = `规则: ${record.rule_name || '未知'}\n源聊天: ${record.source_chat_id || '未知'}\n目标聊天: ${record.target_chat_id || '未知'}\n状态: ${statusText}\n时间: ${dayjs(record.created_at).format('YYYY-MM-DD HH:mm:ss')}\n\n消息内容:\n${record.message_text || '无内容'}${record.error_message ? `\n\n错误信息:\n${record.error_message}` : ''}`;
-                
-                Modal.info({
-                  title: '消息详情',
-                  content: messageDetails,
-                  okText: '我知道了',
-                });
+                setSelectedLog(record);
+                setDetailVisible(true);
               }}
             />
           </Tooltip>
@@ -459,6 +457,20 @@ const LogsPage: React.FC = () => {
           }}
         />
       </Card>
+
+      {/* 消息详情模态框 */}
+      {selectedLog && (
+        <DetailModal
+          visible={detailVisible}
+          onClose={() => {
+            setDetailVisible(false);
+            setSelectedLog(null);
+          }}
+          title="消息详情"
+          icon={<MessageOutlined />}
+          items={createMessageDetailItems(selectedLog)}
+        />
+      )}
     </div>
   );
 };

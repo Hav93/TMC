@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  tmc:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
+    image: hav93/tmc:local
+    container_name: tmc-local
+    restart: unless-stopped
+    ports:
+      - "9393:9393"
+    volumes:
+      - ../data:/app/data
+      - ../sessions:/app/sessions
+      - tmc-logs:/app/logs
+    environment:
+      - API_ID=${API_ID}
+      - API_HASH=${API_HASH}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - PHONE_NUMBER=${PHONE_NUMBER}
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-change-in-production}
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///app/data/app.db}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-localhost,127.0.0.1}
+    networks:
+      - tmc-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9393/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  tmc-logs:
+    driver: local
+
+networks:
+  tmc-network:
+    driver: bridge
+

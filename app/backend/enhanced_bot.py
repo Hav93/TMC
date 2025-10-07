@@ -115,7 +115,7 @@ class EnhancedTelegramBot:
             self.logger.error(f"❌ 自动启动客户端失败: {e}")
     
     async def _migrate_legacy_clients(self):
-        """迁移传统客户端到数据库"""
+        """迁移传统客户端到数据库（仅当环境变量中有完整配置时）"""
         try:
             from models import TelegramClient
             from database import get_db
@@ -123,35 +123,51 @@ class EnhancedTelegramBot:
             from config import Config
             
             async for db in get_db():
-                # 定义传统客户端 - 无论配置如何都创建基本记录
+                # 只有当环境变量中真正有完整配置时才迁移
                 legacy_clients = []
                 
-                # 主用户客户端 - 始终创建记录
-                legacy_clients.append({
-                    'client_id': 'main_user',
-                    'client_type': 'user',
-                    'api_id': str(Config.API_ID) if hasattr(Config, 'API_ID') and Config.API_ID else None,
-                    'api_hash': Config.API_HASH if hasattr(Config, 'API_HASH') and Config.API_HASH else None,
-                    'phone': Config.PHONE_NUMBER if hasattr(Config, 'PHONE_NUMBER') and Config.PHONE_NUMBER else None
-                })
+                # 检查是否有用户客户端的完整配置
+                has_user_config = (
+                    hasattr(Config, 'API_ID') and Config.API_ID and
+                    hasattr(Config, 'API_HASH') and Config.API_HASH and
+                    hasattr(Config, 'PHONE_NUMBER') and Config.PHONE_NUMBER
+                )
                 
-                # 主机器人客户端 - 始终创建记录
-                admin_user_id = None
-                if hasattr(Config, 'ADMIN_USER_IDS') and Config.ADMIN_USER_IDS:
-                    # 将列表转换为逗号分隔的字符串
-                    if isinstance(Config.ADMIN_USER_IDS, list):
-                        admin_user_id = ','.join(str(uid) for uid in Config.ADMIN_USER_IDS)
-                    else:
-                        admin_user_id = str(Config.ADMIN_USER_IDS)
+                if has_user_config:
+                    legacy_clients.append({
+                        'client_id': 'main_user',
+                        'client_type': 'user',
+                        'api_id': str(Config.API_ID),
+                        'api_hash': Config.API_HASH,
+                        'phone': Config.PHONE_NUMBER
+                    })
                 
-                legacy_clients.append({
-                    'client_id': 'main_bot',
-                    'client_type': 'bot',
-                    'bot_token': Config.BOT_TOKEN if hasattr(Config, 'BOT_TOKEN') and Config.BOT_TOKEN else None,
-                    'admin_user_id': admin_user_id
-                })
+                # 检查是否有机器人客户端的完整配置
+                has_bot_config = hasattr(Config, 'BOT_TOKEN') and Config.BOT_TOKEN
+                
+                if has_bot_config:
+                    admin_user_id = None
+                    if hasattr(Config, 'ADMIN_USER_IDS') and Config.ADMIN_USER_IDS:
+                        # 将列表转换为逗号分隔的字符串
+                        if isinstance(Config.ADMIN_USER_IDS, list):
+                            admin_user_id = ','.join(str(uid) for uid in Config.ADMIN_USER_IDS)
+                        else:
+                            admin_user_id = str(Config.ADMIN_USER_IDS)
+                    
+                    legacy_clients.append({
+                        'client_id': 'main_bot',
+                        'client_type': 'bot',
+                        'bot_token': Config.BOT_TOKEN,
+                        'admin_user_id': admin_user_id
+                    })
+                
+                # 如果没有任何传统配置，跳过迁移
+                if not legacy_clients:
+                    self.logger.debug("💡 未检测到传统客户端配置，跳过迁移")
+                    break
                 
                 # 检查并迁移每个传统客户端
+                migrated_count = 0
                 for client_data in legacy_clients:
                     result = await db.execute(
                         select(TelegramClient).where(
@@ -175,11 +191,16 @@ class EnhancedTelegramBot:
                         )
                         db.add(db_client)
                         self.logger.info(f"📥 迁移传统客户端到数据库: {client_data['client_id']} ({client_data['client_type']})")
+                        migrated_count += 1
                     else:
-                        self.logger.info(f"✅ 传统客户端已存在: {client_data['client_id']}")
+                        self.logger.debug(f"✅ 传统客户端已存在: {client_data['client_id']}")
                 
-                await db.commit()
-                self.logger.info("✅ 传统客户端迁移完成")
+                if migrated_count > 0:
+                    await db.commit()
+                    self.logger.info(f"✅ 传统客户端迁移完成（迁移了 {migrated_count} 个客户端）")
+                else:
+                    self.logger.debug("💡 所有传统客户端已迁移，无需重复操作")
+                
                 break
                 
         except Exception as e:
