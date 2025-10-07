@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, Button, Space, Switch, Typography, Tag, Select, Input, Tabs, message, Modal } from 'antd';
 import { 
   ReloadOutlined, 
@@ -7,6 +7,7 @@ import {
   ClearOutlined,
   DownloadOutlined 
 } from '@ant-design/icons';
+import { List, useDynamicRowHeight } from 'react-window';
 import { useThemeContext } from '../../theme';
 import SmartLogItem from './SmartLogItem';
 import './styles.css';
@@ -74,19 +75,38 @@ const ContainerLogs: React.FC = () => {
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const hasLoadedHistoryRef = useRef(getHasLoadedHistory()); // 从sessionStorage恢复状态
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null); // sessionStorage 保存防抖定时器
+  
+  // 使用动态行高管理
+  const dynamicRowHeight = useDynamicRowHeight({ defaultRowHeight: 100 });
   
   const MAX_LOGS_PER_SOURCE = 500; // 每个来源最多保留500条日志
   const MAX_LOGS_TOTAL = 500; // 不分组时总共最多保留500条日志
   const [activeTab, setActiveTab] = useState<string>('all'); // 当前激活的Tab（all/enhanced_bot/api/web_api）
 
-  // 自动保存日志到 sessionStorage
+  // 自动保存日志到 sessionStorage（防抖优化，500ms后保存）
   useEffect(() => {
-    try {
-      sessionStorage.setItem('containerLogs', JSON.stringify(logs));
-      console.log('[保存缓存] 保存了', logs.length, '条日志到 sessionStorage');
-    } catch (error) {
-      console.error('保存日志到 sessionStorage 失败:', error);
+    // 清除之前的定时器
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
     }
+    
+    // 设置新的定时器
+    saveTimerRef.current = setTimeout(() => {
+      try {
+        sessionStorage.setItem('containerLogs', JSON.stringify(logs));
+        console.log('[保存缓存] 保存了', logs.length, '条日志到 sessionStorage');
+      } catch (error) {
+        console.error('保存日志到 sessionStorage 失败:', error);
+      }
+    }, 500);
+    
+    // 清理函数
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
   }, [logs]);
 
   // 按来源分组的日志，每个来源保留最多500条
@@ -122,14 +142,10 @@ const ContainerLogs: React.FC = () => {
   }, [groupedLogs, activeTab]);
 
   // 自动滚动到顶部（因为新日志在顶部）
-  const scrollToTop = () => {
+  useEffect(() => {
     if (autoScroll && logsContainerRef.current) {
       logsContainerRef.current.scrollTop = 0;
     }
-  };
-
-  useEffect(() => {
-    scrollToTop();
   }, [logs, autoScroll]);
 
   // 连接到SSE
@@ -373,9 +389,28 @@ const ContainerLogs: React.FC = () => {
   };
 
   // 复制日志
-  const handleCopyLog = (log: LogEntry) => {
+  const handleCopyLog = useCallback(() => {
     message.success('日志已复制到剪贴板');
-  };
+  }, []);
+
+  // 渲染单个日志项（用于虚拟滚动）
+  const LogRow = useCallback(({ index, style }: any) => {
+    const log = displayLogs[index];
+    if (!log) return null;
+
+    return (
+      <div style={style}>
+        <SmartLogItem
+          log={log}
+          index={index}
+          showSource={activeTab === 'all'}
+          isStructured={showStructured}
+          onCopyLog={handleCopyLog}
+          onShowContext={handleShowContext}
+        />
+      </div>
+    );
+  }, [displayLogs, activeTab, showStructured, handleCopyLog]);
 
   return (
     <div className="container-logs-page">
@@ -525,17 +560,15 @@ const ContainerLogs: React.FC = () => {
             background: colors.bgLayout,
             border: `1px solid ${colors.borderLight}`,
             borderRadius: '8px',
-            padding: '16px',
             height: 'calc(100vh - 320px)',
             minHeight: '400px',
-            overflow: 'auto',
             fontFamily: 'Monaco, Consolas, "Courier New", monospace',
             fontSize: '13px',
             lineHeight: '1.5',
           }}
         >
           {displayLogs.length === 0 ? (
-            <div             style={{ 
+            <div style={{ 
               textAlign: 'center', 
               padding: '40px',
               color: colors.textSecondary 
@@ -547,17 +580,14 @@ const ContainerLogs: React.FC = () => {
               </div>
             </div>
           ) : (
-            displayLogs.map((log, index) => (
-              <SmartLogItem
-                key={`${log.timestamp}-${index}`}
-                log={log}
-                index={index}
-                showSource={activeTab === 'all'}
-                isStructured={showStructured}
-                onCopyLog={handleCopyLog}
-                onShowContext={handleShowContext}
-              />
-            ))
+            <List
+              rowCount={displayLogs.length}
+              rowHeight={dynamicRowHeight}
+              rowComponent={LogRow}
+              rowProps={{}}
+              overscanCount={5}
+              style={{ padding: '16px' }}
+            />
           )}
           <div ref={logsEndRef} />
         </div>
