@@ -15,16 +15,6 @@
   node scripts/sync-version.js
   ```
 
-### Git 操作
-- **`push-github.ps1`** - 添加、提交并推送代码到 GitHub
-  ```powershell
-  # 基本提交
-  .\scripts\push-github.ps1 "feat: 添加新功能"
-  
-  # 带版本标签的提交
-  .\scripts\push-github.ps1 "release: v1.1.0 正式发布" -Tag "v1.1.0"
-  ```
-
 ### Docker 操作
 - **`docker-build-push.ps1`** - 构建并推送 Docker 镜像到 Docker Hub
   ```powershell
@@ -40,18 +30,30 @@
 # Step 1: 更新版本号
 .\scripts\update-version.ps1 1.2.0
 
-# Step 2: 推送到 GitHub（带标签）
-.\scripts\push-github.ps1 "release: v1.2.0 正式发布" -Tag "v1.2.0"
+# Step 2: 提交并推送到 GitHub
+git add .
+git commit -m "release: v1.2.0 正式发布"
+git push origin main
 
-# Step 3: 构建并推送 Docker 镜像
+# Step 3: 创建版本标签
+git tag -a v1.2.0 -m "Release v1.2.0"
+git push origin v1.2.0
+
+# Step 4: 构建并推送 Docker 镜像
 .\scripts\docker-build-push.ps1
 ```
 
 ### 2️⃣ 日常代码提交
 
-```powershell
-# 直接提交推送
-.\scripts\push-github.ps1 "fix: 修复登录问题"
+```bash
+# 添加所有更改
+git add .
+
+# 提交（支持中文，GitHub 显示正常）
+git commit -m "feat: 添加新功能"
+
+# 推送到 GitHub
+git push origin main
 ```
 
 ### 3️⃣ 仅构建 Docker 镜像
@@ -98,24 +100,49 @@ release: v1.1.0 正式发布
 - **Git** (配置好 user.name 和 user.email)
 - **Docker** (用于构建镜像)
 
+## 📝 Git 操作说明
+
+### Git 配置（已自动配置）
+项目已配置 UTF-8 编码支持：
+```bash
+git config i18n.commitencoding utf-8
+git config i18n.logoutputencoding utf-8
+```
+
+### 提交消息规范
+✅ **推荐：直接使用 Git 命令**
+- 支持中文提交消息
+- GitHub 网页端显示完全正常
+- 本地终端可能显示乱码（不影响使用）
+
+```bash
+# 中文提交（GitHub 显示正常）
+git commit -m "feat: 添加新功能"
+
+# 英文提交（最稳定，参考 Telegram Message v3.2 项目）
+git commit -m "feat: add new feature"
+```
+
 ## 📝 注意事项
 
-1. **UTF-8 编码**: 所有脚本已配置 UTF-8 编码，支持中文提交消息
-2. **版本管理**: VERSION 文件是唯一的版本源，其他地方自动同步
-3. **GitHub Actions**: 推送代码后会自动触发 Docker 构建
-4. **标签规范**: 版本标签格式为 `v1.2.3`
+1. **版本管理**: VERSION 文件是唯一的版本源，其他地方自动同步
+2. **GitHub Actions**: 推送代码后会自动触发 Docker 构建
+3. **标签规范**: 版本标签格式为 `v1.2.3`
+4. **提交消息**: 直接使用 `git commit -m`，不需要额外脚本
 
 ## 🆘 常见问题
 
-### Q: 提交消息出现乱码？
-A: 使用 `push-github.ps1` 脚本，它已配置 UTF-8 编码
+### Q: 本地终端提交消息显示乱码？
+A: 这是 Windows PowerShell 的显示问题，不影响实际使用。GitHub 网页端显示完全正常。
 
 ### Q: Docker 构建失败？
 A: 确保 VERSION 文件存在且格式正确（纯数字版本号，如 `1.1.0`）
 
 ### Q: 如何回滚版本？
-```powershell
+```bash
 # 修改 VERSION 文件，然后重新推送
 .\scripts\update-version.ps1 1.0.0
-.\scripts\push-github.ps1 "chore: 回滚到 v1.0.0"
+git add .
+git commit -m "chore: rollback to v1.0.0"
+git push origin main
 ```
