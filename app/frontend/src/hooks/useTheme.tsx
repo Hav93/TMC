@@ -82,108 +82,19 @@ export const useTheme = () => {
       root.style.color = colors.textPrimary;
     }
     
-    // 5. 强制所有 Ant Design 组件重新计算样式
+    // 5. 应用 CSS 变量到根元素（利用 CSS 继承机制）
     requestAnimationFrame(() => {
-      // 触发 CSS 变量更新
+      // 设置主题类型变量
       rootElement.style.setProperty('--theme-type', themeConfig.type);
       
-      // 更全面的选择器列表，包括所有可能的 Ant Design 组件
-      const comprehensiveSelectors = [
-        // 布局
-        '.ant-layout', '.ant-layout-header', '.ant-layout-sider', '.ant-layout-content', '.ant-layout-footer',
-        // 卡片和面板
-        '.ant-card', '.ant-card-head', '.ant-card-body', '.ant-collapse', '.ant-collapse-item',
-        // 表格
-        '.ant-table', '.ant-table-thead', '.ant-table-tbody', '.ant-table-cell',
-        // 菜单和导航
-        '.ant-menu', '.ant-menu-item', '.ant-menu-submenu', '.ant-breadcrumb',
-        // 表单
-        '.ant-form', '.ant-form-item', '.ant-input', '.ant-input-number', '.ant-select', 
-        '.ant-select-selector', '.ant-picker', '.ant-checkbox', '.ant-radio', '.ant-switch',
-        // 按钮
-        '.ant-btn', '.ant-btn-primary', '.ant-btn-default',
-        // 模态框和抽屉
-        '.ant-modal', '.ant-modal-content', '.ant-modal-header', '.ant-modal-body', '.ant-modal-footer',
-        '.ant-drawer', '.ant-drawer-content',
-        // 下拉和弹出
-        '.ant-dropdown', '.ant-dropdown-menu', '.ant-popover', '.ant-tooltip',
-        // 标签和徽章
-        '.ant-tag', '.ant-badge',
-        // 分页
-        '.ant-pagination', '.ant-pagination-item',
-        // 统计和数据展示
-        '.ant-statistic', '.ant-descriptions', '.ant-list', '.ant-list-item',
-        // 自定义组件
-        '.stats-card', '.glass-card', '.sidebar-logo', '.sidebar-footer', 
-        '.user-info', '.header-content', '.layout-header'
-      ];
-      
-      // 方法1: 强制重排和重绘
-      comprehensiveSelectors.forEach(selector => {
-        const elements = document.querySelectorAll(selector);
-        elements.forEach((el) => {
-          if (el instanceof HTMLElement) {
-            void el.offsetHeight; // 强制重排
-            el.style.transform = 'translateZ(0)'; // 触发GPU加速重绘
-          }
-        });
+      // 通过修改根元素的 CSS 变量触发全局样式更新
+      Object.entries(colors).forEach(([key, value]) => {
+        rootElement.style.setProperty(`--${key}`, value);
       });
       
-      // 方法2: 清理transform并添加临时类触发重绘
-      requestAnimationFrame(() => {
-        comprehensiveSelectors.forEach(selector => {
-          const elements = document.querySelectorAll(selector);
-          elements.forEach((el) => {
-            if (el instanceof HTMLElement) {
-              el.style.transform = '';
-              // 添加并立即移除一个类来触发样式重新计算
-              el.classList.add('theme-force-update');
-              void el.offsetHeight;
-              el.classList.remove('theme-force-update');
-            }
-          });
-        });
-      });
-      
-      // 方法3: 强制触发所有元素的样式重新计算
-      requestAnimationFrame(() => {
-        const allElements = document.querySelectorAll('*');
-        allElements.forEach((el) => {
-          if (el instanceof HTMLElement) {
-            const style = window.getComputedStyle(el);
-            void style.backgroundColor;
-            void style.color;
-          }
-        });
-      });
-    });
-    
-    // 6. 多阶段延迟刷新 - 确保异步组件和延迟加载的元素也更新
-    const refreshDelays = [50, 150, 300, 500];
-    refreshDelays.forEach(delay => {
-      setTimeout(() => {
-        requestAnimationFrame(() => {
-          // 全局重排
-          void body.offsetHeight;
-          void rootElement.offsetHeight;
-          
-          // 关键组件二次刷新
-          const criticalElements = document.querySelectorAll(
-            '.ant-card, .ant-table, .ant-modal, .ant-drawer, ' +
-            '.ant-menu-item, .ant-input, .ant-select, .ant-btn, ' +
-            '.sidebar-logo, .user-info, .stats-card'
-          );
-          
-          criticalElements.forEach(el => {
-            if (el instanceof HTMLElement) {
-              void el.offsetHeight;
-              // 触发样式重新计算
-              const computedStyle = window.getComputedStyle(el);
-              void computedStyle.backgroundColor; // 读取计算样式强制重新计算
-            }
-          });
-        });
-      }, delay);
+      // 只需要触发根元素和 body 的重排，CSS 变量会自动继承到所有子元素
+      void rootElement.offsetHeight;
+      void body.offsetHeight;
     });
     
     // 7. 保存到 localStorage
@@ -219,36 +130,18 @@ export const useTheme = () => {
         document.documentElement.animate(
           { clipPath },
           {
-            duration: 600,
+            duration: 300,
             easing: 'cubic-bezier(0.4, 0.0, 0.2, 1)', // 更自然的缓动
             pseudoElement: '::view-transition-new(root)'
           }
         );
       });
 
-      // 动画完成后强制刷新所有内联样式
-      transition.finished.then(() => {
-        // 强制重新渲染所有带内联样式的元素
-        const inlineStyledElements = document.querySelectorAll('[style*="color"]');
-        inlineStyledElements.forEach(el => {
-          if (el instanceof HTMLElement) {
-            // 强制重新计算样式
-            const styleContent = el.getAttribute('style') || '';
-            el.setAttribute('style', styleContent);
-            void el.offsetHeight;
-          }
-        });
-      });
-
-      // 动画完成后额外刷新
+      // 动画完成后只需触发根元素重排
       transition.finished.then(() => {
         requestAnimationFrame(() => {
-          // 强制所有元素重新计算样式
-          document.querySelectorAll('*').forEach(el => {
-            if (el instanceof HTMLElement) {
-              void el.offsetHeight;
-            }
-          });
+          void document.documentElement.offsetHeight;
+          void document.body.offsetHeight;
         });
       });
     } else {
@@ -257,15 +150,12 @@ export const useTheme = () => {
       setThemeConfig({ type });
       setTimeout(() => {
         document.body.classList.remove('theme-transitioning');
-        // 额外刷新
+        // 只触发根元素重排
         requestAnimationFrame(() => {
-          document.querySelectorAll('*').forEach(el => {
-            if (el instanceof HTMLElement) {
-              void el.offsetHeight;
-            }
-          });
+          void document.documentElement.offsetHeight;
+          void document.body.offsetHeight;
         });
-      }, 500);
+      }, 300);
     }
   };
 

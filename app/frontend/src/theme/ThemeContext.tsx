@@ -86,7 +86,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
             ]
           },
           {
-            duration: 400,
+            duration: 300,
             easing: 'cubic-bezier(0.4, 0.0, 0.2, 1)',
             pseudoElement: '::view-transition-new(root)'
           }

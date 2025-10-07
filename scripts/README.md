@@ -2,6 +2,15 @@
 
 ## 📁 脚本列表
 
+# 1. 提交代码
+git add .
+git commit -m "feat: 添加新功能"
+git push origin main
+
+# 2. 发布版本（推送 tag）
+git tag -a v1.2.0 -m "Release v1.2.0"
+git push origin v1.2.0
+
 ### 版本管理
 - **`update-version.ps1`** - 更新项目版本号
   ```powershell
