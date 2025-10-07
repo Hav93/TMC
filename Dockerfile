@@ -48,6 +48,10 @@ RUN if [ -n "$HTTP_PROXY" ]; then \
 COPY app/frontend/package*.json ./
 RUN npm install
 
+# 复制版本管理相关文件
+COPY VERSION /VERSION
+COPY scripts/ /scripts/
+
 # 复制前端代码并构建
 COPY app/frontend/ ./
 
