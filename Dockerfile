@@ -1,5 +1,5 @@
 # 多阶段构建 - 后端
-FROM python:3.11-slim as backend-builder
+FROM python:3.11-slim AS backend-builder
 
 # 设置构建时代理参数
 ARG HTTP_PROXY
@@ -30,7 +30,7 @@ COPY app/backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 多阶段构建 - 前端
-FROM node:18-alpine as frontend-builder
+FROM node:18-alpine AS frontend-builder
 
 # 设置构建时代理参数
 ARG HTTP_PROXY
