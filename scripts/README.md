@@ -48,6 +48,23 @@ node scripts/sync-version.js
 
 ### Git 管理
 
+#### `git-commit-utf8.ps1`
+**UTF-8 编码提交脚本**
+
+解决 PowerShell 中文编码问题，确保提交消息正确显示。
+
+**使用方法：**
+```powershell
+.\scripts\git-commit-utf8.ps1 "feat: 添加新功能"
+```
+
+**功能：**
+- 使用 UTF-8 无 BOM 编码保存提交消息
+- 避免 PowerShell 编码问题
+- 自动清理临时文件
+
+---
+
 #### `git-push.ps1`
 **交互式 Git 推送脚本**
 
