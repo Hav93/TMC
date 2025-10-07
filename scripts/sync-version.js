@@ -8,9 +8,18 @@
 const fs = require('fs');
 const path = require('path');
 
+// 检测运行环境（本地开发 vs Docker 构建）
+const isDockerBuild = process.env.NODE_ENV === 'production' && !fs.existsSync(path.join(__dirname, '..', 'app'));
+
 // 读取 VERSION 文件
-const versionFile = path.join(__dirname, '..', 'VERSION');
-const packageFile = path.join(__dirname, '..', 'app', 'frontend', 'package.json');
+const versionFile = isDockerBuild 
+  ? '/VERSION'  // Docker 环境
+  : path.join(__dirname, '..', 'VERSION');  // 本地开发
+
+// 读取 package.json
+const packageFile = isDockerBuild
+  ? path.join(process.cwd(), 'package.json')  // Docker 环境：/build/package.json
+  : path.join(__dirname, '..', 'app', 'frontend', 'package.json');  // 本地开发
 
 try {
   // 读取版本号
