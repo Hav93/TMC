@@ -95,6 +95,47 @@ node scripts/sync-version.js
 
 ---
 
+### Docker 管理
+
+#### `docker-build-push.ps1`
+**Docker 镜像构建和推送脚本**
+
+自动从 VERSION 文件读取版本号，构建并推送带版本标签的 Docker 镜像。
+
+**使用方法：**
+```powershell
+# 构建并推送到 Docker Hub
+.\scripts\docker-build-push.ps1
+
+# 仅构建不推送
+.\scripts\docker-build-push.ps1 -NoPush
+
+# 强制重新构建（不使用缓存）
+.\scripts\docker-build-push.ps1 -NoCache
+
+# 自定义镜像仓库
+.\scripts\docker-build-push.ps1 -Registry "yourusername/tmc"
+```
+
+**功能：**
+- 自动读取 VERSION 文件
+- 同时创建 `latest` 和版本号标签（如 `1.1.0`）
+- 一键推送到 Docker Hub
+- 显示镜像信息和拉取命令
+
+**示例输出：**
+```
+Building Docker image...
+Tags: hav93/tmc:latest, hav93/tmc:1.1.0
+
+Pushing to Docker Hub...
+Available tags:
+  - hav93/tmc:latest
+  - hav93/tmc:1.1.0
+```
+
+---
+
 ## 🔄 版本更新工作流
 
 ### 标准流程
@@ -120,9 +161,14 @@ node scripts/sync-version.js
    git tag v1.2.0
    ```
 
-5. **推送**
+5. **推送代码**
    ```powershell
    git push && git push --tags
+   ```
+
+6. **构建并推送 Docker 镜像**
+   ```powershell
+   .\scripts\docker-build-push.ps1
    ```
 
 ### 版本号规范
