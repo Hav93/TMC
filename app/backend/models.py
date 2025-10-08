@@ -498,7 +498,7 @@ class MediaFile(Base):
     original_name = Column(String(255), comment='原始文件名')
     
     # 元数据（JSON存储）
-    metadata = Column(Text, comment='完整元数据JSON')
+    file_metadata = Column(Text, comment='完整元数据JSON')
     
     # 快捷字段（从metadata提取，方便查询）
     width = Column(Integer, comment='宽度（图片/视频）')

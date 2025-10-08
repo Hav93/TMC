@@ -748,7 +748,7 @@ class MediaMonitorService:
                     file_size_mb=task.file_size_mb,
                     extension=Path(task.file_name).suffix,
                     original_name=task.file_name,
-                    metadata=json.dumps(metadata_dict) if metadata_dict else None,
+                    file_metadata=json.dumps(metadata_dict) if metadata_dict else None,
                     width=metadata_dict.get('width'),
                     height=metadata_dict.get('height'),
                     duration_seconds=int(metadata_dict.get('duration_seconds', 0)) if metadata_dict.get('duration_seconds') else None,

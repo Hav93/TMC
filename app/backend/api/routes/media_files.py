@@ -602,7 +602,7 @@ def file_to_dict(file: MediaFile) -> dict:
         "file_size_mb": file.file_size_mb,
         "extension": file.extension,
         "original_name": file.original_name,
-        "metadata": json.loads(file.metadata) if file.metadata else {},
+        "metadata": json.loads(file.file_metadata) if file.file_metadata else {},
         "width": file.width,
         "height": file.height,
         "duration_seconds": file.duration_seconds,

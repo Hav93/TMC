@@ -160,7 +160,7 @@ def upgrade():
         sa.Column('original_name', sa.String(length=255), nullable=True, comment='原始文件名'),
         
         # 元数据
-        sa.Column('metadata', sa.Text(), nullable=True, comment='完整元数据JSON'),
+        sa.Column('file_metadata', sa.Text(), nullable=True, comment='完整元数据JSON'),
         
         # 快捷字段
         sa.Column('width', sa.Integer(), nullable=True, comment='宽度'),
