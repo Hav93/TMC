@@ -18,14 +18,27 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+  
+  // 【修复】延迟获取 navigate，避免在 Router 外部使用导致白屏
+  let navigate: ReturnType<typeof useNavigate> | null = null;
+  try {
+    navigate = useNavigate();
+  } catch (e) {
+    // 如果在 Router 外部，navigate 会是 null
+    console.warn('useNavigate called outside Router context');
+  }
 
   // 【优化】使用 useCallback 确保回调函数引用稳定
   const handleUnauthorized = useCallback(() => {
     console.log('🔐 检测到登录状态过期，清除用户状态并跳转到登录页');
     setUser(null);
     message.warning('登录已过期，请重新登录');
-    navigate('/login', { replace: true });
+    if (navigate) {
+      navigate('/login', { replace: true });
+    } else {
+      // 兜底：直接使用 window.location
+      window.location.href = '/login';
+    }
   }, [navigate]);
 
   // 初始化：从localStorage恢复token并获取用户信息
@@ -66,12 +79,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(null);
       message.success('已登出');
       // 【优化】登出后跳转到登录页
-      navigate('/login', { replace: true });
+      if (navigate) {
+        navigate('/login', { replace: true });
+      } else {
+        window.location.href = '/login';
+      }
     } catch (error) {
       console.error('登出失败:', error);
       // 即使API调用失败，也清除本地状态
       setUser(null);
-      navigate('/login', { replace: true });
+      if (navigate) {
+        navigate('/login', { replace: true });
+      } else {
+        window.location.href = '/login';
+      }
     }
   };
 
