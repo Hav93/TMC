@@ -146,34 +146,27 @@ class EnhancedTelegramBot:
             self.logger.info("💡 建议手动检查数据库或运行: python reset_database.py")
     
     async def _verify_and_fix_database(self):
-        """验证数据库完整性并自动修复问题"""
+        """验证数据库完整性（仅记录现有客户端）"""
         try:
             from sqlalchemy import select
             from database import get_db
             from models import TelegramClient
             
             async for db in get_db():
-                # 检查客户端记录是否完整
+                # 仅记录现有客户端，不做任何自动创建或修复
                 result = await db.execute(select(TelegramClient))
                 clients = result.scalars().all()
                 
-                expected_clients = {'main_user', 'main_bot'}
-                existing_clients = {client.client_id for client in clients}
-                missing_clients = expected_clients - existing_clients
-                
-                if missing_clients:
-                    self.logger.warning(f"⚠️ 发现缺失的客户端记录: {missing_clients}")
-                    self.logger.info("🔧 开始自动修复缺失的记录...")
-                    await self._auto_fix_database_records()
+                if clients:
+                    client_list = [f"{c.client_id} ({c.client_type})" for c in clients]
+                    self.logger.info(f"📊 数据库中存在 {len(clients)} 个客户端: {', '.join(client_list)}")
                 else:
-                    self.logger.info("✅ 数据库完整性验证通过")
+                    self.logger.info("📝 数据库中暂无客户端配置，请通过 Web 界面添加")
+                
                 break
                 
         except Exception as e:
-            self.logger.error(f"❌ 数据库完整性验证失败: {e}")
-            # 尝试自动修复
-            self.logger.info("🔧 尝试自动修复...")
-            await self._auto_fix_database_records()
+            self.logger.warning(f"⚠️ 数据库完整性验证失败: {e}")
     
     async def start(self, web_mode: bool = False, skip_config_validation: bool = False):
         """启动机器人"""
