@@ -206,7 +206,19 @@ const RuleForm: React.FC = () => {
         
         // 客户端选择
         client_id: values.client_id || 'main_user',
-        client_type: values.client_type === '用户' ? 'user' : values.client_type === '机器人' ? 'bot' : values.client_type || 'user'
+        client_type: values.client_type === '用户' ? 'user' : values.client_type === '机器人' ? 'bot' : values.client_type || 'user',
+        
+        // 【新功能】消息去重
+        enable_deduplication: values.enable_deduplication || false,
+        dedup_time_window: values.dedup_time_window || 3600,
+        dedup_check_content: values.dedup_check_content !== false,
+        dedup_check_media: values.dedup_check_media !== false,
+        
+        // 【新功能】发送者过滤
+        enable_sender_filter: values.enable_sender_filter || false,
+        sender_filter_mode: values.sender_filter_mode || 'whitelist',
+        sender_whitelist: values.sender_whitelist || null,
+        sender_blacklist: values.sender_blacklist || null
       };
 
       if (isEdit && ruleId) {
@@ -274,7 +286,14 @@ const RuleForm: React.FC = () => {
           forward_delay: 0,
           client_id: 'main_user',
           client_type: 'user',
-          time_filter_type: 'after_start'
+          time_filter_type: 'after_start',
+          // 新功能默认值
+          enable_deduplication: false,
+          dedup_time_window: 3600,
+          dedup_check_content: true,
+          dedup_check_media: true,
+          enable_sender_filter: false,
+          sender_filter_mode: 'whitelist'
         }}
       >
         <Row gutter={24}>
@@ -560,6 +579,136 @@ const RuleForm: React.FC = () => {
                   </Col>
                 )}
               </Row>
+            ) : null;
+          }}
+        </Form.Item>
+
+        <Divider orientation="left">消息去重</Divider>
+
+        <Row gutter={24}>
+          <Col span={6}>
+            <Form.Item 
+              label="启用消息去重" 
+              name="enable_deduplication" 
+              valuePropName="checked"
+              tooltip="防止重复消息被多次转发，有效减少刷屏"
+            >
+              <Switch />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => 
+          prevValues.enable_deduplication !== currentValues.enable_deduplication
+        }>
+          {({ getFieldValue }) => {
+            const enableDedup = getFieldValue('enable_deduplication');
+            return enableDedup ? (
+              <>
+                <Row gutter={24}>
+                  <Col span={8}>
+                    <Form.Item
+                      label="去重时间窗口 (秒)"
+                      name="dedup_time_window"
+                      tooltip="在此时间窗口内，相同的消息只转发一次。默认3600秒(1小时)"
+                    >
+                      <InputNumber 
+                        min={60} 
+                        max={86400} 
+                        style={{ width: '100%' }}
+                        placeholder="3600"
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item 
+                      label="检查消息内容" 
+                      name="dedup_check_content" 
+                      valuePropName="checked"
+                      tooltip="根据消息文本内容判断是否重复"
+                    >
+                      <Switch />
+                    </Form.Item>
+                  </Col>
+                  <Col span={8}>
+                    <Form.Item 
+                      label="检查媒体文件" 
+                      name="dedup_check_media" 
+                      valuePropName="checked"
+                      tooltip="根据媒体文件判断是否重复（图片、视频等）"
+                    >
+                      <Switch />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </>
+            ) : null;
+          }}
+        </Form.Item>
+
+        <Divider orientation="left">发送者过滤</Divider>
+
+        <Row gutter={24}>
+          <Col span={6}>
+            <Form.Item 
+              label="启用发送者过滤" 
+              name="enable_sender_filter" 
+              valuePropName="checked"
+              tooltip="只转发特定发送者的消息，或阻止特定发送者"
+            >
+              <Switch />
+            </Form.Item>
+          </Col>
+        </Row>
+
+        <Form.Item noStyle shouldUpdate={(prevValues, currentValues) => 
+          prevValues.enable_sender_filter !== currentValues.enable_sender_filter
+        }>
+          {({ getFieldValue }) => {
+            const enableFilter = getFieldValue('enable_sender_filter');
+            return enableFilter ? (
+              <>
+                <Row gutter={24}>
+                  <Col span={8}>
+                    <Form.Item
+                      label="过滤模式"
+                      name="sender_filter_mode"
+                      tooltip="白名单：只转发名单中的发送者；黑名单：阻止名单中的发送者"
+                    >
+                      <Select placeholder="选择过滤模式">
+                        <Option value="whitelist">白名单模式</Option>
+                        <Option value="blacklist">黑名单模式</Option>
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                </Row>
+                <Row gutter={24}>
+                  <Col span={12}>
+                    <Form.Item
+                      label="白名单"
+                      name="sender_whitelist"
+                      tooltip='JSON格式：[{"id":"123","username":"user1"}]。只有名单中的发送者消息会被转发'
+                    >
+                      <Input.TextArea
+                        rows={3}
+                        placeholder='[{"id":"123456","username":"user1"}]'
+                      />
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item
+                      label="黑名单"
+                      name="sender_blacklist"
+                      tooltip='JSON格式：[{"id":"456","username":"user2"}]。名单中的发送者消息会被阻止'
+                    >
+                      <Input.TextArea
+                        rows={3}
+                        placeholder='[{"id":"789012","username":"spam_user"}]'
+                      />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              </>
             ) : null;
           }}
         </Form.Item>
