@@ -4,6 +4,11 @@ Utils package for TMC backend
 # 导入日志解析器
 from .log_parser import LogParser, LogAggregator, parse_log_line, parse_log_lines
 
+# 导入媒体相关工具
+from .media_metadata import MediaMetadataExtractor
+from .media_filters import MediaFilter
+from .message_deduplicator import MessageDeduplicator
+
 # 从根目录的 utils.py 导入其他工具函数
 import sys
 import os
@@ -25,5 +30,9 @@ if os.path.exists(utils_py_path):
     get_datetime_str = getattr(_utils_module, 'get_datetime_str', None)
     clean_old_files = getattr(_utils_module, 'clean_old_files', None)
 
-__all__ = ['LogParser', 'LogAggregator', 'parse_log_line', 'parse_log_lines', 'setup_logging']
+__all__ = [
+    'LogParser', 'LogAggregator', 'parse_log_line', 'parse_log_lines', 
+    'setup_logging',
+    'MediaMetadataExtractor', 'MediaFilter', 'MessageDeduplicator'
+]
 
