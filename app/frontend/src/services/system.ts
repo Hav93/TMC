@@ -63,7 +63,7 @@ export const chatsApi = {
 
   // 刷新聊天列表
   refresh: async (): Promise<{ chats: Chat[] }> => {
-    return api.post<{ chats: Chat[] }>('/api/refresh-chats');
+    return api.post<{ chats: Chat[] }>('/api/chats/refresh');
   },
 
   // 刷新监听器

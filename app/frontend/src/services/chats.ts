@@ -20,7 +20,7 @@ export const chatsApi = {
 
   // 刷新聊天列表
   refreshChats: async (): Promise<RefreshChatsResponse> => {
-    const response = await api.post<RefreshChatsResponse>('/api/refresh-chats');
+    const response = await api.post<RefreshChatsResponse>('/api/chats/refresh');
     return response;
   },
 
