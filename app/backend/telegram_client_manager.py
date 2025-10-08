@@ -743,8 +743,50 @@ class TelegramClientManager:
             if not self._check_time_filter(rule, message):
                 return
             
+            # 【新功能】发送者过滤检查
+            if getattr(rule, 'enable_sender_filter', False):
+                from utils.message_deduplicator import SenderFilter
+                sender_info = SenderFilter.get_sender_info(message)
+                is_allowed = SenderFilter.is_sender_allowed(
+                    sender_info['id'],
+                    sender_info['username'],
+                    getattr(rule, 'sender_filter_mode', 'whitelist'),
+                    getattr(rule, 'sender_whitelist', None),
+                    getattr(rule, 'sender_blacklist', None)
+                )
+                if not is_allowed:
+                    self.logger.info(f"⏭️ 发送者 {sender_info['username'] or sender_info['id']} 被过滤器阻止")
+                    return
+            
             # 获取消息文本（对于媒体消息使用caption）
             message_text = message.text or message.message or ""
+            
+            # 【新功能】消息去重检查
+            if getattr(rule, 'enable_deduplication', False):
+                from utils.message_deduplicator import MessageDeduplicator
+                
+                # 计算消息指纹
+                content_hash = MessageDeduplicator.calculate_content_hash(message_text)
+                media_hash = None
+                if message.media and hasattr(message.media, 'id'):
+                    media_type = type(message.media).__name__
+                    media_hash = MessageDeduplicator.calculate_media_hash(
+                        str(message.media.id), media_type
+                    )
+                
+                # 检查是否重复
+                is_duplicate = await MessageDeduplicator.is_duplicate(
+                    rule.id,
+                    content_hash,
+                    media_hash,
+                    getattr(rule, 'dedup_time_window', 3600),
+                    getattr(rule, 'dedup_check_content', True),
+                    getattr(rule, 'dedup_check_media', True)
+                )
+                
+                if is_duplicate:
+                    self.logger.info(f"⏭️ 消息重复，跳过转发（规则: {rule.name}）")
+                    return
             
             # 关键词过滤
             if rule.enable_keyword_filter and rule.keywords:
@@ -767,7 +809,7 @@ class TelegramClientManager:
             # 执行转发
             await self._forward_message(rule, message, text_to_forward)
             
-            # 记录日志（使用重试机制）
+            # 记录日志（使用重试机制，包含新的指纹字段）
             await self._log_message_with_retry(rule.id, message, "success", None, rule.name, rule.target_chat_id)
             
         except Exception as e:
@@ -1009,6 +1051,20 @@ class TelegramClientManager:
                     except Exception as e:
                         self.logger.warning(f"获取规则信息失败: {e}")
                 
+                # 【新功能】计算消息指纹
+                from utils.message_deduplicator import MessageDeduplicator, SenderFilter
+                message_text = message.text or message.message or ""
+                content_hash = MessageDeduplicator.calculate_content_hash(message_text)
+                media_hash = None
+                if message.media and hasattr(message.media, 'id'):
+                    media_type = type(message.media).__name__
+                    media_hash = MessageDeduplicator.calculate_media_hash(
+                        str(message.media.id), media_type
+                    )
+                
+                # 提取发送者信息
+                sender_info = SenderFilter.get_sender_info(message)
+                
                 log_entry = MessageLog(
                     rule_id=rule_id,
                     rule_name=rule_name,
@@ -1017,7 +1073,11 @@ class TelegramClientManager:
                     source_message_id=message.id,
                     target_chat_id=target_chat_id or "",
                     target_chat_name=target_chat_name,
-                    original_text=message.text[:500] if message.text else "",
+                    original_text=message_text[:500] if message_text else "",
+                    content_hash=content_hash,
+                    media_hash=media_hash,
+                    sender_id=sender_info['id'],
+                    sender_username=sender_info['username'],
                     status=status,
                     error_message=error_message
                 )

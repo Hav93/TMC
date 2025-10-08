@@ -77,6 +77,18 @@ class ForwardRule(Base):
     start_time = Column(DateTime, comment='开始时间(用于time_range和from_time类型)')
     end_time = Column(DateTime, comment='结束时间(用于time_range类型)')
     
+    # 【新功能】消息去重设置
+    enable_deduplication = Column(Boolean, default=False, comment='是否启用消息去重')
+    dedup_time_window = Column(Integer, default=3600, comment='去重时间窗口(秒)，默认1小时')
+    dedup_check_content = Column(Boolean, default=True, comment='去重时检查消息内容')
+    dedup_check_media = Column(Boolean, default=True, comment='去重时检查媒体文件')
+    
+    # 【新功能】发送者过滤设置
+    enable_sender_filter = Column(Boolean, default=False, comment='是否启用发送者过滤')
+    sender_filter_mode = Column(String(20), default='whitelist', comment='发送者过滤模式: whitelist(白名单), blacklist(黑名单)')
+    sender_whitelist = Column(Text, comment='发送者白名单，JSON数组格式：[{"id":"123","username":"user1"},...]')
+    sender_blacklist = Column(Text, comment='发送者黑名单，JSON数组格式：[{"id":"456","username":"user2"},...]')
+    
     # 时间戳
     created_at = Column(DateTime, default=get_local_now, comment='创建时间')
     updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
@@ -150,6 +162,12 @@ class MessageLog(Base):
     original_text = Column(Text, comment='原始消息文本')
     processed_text = Column(Text, comment='处理后消息文本')
     media_type = Column(String(50), comment='媒体类型')
+    
+    # 【新功能】消息指纹（用于去重）
+    content_hash = Column(String(64), index=True, comment='消息内容哈希值（用于去重）')
+    media_hash = Column(String(64), comment='媒体文件哈希值（如果有）')
+    sender_id = Column(String(50), comment='发送者ID')
+    sender_username = Column(String(100), comment='发送者用户名')
     
     # 状态信息
     status = Column(String(20), default='success', comment='转发状态')
