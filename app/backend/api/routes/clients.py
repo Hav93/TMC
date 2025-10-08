@@ -296,7 +296,7 @@ async def stop_client(client_id: str):
 
 @router.delete("/{client_id}")
 async def remove_client(client_id: str):
-    """删除客户端"""
+    """删除客户端（包括 session 文件）"""
     try:
         enhanced_bot = get_enhanced_bot()
         if not enhanced_bot:
@@ -305,10 +305,33 @@ async def remove_client(client_id: str):
                 "message": "增强版客户端管理器不可用"
             }, status_code=400)
         
-        # 先从内存中移除客户端
-        success = enhanced_bot.multi_client_manager.remove_client(client_id)
+        # 获取客户端类型（用于删除 session 文件）
+        client_type = None
+        try:
+            from models import TelegramClient
+            from database import get_db
+            from sqlalchemy import select
+            
+            async for db in get_db():
+                result = await db.execute(
+                    select(TelegramClient).where(TelegramClient.client_id == client_id)
+                )
+                db_client = result.scalar_one_or_none()
+                
+                if db_client:
+                    client_type = db_client.client_type
+                break
+        except Exception as e:
+            logger.warning(f"查询客户端类型失败: {e}")
         
-        # 无论内存中是否存在，都尝试从数据库删除
+        # 从内存中移除客户端（会自动删除 session 文件）
+        memory_removed = enhanced_bot.multi_client_manager.remove_client(client_id)
+        
+        # 如果客户端不在内存中，手动删除 session 文件
+        if not memory_removed and client_type:
+            enhanced_bot.multi_client_manager._delete_session_file(client_id, client_type)
+        
+        # 从数据库删除
         db_deleted = False
         try:
             from models import TelegramClient
@@ -330,10 +353,10 @@ async def remove_client(client_id: str):
         except Exception as db_error:
             logger.warning(f"从数据库删除客户端失败（可能不存在）: {db_error}")
         
-        if success or db_deleted:
+        if memory_removed or db_deleted:
             return JSONResponse(content={
                 "success": True,
-                "message": f"客户端 {client_id} 删除成功"
+                "message": f"客户端 {client_id} 删除成功（包括 session 文件）"
             })
         else:
             return JSONResponse(content={

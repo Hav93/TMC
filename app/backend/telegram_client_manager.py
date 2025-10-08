@@ -1679,16 +1679,55 @@ class MultiClientManager:
         return client
     
     def remove_client(self, client_id: str) -> bool:
-        """移除客户端"""
+        """移除客户端（包括删除 session 文件）"""
         if client_id not in self.clients:
+            # 即使客户端不在内存中，也尝试删除 session 文件
+            self._delete_session_file(client_id)
             return False
         
         client = self.clients[client_id]
         client.stop()
+        
+        # 删除 session 文件
+        self._delete_session_file(client_id, client.client_type)
+        
         del self.clients[client_id]
         
-        self.logger.info(f"✅ 移除客户端: {client_id}")
+        self.logger.info(f"✅ 移除客户端: {client_id}（包括 session 文件）")
         return True
+    
+    def _delete_session_file(self, client_id: str, client_type: str = None) -> bool:
+        """删除客户端的 session 文件"""
+        try:
+            import os
+            from pathlib import Path
+            from config import Config
+            
+            sessions_dir = Path(Config.SESSIONS_DIR)
+            
+            # 尝试删除可能的 session 文件
+            if client_type:
+                # 已知类型，直接删除
+                session_file = sessions_dir / f"{client_type}_{client_id}.session"
+                if session_file.exists():
+                    session_file.unlink()
+                    self.logger.info(f"🗑️ 删除 session 文件: {session_file}")
+                    return True
+            else:
+                # 未知类型，尝试两种可能
+                for ctype in ['user', 'bot']:
+                    session_file = sessions_dir / f"{ctype}_{client_id}.session"
+                    if session_file.exists():
+                        session_file.unlink()
+                        self.logger.info(f"🗑️ 删除 session 文件: {session_file}")
+                        return True
+            
+            self.logger.debug(f"💡 未找到客户端 {client_id} 的 session 文件")
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"❌ 删除 session 文件失败: {e}")
+            return False
     
     def get_client(self, client_id: str) -> Optional[TelegramClientManager]:
         """获取客户端"""
