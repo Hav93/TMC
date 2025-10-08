@@ -188,10 +188,26 @@ const ClientManagement: React.FC = () => {
     setLoginModalVisible(true);
   };
 
-  const handleLoginSuccess = () => {
+  const handleLoginSuccess = async () => {
     setLoginModalVisible(false);
     queryClient.invalidateQueries({ queryKey: ['clients'] });
-    message.success('用户客户端登录成功！');
+    message.success('登录成功！正在启动客户端...');
+    
+    // 【优化】登录成功后自动启动客户端
+    try {
+      const response = await clientsApi.startClient(selectedClientId);
+      if (response.success) {
+        message.success('客户端已启动');
+      } else {
+        message.warning(`客户端启动失败: ${response.message}`);
+      }
+    } catch (error) {
+      console.error('自动启动客户端失败:', error);
+      message.error('自动启动失败，请手动启动');
+    }
+    
+    // 刷新客户端列表
+    queryClient.invalidateQueries({ queryKey: ['clients'] });
   };
 
   const getStatusTag = (client: ClientInfo) => {

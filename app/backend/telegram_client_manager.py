@@ -1261,17 +1261,27 @@ class TelegramClientManager:
                 # 登录成功
                 self.user_info = result
                 self.login_state = "completed"
-                self.connected = True
+                # 注意：不设置 self.connected = True，登录流程和启动流程分离
                 
                 self.logger.info(f"✅ 用户客户端登录成功: {getattr(result, 'username', '') or getattr(result, 'first_name', 'Unknown')}")
                 
                 # 保存客户端配置到数据库
                 await self._save_client_config()
                 
+                # 【关键修复】登录完成后断开连接，释放 session 文件锁
+                # 这样用户点击启动时不会遇到 "database is locked" 错误
+                try:
+                    if self.client and self.client.is_connected():
+                        await self.client.disconnect()
+                        self.logger.info("🔌 登录完成，已断开临时连接（session 已保存）")
+                except Exception as disc_error:
+                    self.logger.warning(f"断开登录连接失败: {disc_error}")
+                
                 return {
                     "success": True,
-                    "message": "登录成功",
+                    "message": "登录成功，可以启动客户端了",
                     "step": "completed",
+                    "auto_start_ready": True,  # 提示前端可以自动启动
                     "user_info": {
                         "id": result.id,
                         "username": getattr(result, 'username', ''),
@@ -1337,17 +1347,26 @@ class TelegramClientManager:
             # 登录成功
             self.user_info = result
             self.login_state = "completed"
-            self.connected = True
+            # 注意：不设置 self.connected = True，登录流程和启动流程分离
             
             self.logger.info(f"✅ 用户客户端二步验证成功: {getattr(result, 'username', '') or getattr(result, 'first_name', 'Unknown')}")
             
             # 保存客户端配置到数据库
             await self._save_client_config()
             
+            # 【关键修复】登录完成后断开连接，释放 session 文件锁
+            try:
+                if self.client and self.client.is_connected():
+                    await self.client.disconnect()
+                    self.logger.info("🔌 登录完成，已断开临时连接（session 已保存）")
+            except Exception as disc_error:
+                self.logger.warning(f"断开登录连接失败: {disc_error}")
+            
             return {
                 "success": True,
-                "message": "登录成功",
+                "message": "登录成功，可以启动客户端了",
                 "step": "completed",
+                "auto_start_ready": True,  # 提示前端可以自动启动
                 "user_info": {
                     "id": result.id,
                     "username": getattr(result, 'username', ''),
