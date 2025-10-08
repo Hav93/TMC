@@ -121,6 +121,16 @@ async def add_client(request: Request):
                     "success": False,
                     "message": "机器人客户端必须提供管理员用户ID"
                 }, status_code=400)
+            
+            # Bot 客户端的 API_ID 和 API_HASH 是可选的（可以使用全局配置）
+            # 但如果提供了，必须同时提供
+            api_id = data.get('api_id')
+            api_hash = data.get('api_hash')
+            if (api_id and not api_hash) or (api_hash and not api_id):
+                return JSONResponse(content={
+                    "success": False,
+                    "message": "API ID 和 API Hash 必须同时提供或同时留空"
+                }, status_code=400)
         
         # 验证用户客户端必需字段
         elif client_type == 'user':
@@ -180,8 +190,8 @@ async def add_client(request: Request):
                         db_client = TelegramClient(
                             client_id=client_id,
                             client_type=client_type,
-                            api_id=data.get('api_id') if client_type == 'user' else None,
-                            api_hash=data.get('api_hash') if client_type == 'user' else None,
+                            api_id=data.get('api_id'),  # 用户和Bot客户端都可以有api_id
+                            api_hash=data.get('api_hash'),  # 用户和Bot客户端都可以有api_hash
                             phone=data.get('phone') if client_type == 'user' else None,
                             bot_token=data.get('bot_token') if client_type == 'bot' else None,
                             admin_user_id=data.get('admin_user_id') if client_type == 'bot' else None,

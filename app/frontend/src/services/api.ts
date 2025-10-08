@@ -1,6 +1,19 @@
 import axios, { type AxiosInstance, type AxiosResponse } from 'axios';
 // import type { ApiResponse, PaginatedResponse } from '../types/api';
 
+// 用于存储登出回调函数
+let onUnauthorizedCallback: (() => void) | null = null;
+
+// 【优化】用于防止重复触发 401 处理
+let isHandling401 = false;
+
+/**
+ * 设置401未授权回调（由 AuthContext 调用）
+ */
+export const setUnauthorizedCallback = (callback: () => void) => {
+  onUnauthorizedCallback = callback;
+};
+
 // 创建axios实例 - 简化版（参考v3.1）
 const createApiClient = (): AxiosInstance => {
   // 在生产环境中，API和前端在同一个容器内，使用相对路径
@@ -42,7 +55,7 @@ const createApiClient = (): AxiosInstance => {
     }
   );
 
-  // 响应拦截器 - 简化版
+  // 响应拦截器 - 增强版，支持自动登出
   client.interceptors.response.use(
     (response: AxiosResponse) => {
       console.log(`[API] Response ${response.status}:`, response.data);
@@ -53,8 +66,29 @@ const createApiClient = (): AxiosInstance => {
       
       // 处理特定HTTP状态码
       if (error.response?.status === 401) {
-        // 未授权，可能需要重新登录
-        console.warn('未授权访问，建议检查登录状态');
+        // 【优化】防止重复处理（多个请求同时返回401时）
+        if (!isHandling401) {
+          isHandling401 = true;
+          
+          console.warn('⚠️ 登录状态已过期，即将跳转到登录页');
+          
+          // 清除本地token
+          localStorage.removeItem('access_token');
+          delete client.defaults.headers.common['Authorization'];
+          
+          // 调用登出回调（触发 AuthContext 清除状态并跳转）
+          if (onUnauthorizedCallback) {
+            onUnauthorizedCallback();
+          } else {
+            // 如果回调未设置，直接跳转到登录页（兜底）
+            window.location.href = '/login';
+          }
+          
+          // 【优化】延迟重置标志，避免短时间内的重复请求重复处理
+          setTimeout(() => {
+            isHandling401 = false;
+          }, 1000);
+        }
       } else if (error.response?.status === 403) {
         // 禁止访问
         console.error('访问被禁止');

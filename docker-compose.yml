@@ -2,9 +2,6 @@ version: '3.8'
 
 services:
   tmc:
-    build:
-      context: .
-      dockerfile: Dockerfile
     image: hav93/tmc:latest
     container_name: tmc
     restart: always
@@ -14,12 +11,14 @@ services:
       # 时区配置
       - TZ=${TZ:-Asia/Shanghai}
       
-      # Telegram API配置（必填，从 https://my.telegram.org 获取）
-      - API_ID=${API_ID}
-      - API_HASH=${API_HASH}
-      - BOT_TOKEN=${BOT_TOKEN}
-      - PHONE_NUMBER=${PHONE_NUMBER}
-      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+      # Telegram API配置（可选，优先使用网页端添加的客户端配置）
+      # 如果通过网页端添加客户端时已提供 API_ID/API_HASH，这里可以留空
+      # 全局配置作为 fallback，当客户端配置中没有指定时使用
+      - API_ID=${API_ID:-}
+      - API_HASH=${API_HASH:-}
+      - BOT_TOKEN=${BOT_TOKEN:-}
+      - PHONE_NUMBER=${PHONE_NUMBER:-}
+      - ADMIN_USER_IDS=${ADMIN_USER_IDS:-}
       
       # 代理配置（可选，外网环境通常不需要）
       - ENABLE_PROXY=${ENABLE_PROXY:-false}

@@ -47,19 +47,27 @@ git clone <repository-url>
 cd TMC
 ```
 
-2. **配置环境变量**
-```bash
-cp env.example .env
-# 编辑 .env 文件，填入以下必要配置：
-# - API_ID, API_HASH, BOT_TOKEN
-# - PHONE_NUMBER
-# - ADMIN_USER_IDS
-# - JWT_SECRET_KEY
-```
+2. **配置环境变量（可选）**
+
+**方式 A：通过网页端配置（推荐）** ⭐
+   - 无需配置环境变量，直接启动服务
+   - 在网页端"客户端管理"页面添加客户端时提供 API_ID、API_HASH 等信息
+   - 适合多客户端场景，每个客户端可以使用不同的 API 凭证
+
+**方式 B：通过环境变量配置（全局配置）**
+   ```bash
+   # 编辑 docker-compose.yml 或创建 .env 文件
+   # 设置以下全局配置（作为 fallback）：
+   # - API_ID, API_HASH（可选）
+   # - BOT_TOKEN（可选）
+   # - PHONE_NUMBER（可选）
+   # - ADMIN_USER_IDS（可选）
+   # - JWT_SECRET（可选 - Web 管理界面登录密钥，不设置会自动生成）
+   ```
 
 3. **启动服务**
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
 4. **访问系统**
@@ -75,9 +83,12 @@ docker compose up -d --build
 
 在 **客户端管理** 页面：
 1. 点击"添加客户端"
-2. 输入客户端名称和手机号
-3. 输入收到的验证码
-4. 启动客户端
+2. 选择客户端类型（用户客户端 / 机器人客户端）
+3. 填写客户端配置：
+   - **用户客户端**：API ID、API Hash、手机号
+   - **机器人客户端**：Bot Token、管理员用户ID
+4. 提交后进行登录验证（用户客户端需要验证码）
+5. 启动客户端
 
 ### 2. 配置转发规则
 

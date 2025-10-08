@@ -26,6 +26,10 @@ export const ClientLoginModal: React.FC<ClientLoginModalProps> = ({
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [loginStep, setLoginStep] = useState<'send_code' | 'submit_code' | 'submit_password' | 'completed'>('send_code');
+  
+  // 【优化】验证码倒计时
+  const [countdown, setCountdown] = useState(0);
+  const [canResend, setCanResend] = useState(true);
 
   // 当模态框打开时重置状态
   useEffect(() => {
@@ -34,8 +38,22 @@ export const ClientLoginModal: React.FC<ClientLoginModalProps> = ({
       setCurrentStep(0);
       setLoginStep('send_code');
       form.resetFields();
+      setCountdown(0);
+      setCanResend(true);
     }
   }, [visible, form]);
+  
+  // 【优化】倒计时逻辑
+  useEffect(() => {
+    if (countdown > 0) {
+      const timer = setTimeout(() => {
+        setCountdown(countdown - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else if (countdown === 0 && !canResend) {
+      setCanResend(true);
+    }
+  }, [countdown, canResend]);
 
   const loginMutation = useMutation({
     mutationFn: (data: any) => {
@@ -54,6 +72,11 @@ export const ClientLoginModal: React.FC<ClientLoginModalProps> = ({
           setCurrentStep(1);
           setLoginStep('submit_code');
           message.success(data.message || '验证码已发送');
+          
+          // 【优化】启动倒计时
+          const cooldownSeconds = data.cooldown_seconds || 60;
+          setCountdown(cooldownSeconds);
+          setCanResend(false);
         } else if (data.step === 'waiting_password') {
           console.log('🔐 设置为密码输入步骤');
           setCurrentStep(2);
@@ -72,6 +95,12 @@ export const ClientLoginModal: React.FC<ClientLoginModalProps> = ({
       } else {
         console.error('❌ 登录失败:', data.message);
         message.error(data.message || '登录失败');
+        
+        // 【优化】处理频率限制错误，启动倒计时
+        if (data.error_type === 'rate_limit' && data.remaining_seconds) {
+          setCountdown(data.remaining_seconds);
+          setCanResend(false);
+        }
       }
     },
     onError: (error: any) => {
@@ -171,7 +200,16 @@ export const ClientLoginModal: React.FC<ClientLoginModalProps> = ({
           >
             <Alert
               message="验证码已发送"
-              description="请查看手机短信，输入收到的6位验证码"
+              description={
+                <Space direction="vertical" size="small">
+                  <span>请查看手机短信，输入收到的6位验证码</span>
+                  {countdown > 0 && (
+                    <span style={{ color: colors.warning }}>
+                      {countdown} 秒后可重新发送
+                    </span>
+                  )}
+                </Space>
+              }
               type="success"
               showIcon
               style={{ marginBottom: 20 }}
@@ -198,9 +236,16 @@ export const ClientLoginModal: React.FC<ClientLoginModalProps> = ({
                   取消
                 </Button>
                 <Button 
+                  onClick={handleSendCode}
+                  disabled={!canResend || loginMutation.isPending}
+                  loading={loginMutation.isPending && loginStep === 'send_code'}
+                >
+                  {countdown > 0 ? `重新发送 (${countdown}s)` : '重新发送'}
+                </Button>
+                <Button 
                   type="primary" 
                   htmlType="submit"
-                  loading={loginMutation.isPending}
+                  loading={loginMutation.isPending && loginStep === 'submit_code'}
                 >
                   验证登录
                 </Button>

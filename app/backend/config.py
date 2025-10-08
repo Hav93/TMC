@@ -251,22 +251,27 @@ class Config:
         }
 
 def validate_config():
-    """验证配置的完整性"""
+    """
+    验证配置的完整性
+    
+    注意：API_ID、API_HASH、BOT_TOKEN、PHONE_NUMBER 现在是可选的全局配置
+    这些配置可以在网页端为每个客户端单独设置，全局配置仅作为 fallback
+    """
     errors = []
     warnings = []
     
-    # 必需配置检查
+    # 全局配置警告（不再是必需的）
     if not Config.API_ID or Config.API_ID == 0:
-        errors.append("❌ API_ID 未设置或无效")
+        warnings.append("⚠️  全局 API_ID 未设置，将使用客户端配置（网页端添加时设置）")
     
     if not Config.API_HASH:
-        errors.append("❌ API_HASH 未设置")
+        warnings.append("⚠️  全局 API_HASH 未设置，将使用客户端配置（网页端添加时设置）")
     
     if not Config.BOT_TOKEN:
-        errors.append("❌ BOT_TOKEN 未设置")
+        warnings.append("⚠️  全局 BOT_TOKEN 未设置，将使用客户端配置（网页端添加时设置）")
     
     if not Config.PHONE_NUMBER:
-        errors.append("❌ PHONE_NUMBER 未设置")
+        warnings.append("⚠️  全局 PHONE_NUMBER 未设置，将使用客户端配置（网页端添加时设置）")
     
     # 可选配置警告
     if not Config.ADMIN_USER_IDS:
@@ -280,7 +285,7 @@ def validate_config():
     
     # 输出结果
     if warnings:
-        print("配置警告:")
+        print("\n配置警告:")
         for warning in warnings:
             print(f"  {warning}")
         print()
@@ -289,7 +294,7 @@ def validate_config():
         error_msg = "配置错误:\n" + "\n".join(f"  {error}" for error in errors)
         raise ValueError(error_msg)
     
-    print("✅ 配置验证通过")
+    print("✅ 配置验证通过（全局配置为可选，可通过网页端设置客户端配置）")
     return True
 
 def print_config_info():

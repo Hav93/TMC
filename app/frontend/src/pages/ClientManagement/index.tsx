@@ -525,6 +525,22 @@ const ClientManagement: React.FC = () => {
                     >
                       <Input placeholder="例如: 123456789" />
                     </Form.Item>
+
+                    <Form.Item
+                      name="api_id"
+                      label="API ID（可选）"
+                      tooltip="如果不填，将使用全局配置。推荐为不同Bot使用不同的API凭证"
+                    >
+                      <Input placeholder="例如: 1234567（留空使用全局配置）" />
+                    </Form.Item>
+                    
+                    <Form.Item
+                      name="api_hash"
+                      label="API Hash（可选）"
+                      tooltip="如果不填，将使用全局配置。需要与API ID配套使用"
+                    >
+                      <Input.Password placeholder="例如: a1b2c3d4...（留空使用全局配置）" />
+                    </Form.Item>
                   </>
                 );
               }

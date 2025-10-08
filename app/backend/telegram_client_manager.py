@@ -23,6 +23,114 @@ from log_manager import get_logger
 
 logger = logging.getLogger(__name__)
 
+
+class LoginErrorHandler:
+    """统一处理 Telegram 登录错误"""
+    
+    @staticmethod
+    def handle_error(error: Exception) -> Dict[str, Any]:
+        """
+        统一处理 Telegram 错误，返回友好的错误信息
+        
+        Args:
+            error: Telegram 异常
+            
+        Returns:
+            包含 success, message, error_type 的字典
+        """
+        try:
+            from telethon.errors import (
+                SessionPasswordNeededError,
+                PhoneCodeInvalidError,
+                PhoneCodeExpiredError,
+                FloodWaitError,
+                PhoneNumberInvalidError,
+                PhoneNumberBannedError,
+                PhoneNumberUnoccupiedError
+            )
+            
+            if isinstance(error, SessionPasswordNeededError):
+                return {
+                    "success": True,  # 需要密码不算失败
+                    "message": "需要输入二步验证密码",
+                    "step": "waiting_password",
+                    "error_type": "need_password"
+                }
+            elif isinstance(error, PhoneCodeInvalidError):
+                return {
+                    "success": False,
+                    "message": "验证码错误，请检查后重新输入",
+                    "error_type": "invalid_code"
+                }
+            elif isinstance(error, PhoneCodeExpiredError):
+                return {
+                    "success": False,
+                    "message": "验证码已过期，请重新发送",
+                    "error_type": "code_expired",
+                    "should_resend": True
+                }
+            elif isinstance(error, FloodWaitError):
+                wait_seconds = getattr(error, 'seconds', 60)
+                wait_minutes = wait_seconds // 60
+                if wait_minutes > 0:
+                    time_text = f"{wait_minutes} 分钟"
+                else:
+                    time_text = f"{wait_seconds} 秒"
+                return {
+                    "success": False,
+                    "message": f"操作过于频繁，请等待 {time_text} 后重试",
+                    "error_type": "flood_wait",
+                    "wait_seconds": wait_seconds
+                }
+            elif isinstance(error, PhoneNumberInvalidError):
+                return {
+                    "success": False,
+                    "message": "手机号码格式错误，请使用国际格式（如：+8613800138000）",
+                    "error_type": "invalid_phone"
+                }
+            elif isinstance(error, PhoneNumberBannedError):
+                return {
+                    "success": False,
+                    "message": "该手机号码已被 Telegram 封禁，无法使用",
+                    "error_type": "phone_banned"
+                }
+            elif isinstance(error, PhoneNumberUnoccupiedError):
+                return {
+                    "success": False,
+                    "message": "该手机号码未注册 Telegram，请先注册",
+                    "error_type": "phone_unregistered"
+                }
+            else:
+                # 未知错误，返回原始错误信息
+                error_msg = str(error)
+                # 尝试从错误信息中提取有用信息
+                if "timeout" in error_msg.lower():
+                    return {
+                        "success": False,
+                        "message": "连接超时，请检查网络或代理设置",
+                        "error_type": "timeout"
+                    }
+                elif "connection" in error_msg.lower():
+                    return {
+                        "success": False,
+                        "message": "网络连接失败，请检查网络或代理设置",
+                        "error_type": "connection_error"
+                    }
+                else:
+                    return {
+                        "success": False,
+                        "message": f"登录失败: {error_msg}",
+                        "error_type": "unknown"
+                    }
+        except Exception as e:
+            # 处理错误的过程中出错，返回最基本的错误信息
+            return {
+                "success": False,
+                "message": f"发生未知错误: {str(error)}",
+                "error_type": "unknown"
+            }
+
+
 def get_configured_timezone():
     """获取配置的时区对象"""
     try:
@@ -106,6 +214,9 @@ class TelegramClientManager:
         self.api_hash: Optional[str] = None
         self.phone: Optional[str] = None
         
+        # 注意：bot 客户端也可以有独立的 api_id 和 api_hash
+        # 如果 bot 客户端没有配置，则使用全局配置
+        
         # 消息处理
         self.keyword_filter = KeywordFilter()
         self.regex_replacer = RegexReplacer()
@@ -117,6 +228,8 @@ class TelegramClientManager:
         # 登录流程状态
         self.login_session = None
         self.login_state = "idle"  # idle, waiting_code, waiting_password, completed
+        self.last_code_sent_time = None  # 上次发送验证码的时间
+        self.code_cooldown_seconds = 60   # 验证码发送冷却时间（秒）
         
         # 日志队列 - 用于备份失败的日志记录（在运行时初始化）
         self.failed_log_queue = None
@@ -128,6 +241,109 @@ class TelegramClientManager:
     def add_status_callback(self, callback: Callable):
         """添加状态变化回调"""
         self.status_callbacks.append(callback)
+    
+    async def _reset_login_state(self):
+        """
+        重置登录状态
+        
+        在登录失败或取消登录时调用，确保状态完全清理
+        """
+        self.login_state = "idle"
+        self.login_session = None
+        
+        # 断开登录客户端连接（但不删除 client 对象，可能被其他地方使用）
+        if self.client and self.client.is_connected() and not self.connected:
+            # 只有在未完成登录的情况下才断开
+            try:
+                await self.client.disconnect()
+                self.logger.info("🔌 登录客户端已断开连接")
+            except Exception as e:
+                self.logger.warning(f"断开登录客户端失败: {e}")
+    
+    async def _validate_session_api_match(self, session_file: str):
+        """
+        验证 session 文件是否与当前 API 凭证匹配
+        
+        Telegram 的 session 文件与 API_ID 绑定，如果 API_ID 变化，
+        使用旧 session 会导致 "user 不存在" 错误。
+        
+        解决方案：检测 API 凭证变化时自动删除旧 session
+        """
+        try:
+            import os
+            import sqlite3
+            
+            # 获取当前应该使用的 API_ID
+            current_api_id = int(self.api_id) if self.api_id else None
+            if not current_api_id:
+                current_api_id = Config.API_ID
+            
+            if not current_api_id:
+                return  # 没有 API_ID，跳过验证
+            
+            # 读取 session 文件中的 API_ID
+            # Telethon 的 session 是 SQLite 数据库格式
+            try:
+                conn = sqlite3.connect(session_file)
+                cursor = conn.cursor()
+                cursor.execute("SELECT value FROM sessions WHERE key = 'dc_id'")
+                # 注意：session 中没有直接存储 api_id，但我们可以通过创建时的 api_id 来判断
+                # 更安全的做法是：如果用户更改了 api_id，直接删除旧 session
+                conn.close()
+                
+                # 读取 session 文件的元数据
+                # 如果客户端配置中有 api_id，检查是否与之前不同
+                # 由于 Telethon session 文件结构限制，我们采用更简单的策略：
+                # 当检测到 API 配置变化时，提示用户或自动清理
+                
+                # 检查 session 文件的修改时间
+                import time
+                session_mtime = os.path.getmtime(session_file)
+                age_hours = (time.time() - session_mtime) / 3600
+                
+                # 如果 session 文件很旧（超过24小时未使用），且用户重新配置了 API，可能不匹配
+                # 为了安全起见，我们在数据库中记录每个 session 对应的 api_id
+                
+                # 简化方案：检查数据库中记录的 api_id 是否与当前一致
+                async for db in get_db():
+                    from sqlalchemy import select
+                    from models import TelegramClient
+                    
+                    result = await db.execute(
+                        select(TelegramClient).where(TelegramClient.client_id == self.client_id)
+                    )
+                    db_client = result.scalar_one_or_none()
+                    
+                    if db_client and db_client.api_id:
+                        stored_api_id = int(db_client.api_id) if db_client.api_id else None
+                        if stored_api_id and stored_api_id != current_api_id:
+                            self.logger.warning(f"⚠️ 检测到 API_ID 变化: {stored_api_id} → {current_api_id}")
+                            self.logger.warning(f"⚠️ 删除旧 session 文件以避免认证错误")
+                            os.remove(session_file)
+                            # 同时删除相关文件
+                            for ext in ['.session-journal']:
+                                related_file = session_file.replace('.session', ext)
+                                if os.path.exists(related_file):
+                                    os.remove(related_file)
+                            self.logger.info(f"✅ 旧 session 文件已删除")
+                    break
+                    
+            except Exception as e:
+                # session 文件读取失败，可能已损坏，删除它
+                self.logger.warning(f"⚠️ Session 文件读取失败（可能已损坏）: {e}")
+                self.logger.warning(f"⚠️ 删除损坏的 session 文件")
+                try:
+                    os.remove(session_file)
+                    for ext in ['.session-journal']:
+                        related_file = session_file.replace('.session', ext)
+                        if os.path.exists(related_file):
+                            os.remove(related_file)
+                except Exception as remove_error:
+                    self.logger.error(f"❌ 删除 session 文件失败: {remove_error}")
+                
+        except Exception as e:
+            self.logger.error(f"验证 session 失败: {e}")
+            # 验证失败不影响后续流程
     
     def _notify_status_change(self, status: str, data: Dict[str, Any] = None):
         """通知状态变化"""
@@ -374,6 +590,14 @@ class TelegramClientManager:
             self.logger.info(f"   - 全局API ID: {Config.API_ID}")
             self.logger.info(f"   - 全局API Hash: {'***' if Config.API_HASH else None}")
             
+            # 【修复】检查 session 文件的 API 凭证是否匹配
+            # 如果 session 存在但 API 凭证变化，删除旧 session 以避免 "user 不存在" 错误
+            if session_exists:
+                await self._validate_session_api_match(session_file)
+                # 重新检查 session 是否存在（可能已被删除）
+                session_exists = os.path.exists(session_file)
+                self.logger.info(f"   - Session重新检查: {session_exists}")
+            
             # 根据客户端类型使用不同的配置
             if self.client_type == "bot":
                 # 机器人客户端使用bot_token
@@ -381,11 +605,31 @@ class TelegramClientManager:
                 if not bot_token:
                     raise ValueError(f"机器人客户端 {self.client_id} 缺少Bot Token")
                 
-                # 使用全局API配置创建机器人客户端
+                # Bot 客户端的 API 配置：优先使用客户端配置，否则使用全局配置
+                api_id = int(self.api_id) if self.api_id else None
+                api_hash = self.api_hash or None
+                
+                # 如果没有客户端特定配置，使用全局配置
+                if not api_id or not api_hash:
+                    if session_exists:
+                        # Session文件存在，使用全局配置
+                        api_id = Config.API_ID
+                        api_hash = Config.API_HASH
+                        self.logger.info(f"💡 Bot客户端 {self.client_id} 使用session文件和全局API配置")
+                    else:
+                        # 新Bot客户端，必须有全局配置
+                        api_id = Config.API_ID
+                        api_hash = Config.API_HASH
+                        if not api_id or not api_hash:
+                            raise ValueError(f"Bot客户端 {self.client_id} 缺少API ID或API Hash（客户端配置和全局配置都为空）")
+                        self.logger.info(f"💡 Bot客户端 {self.client_id} 使用全局API配置")
+                else:
+                    self.logger.info(f"✅ Bot客户端 {self.client_id} 使用客户端专属API配置")
+                
                 self.client = TelegramClient(
                     session_name,
-                    Config.API_ID,
-                    Config.API_HASH,
+                    api_id,
+                    api_hash,
                     proxy=proxy_config,
                     connection_retries=5,
                     retry_delay=2,
@@ -970,6 +1214,18 @@ class TelegramClientManager:
             if not self.phone:
                 return {"success": False, "message": "手机号未设置"}
             
+            # 【优化】检查验证码发送冷却时间
+            if self.last_code_sent_time:
+                elapsed = time.time() - self.last_code_sent_time
+                remaining = self.code_cooldown_seconds - int(elapsed)
+                if remaining > 0:
+                    return {
+                        "success": False,
+                        "message": f"发送过于频繁，请等待 {remaining} 秒后重试",
+                        "error_type": "rate_limit",
+                        "remaining_seconds": remaining
+                    }
+            
             # 创建客户端
             await self._create_client()
             
@@ -982,24 +1238,56 @@ class TelegramClientManager:
             if not self.client.is_connected():
                 return {"success": False, "message": "客户端连接失败"}
             
+            # 【优化】检查是否已经登录（Session 预加载）
+            try:
+                if await self.client.is_user_authorized():
+                    # 已经登录，获取用户信息
+                    me = await self.client.get_me()
+                    self.user_info = me
+                    self.login_state = "completed"
+                    self.connected = True
+                    
+                    self.logger.info(f"✅ Session 已存在，无需重复登录: {getattr(me, 'username', '') or getattr(me, 'first_name', 'Unknown')}")
+                    
+                    # 保存客户端配置到数据库
+                    await self._save_client_config()
+                    
+                    return {
+                        "success": True,
+                        "message": "用户已登录，无需重复操作",
+                        "step": "completed",
+                        "user_info": {
+                            "id": me.id,
+                            "username": getattr(me, 'username', ''),
+                            "first_name": getattr(me, 'first_name', ''),
+                            "phone": getattr(me, 'phone', '')
+                        }
+                    }
+            except Exception as auth_check_error:
+                # 检查失败不影响后续流程，继续发送验证码
+                self.logger.warning(f"检查登录状态失败: {auth_check_error}")
+            
             # 发送验证码
             result = await self.client.send_code_request(self.phone)
             self.login_session = result
             self.login_state = "waiting_code"
             
+            # 【优化】记录发送时间，用于冷却计算
+            self.last_code_sent_time = time.time()
+            
             self.logger.info(f"✅ 验证码已发送到 {self.phone}")
             return {
                 "success": True,
                 "message": f"验证码已发送到 {self.phone}",
-                "step": "waiting_code"
+                "step": "waiting_code",
+                "cooldown_seconds": self.code_cooldown_seconds  # 前端可用于倒计时显示
             }
             
         except Exception as e:
             self.logger.error(f"发送验证码失败: {e}")
-            return {
-                "success": False,
-                "message": f"发送验证码失败: {str(e)}"
-            }
+            # 使用统一的错误处理器
+            error_response = LoginErrorHandler.handle_error(e)
+            return error_response
     
     async def submit_verification_code(self, code: str) -> Dict[str, Any]:
         """提交验证码"""
@@ -1010,11 +1298,34 @@ class TelegramClientManager:
             if not self.login_session:
                 return {"success": False, "message": "登录会话无效，请重新发送验证码"}
             
-            if not self.client or not self.client.is_connected():
-                return {"success": False, "message": "客户端未连接，请重新发送验证码"}
+            # 【优化】自动重连机制
+            if not self.client:
+                return {"success": False, "message": "客户端未初始化，请重新发送验证码"}
+            
+            if not self.client.is_connected():
+                self.logger.warning("⚠️ 客户端已断开连接，尝试自动重连...")
+                try:
+                    await self.client.connect()
+                    if not self.client.is_connected():
+                        return {
+                            "success": False,
+                            "message": "客户端重连失败，请重新发送验证码",
+                            "should_resend": True
+                        }
+                    self.logger.info("✅ 客户端自动重连成功")
+                except Exception as reconnect_error:
+                    self.logger.error(f"❌ 客户端重连失败: {reconnect_error}")
+                    return {
+                        "success": False,
+                        "message": "客户端连接已过期，请重新发送验证码",
+                        "should_resend": True
+                    }
             
             # 提交验证码
             try:
+                # 导入 Telethon 专用异常
+                from telethon.errors import SessionPasswordNeededError
+                
                 result = await self.client.sign_in(phone=self.phone, code=code)
                 
                 # 登录成功
@@ -1039,26 +1350,27 @@ class TelegramClientManager:
                     }
                 }
                 
+            except SessionPasswordNeededError:
+                # 【修复】使用 Telethon 专用异常，更准确
+                self.login_state = "waiting_password"
+                self.logger.info("🔐 检测到需要二步验证密码")
+                return {
+                    "success": True,
+                    "message": "需要输入二步验证密码",
+                    "step": "waiting_password"
+                }
             except Exception as e:
-                # 检查是否需要二步验证密码
-                if "password" in str(e).lower() or "2fa" in str(e).lower():
-                    self.login_state = "waiting_password"
-                    return {
-                        "success": True,
-                        "message": "需要输入二步验证密码",
-                        "step": "waiting_password"
-                    }
-                else:
-                    self.login_state = "idle"
-                    raise e
+                # 其他错误
+                self.login_state = "idle"
+                raise e
             
         except Exception as e:
             self.logger.error(f"提交验证码失败: {e}")
-            self.login_state = "idle"
-            return {
-                "success": False,
-                "message": f"验证码错误或已过期: {str(e)}"
-            }
+            # 【优化】使用统一的状态清理方法
+            await self._reset_login_state()
+            # 使用统一的错误处理器
+            error_response = LoginErrorHandler.handle_error(e)
+            return error_response
     
     async def submit_password(self, password: str) -> Dict[str, Any]:
         """提交二步验证密码"""
@@ -1066,8 +1378,28 @@ class TelegramClientManager:
             if self.login_state != "waiting_password":
                 return {"success": False, "message": "当前不在等待密码状态"}
             
-            if not self.client or not self.client.is_connected():
-                return {"success": False, "message": "客户端未连接，请重新发送验证码"}
+            # 【优化】自动重连机制
+            if not self.client:
+                return {"success": False, "message": "客户端未初始化，请重新发送验证码"}
+            
+            if not self.client.is_connected():
+                self.logger.warning("⚠️ 客户端已断开连接，尝试自动重连...")
+                try:
+                    await self.client.connect()
+                    if not self.client.is_connected():
+                        return {
+                            "success": False,
+                            "message": "客户端重连失败，请重新发送验证码",
+                            "should_resend": True
+                        }
+                    self.logger.info("✅ 客户端自动重连成功")
+                except Exception as reconnect_error:
+                    self.logger.error(f"❌ 客户端重连失败: {reconnect_error}")
+                    return {
+                        "success": False,
+                        "message": "客户端连接已过期，请重新发送验证码",
+                        "should_resend": True
+                    }
             
             # 提交密码
             result = await self.client.sign_in(password=password)
@@ -1096,11 +1428,17 @@ class TelegramClientManager:
             
         except Exception as e:
             self.logger.error(f"二步验证失败: {e}")
-            self.login_state = "idle"
-            return {
-                "success": False,
-                "message": f"密码错误: {str(e)}"
-            }
+            # 【优化】使用统一的状态清理方法
+            await self._reset_login_state()
+            # 使用统一的错误处理器
+            error_response = LoginErrorHandler.handle_error(e)
+            # 对于密码错误，特别处理
+            if error_response.get("error_type") == "unknown":
+                error_msg = str(e).lower()
+                if "password" in error_msg or "invalid" in error_msg:
+                    error_response["message"] = "密码错误，请检查后重新输入"
+                    error_response["error_type"] = "invalid_password"
+            return error_response
     
     def get_status(self) -> Dict[str, Any]:
         """获取客户端状态"""

@@ -1,6 +1,8 @@
 """
 认证相关工具函数 - JWT token 生成和验证
 """
+import os
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -14,9 +16,26 @@ from database import get_db
 from models import User
 
 # JWT 配置
-SECRET_KEY = "your-secret-key-here-please-change-in-production"  # 生产环境请更改
+def _get_jwt_secret():
+    """
+    获取 JWT 密钥
+    
+    优先级：
+    1. 环境变量 JWT_SECRET
+    2. 自动生成随机密钥（每次启动不同，会导致用户需要重新登录）
+    
+    注意：生产环境建议设置固定的 JWT_SECRET 环境变量
+    """
+    secret = os.getenv('JWT_SECRET', '')
+    if not secret:
+        # 自动生成一个随机密钥（32字节）
+        secret = secrets.token_urlsafe(32)
+        print(f"⚠️  未设置 JWT_SECRET，使用随机生成的密钥（重启后用户需要重新登录）")
+    return secret
+
+SECRET_KEY = _get_jwt_secret()
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 24 * 60  # 24小时
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('JWT_EXPIRE_MINUTES', 24 * 60))  # 默认24小时
 
 # 密码加密上下文
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
