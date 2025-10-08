@@ -11,7 +11,6 @@ import {
   Input,
   Tooltip,
   Modal,
-  Progress,
   Statistic,
   Row,
   Col
@@ -30,7 +29,6 @@ import {
   FileOutlined,
   CloudUploadOutlined,
   FolderOutlined,
-  ClockCircleOutlined,
   DownloadOutlined,
   ExclamationCircleOutlined,
   BarChartOutlined
@@ -230,7 +228,7 @@ const MonitorRulesList: React.FC = () => {
           <div style={{ fontSize: 12, color: colors.textSecondary }}>
             累计: {formatSize(record.total_size_mb || 0)}
           </div>
-          {record.failed_downloads > 0 && (
+          {(record.failed_downloads || 0) > 0 && (
             <div style={{ fontSize: 12, color: colors.error }}>
               失败: {record.failed_downloads} 个
             </div>
@@ -298,7 +296,7 @@ const MonitorRulesList: React.FC = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <Card style={{ marginBottom: 24, background: colors.cardBg }}>
+      <Card style={{ marginBottom: 24, background: colors.bgContainer }}>
         <Row gutter={16}>
           <Col span={6}>
             <Statistic
@@ -336,7 +334,7 @@ const MonitorRulesList: React.FC = () => {
 
       <Card 
         title={<Title level={4} style={{ margin: 0 }}>媒体监控规则</Title>}
-        style={{ background: colors.cardBg }}
+        style={{ background: colors.bgContainer }}
         extra={
           <Space>
             <Search
@@ -375,7 +373,7 @@ const MonitorRulesList: React.FC = () => {
             showTotal: (total) => `共 ${total} 条规则`,
           }}
           locale={{
-            emptyText: <TableEmpty description="暂无监控规则，点击"新建规则"开始创建" />,
+            emptyText: <TableEmpty description='暂无监控规则，点击上方"新建规则"按钮开始创建' />,
           }}
           scroll={{ x: 1400 }}
         />
