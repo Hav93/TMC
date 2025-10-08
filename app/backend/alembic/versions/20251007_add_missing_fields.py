@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20251007_add_missing_fields'
-down_revision = '20251006_add_users'
+down_revision = '20251006_add_avatar'
 branch_labels = None
 depends_on = None
 

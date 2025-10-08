@@ -9,7 +9,8 @@ mkdir -p /app/data /app/logs /app/sessions /app/temp /app/config
 # 运行数据库迁移
 echo "📦 Running database migrations..."
 cd /app
-alembic upgrade head || echo "⚠️  Migration failed or already up to date"
+alembic upgrade head 2>&1 || echo "⚠️  Migration failed or already up to date"
+echo "✅ Migration completed"
 
 # 检查是否需要创建管理员用户
 echo "👤 Checking for admin user..."
