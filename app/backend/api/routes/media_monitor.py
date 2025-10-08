@@ -10,7 +10,8 @@ from datetime import datetime
 import json
 
 from database import get_db
-from models import MediaMonitorRule
+from models import MediaMonitorRule, User
+from auth import get_current_user
 from log_manager import get_logger
 
 logger = get_logger('api.media_monitor')
@@ -27,7 +28,8 @@ async def get_monitor_rules(
     keyword: Optional[str] = None,
     is_active: Optional[bool] = None,
     client_id: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """获取监控规则列表"""
     try:
@@ -80,7 +82,8 @@ async def get_monitor_rules(
 @router.get("/rules/{rule_id}")
 async def get_monitor_rule(
     rule_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """获取监控规则详情"""
     try:
@@ -111,7 +114,8 @@ async def get_monitor_rule(
 @router.post("/rules")
 async def create_monitor_rule(
     rule_data: dict,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """创建监控规则"""
     try:
@@ -221,7 +225,8 @@ async def create_monitor_rule(
 async def update_monitor_rule(
     rule_id: int,
     rule_data: dict,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """更新监控规则"""
     try:
@@ -268,7 +273,8 @@ async def update_monitor_rule(
 @router.delete("/rules/{rule_id}")
 async def delete_monitor_rule(
     rule_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """删除监控规则"""
     try:
@@ -307,7 +313,8 @@ async def delete_monitor_rule(
 @router.post("/rules/{rule_id}/toggle")
 async def toggle_monitor_rule(
     rule_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """切换监控规则启用/禁用状态"""
     try:
@@ -347,7 +354,8 @@ async def toggle_monitor_rule(
 
 @router.get("/stats")
 async def get_monitor_stats(
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """获取全局监控统计数据（用于仪表盘）"""
     try:
@@ -390,7 +398,8 @@ async def get_monitor_stats(
 @router.get("/rules/{rule_id}/stats")
 async def get_rule_stats(
     rule_id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """获取单个规则的统计数据"""
     try:

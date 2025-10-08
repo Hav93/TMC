@@ -12,7 +12,8 @@ import os
 from pathlib import Path
 
 from database import get_db
-from models import MediaFile, DownloadTask, MediaMonitorRule
+from models import MediaFile, DownloadTask, MediaMonitorRule, User
+from auth import get_current_user
 from log_manager import get_logger
 
 logger = get_logger('api.media_files')
@@ -28,7 +29,8 @@ async def get_download_tasks(
     status: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """获取下载任务列表"""
     try:
@@ -280,7 +282,8 @@ async def get_media_files(
     end_date: Optional[str] = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
     """获取媒体文件列表"""
     try:
