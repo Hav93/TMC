@@ -373,7 +373,17 @@ class TelegramClientManager:
                     self.logger.info(f"✅ 用户客户端已授权，使用现有 session 启动")
             except Exception as start_error:
                 error_msg = str(start_error)
-                if "Server closed the connection" in error_msg or "0 bytes read" in error_msg:
+                if "database is locked" in error_msg:
+                    self.logger.error(f"❌ Session 文件被锁定，可能是以下原因:")
+                    self.logger.error("   1. 另一个进程正在使用此 session")
+                    self.logger.error("   2. Session 文件损坏或未正确关闭")
+                    self.logger.error("   3. 文件系统延迟（Docker 卷挂载）")
+                    self.logger.error("💡 建议解决方案:")
+                    self.logger.error("   1. 确保没有其他进程使用此客户端")
+                    self.logger.error("   2. 重启 Docker 容器")
+                    self.logger.error("   3. 如果问题持续，删除并重新登录此客户端")
+                    raise Exception(f"Session 文件被锁定，请重启容器或重新登录: {error_msg}")
+                elif "Server closed the connection" in error_msg or "0 bytes read" in error_msg:
                     self.logger.error(f"❌ Telegram 服务器连接失败: {error_msg}")
                     self.logger.error("💡 可能的解决方案:")
                     self.logger.error("   1. 检查网络连接是否正常")
