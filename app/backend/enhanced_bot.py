@@ -13,6 +13,8 @@ from telegram_client_manager import MultiClientManager, multi_client_manager
 from config import Config, validate_config
 from database import init_database
 from utils import setup_logging
+from services.media_monitor_service import get_media_monitor_service
+from services.storage_manager import get_storage_manager
 
 class EnhancedTelegramBot:
     """
@@ -33,6 +35,12 @@ class EnhancedTelegramBot:
         
         # 状态回调
         self.status_callbacks = []
+        
+        # 媒体监控服务
+        self.media_monitor = get_media_monitor_service()
+        
+        # 存储管理服务
+        self.storage_manager = get_storage_manager()
         
     def add_status_callback(self, callback):
         """添加状态变化回调"""
@@ -208,6 +216,14 @@ class EnhancedTelegramBot:
             # 处理已激活规则的历史消息（与规则激活时的逻辑一致）
             await self._process_active_rules_history()
             
+            # 启动媒体监控服务
+            await self.media_monitor.start()
+            self.logger.info("✅ 媒体监控服务启动完成")
+            
+            # 启动存储管理服务
+            await self.storage_manager.start(check_interval=3600)  # 每小时检查一次
+            self.logger.info("✅ 存储管理服务启动完成")
+            
             self.running = True
             
             if web_mode:
@@ -226,6 +242,16 @@ class EnhancedTelegramBot:
         self.logger.info("🛑 停止机器人...")
         
         self.running = False
+        
+        # 停止媒体监控服务
+        await self.media_monitor.stop()
+        self.logger.info("✅ 媒体监控服务已停止")
+        
+        # 停止存储管理服务
+        await self.storage_manager.stop()
+        self.logger.info("✅ 存储管理服务已停止")
+        
+        # 停止所有客户端
         self.multi_client_manager.stop_all()
         
         self.logger.info("✅ 机器人已停止")
