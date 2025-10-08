@@ -13,10 +13,13 @@ from typing import Optional, Dict, List, Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.logger import logger
+from log_manager import get_logger
+
+logger = get_logger('media_monitor')
 from database import get_db
 from models import MediaMonitorRule, DownloadTask, MediaFile
-from utils.media_filters import MediaFilter, SenderFilter
+from utils.media_filters import MediaFilter
+from utils.message_deduplicator import SenderFilter
 from utils.media_metadata import MediaMetadataExtractor
 
 try:

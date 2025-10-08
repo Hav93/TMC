@@ -7,7 +7,9 @@ import json
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Dict, Any
-from core.logger import logger
+from log_manager import get_logger
+
+logger = get_logger('media_metadata')
 
 # 线程池用于执行阻塞的元数据提取操作
 _executor = ThreadPoolExecutor(max_workers=2)

@@ -9,7 +9,9 @@ from typing import Dict, Any, List, Optional
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.logger import logger
+from log_manager import get_logger
+
+logger = get_logger('storage_manager')
 from database import get_db
 from models import MediaFile, MediaMonitorRule
 

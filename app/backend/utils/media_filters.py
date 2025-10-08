@@ -5,7 +5,9 @@
 import json
 from typing import Optional, List, Dict, Any
 from pathlib import Path
-from core.logger import logger
+from log_manager import get_logger
+
+logger = get_logger('media_filters')
 
 
 class MediaFilter:

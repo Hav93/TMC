@@ -11,7 +11,9 @@ import json
 
 from database import get_db
 from models import MediaMonitorRule
-from core.logger import logger
+from log_manager import get_logger
+
+logger = get_logger('api.media_monitor')
 
 router = APIRouter(tags=["media_monitor"])
 

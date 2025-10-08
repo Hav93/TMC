@@ -13,7 +13,9 @@ from pathlib import Path
 
 from database import get_db
 from models import MediaFile, DownloadTask, MediaMonitorRule
-from core.logger import logger
+from log_manager import get_logger
+
+logger = get_logger('api.media_files')
 from services.storage_manager import get_storage_manager
 
 router = APIRouter(tags=["media_files"])
