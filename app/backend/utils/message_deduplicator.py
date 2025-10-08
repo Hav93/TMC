@@ -109,23 +109,57 @@ class SenderFilter:
     """发送者过滤器"""
     
     @staticmethod
-    def parse_sender_list(sender_list_json: Optional[str]) -> list:
+    def parse_sender_list(sender_list_text: Optional[str]) -> list:
         """
-        解析发送者列表JSON
+        解析发送者列表（支持多种格式）
+        
+        支持的格式：
+        1. 简单文本（推荐）：
+           - 用户名：@username1, @username2, @username3
+           - 用户ID：123456, 789012, 345678
+           - 混合：@username1, 123456, @username2
+        
+        2. JSON格式（兼容旧版）：
+           - [{"id":"123","username":"user1"}]
         
         Args:
-            sender_list_json: JSON字符串
+            sender_list_text: 发送者列表文本或JSON
             
         Returns:
-            list: 发送者列表 [{"id": "123", "username": "user1"}, ...]
+            list: 标准化的发送者列表 [{"id": "123", "username": "user1"}, ...]
         """
-        if not sender_list_json:
+        if not sender_list_text:
             return []
         
-        try:
-            return json.loads(sender_list_json)
-        except json.JSONDecodeError:
-            return []
+        sender_list_text = sender_list_text.strip()
+        
+        # 尝试解析为JSON（兼容旧版）
+        if sender_list_text.startswith('[') or sender_list_text.startswith('{'):
+            try:
+                return json.loads(sender_list_text)
+            except json.JSONDecodeError:
+                pass
+        
+        # 解析为简单文本格式
+        result = []
+        items = [item.strip() for item in sender_list_text.split(',') if item.strip()]
+        
+        for item in items:
+            # 去除 @ 符号
+            item = item.lstrip('@')
+            
+            if not item:
+                continue
+            
+            # 判断是用户名还是ID
+            if item.isdigit():
+                # 纯数字，当作ID
+                result.append({"id": item, "username": None})
+            else:
+                # 包含字母，当作用户名
+                result.append({"id": None, "username": item})
+        
+        return result
     
     @staticmethod
     def is_sender_allowed(

@@ -687,11 +687,19 @@ const RuleForm: React.FC = () => {
                     <Form.Item
                       label="白名单"
                       name="sender_whitelist"
-                      tooltip='JSON格式：[{"id":"123","username":"user1"}]。只有名单中的发送者消息会被转发'
+                      tooltip="输入允许转发的发送者，每行一个或用逗号分隔。支持用户名（@username）或用户ID（数字）"
+                      help={
+                        <div style={{ fontSize: '12px', color: '#8c8c8c' }}>
+                          💡 支持多种格式：
+                          <br />• 用户名：<code>@username1, @username2</code>
+                          <br />• 用户ID：<code>123456, 789012</code>
+                          <br />• 混合：<code>@alice, 123456, @bob</code>
+                        </div>
+                      }
                     >
                       <Input.TextArea
-                        rows={3}
-                        placeholder='[{"id":"123456","username":"user1"}]'
+                        rows={4}
+                        placeholder="@username1, @username2, 123456"
                       />
                     </Form.Item>
                   </Col>
@@ -699,11 +707,19 @@ const RuleForm: React.FC = () => {
                     <Form.Item
                       label="黑名单"
                       name="sender_blacklist"
-                      tooltip='JSON格式：[{"id":"456","username":"user2"}]。名单中的发送者消息会被阻止'
+                      tooltip="输入要阻止的发送者，每行一个或用逗号分隔。支持用户名（@username）或用户ID（数字）"
+                      help={
+                        <div style={{ fontSize: '12px', color: '#8c8c8c' }}>
+                          💡 支持多种格式：
+                          <br />• 用户名：<code>@spammer1, @spammer2</code>
+                          <br />• 用户ID：<code>987654, 321098</code>
+                          <br />• 混合：<code>@spam_bot, 999999</code>
+                        </div>
+                      }
                     >
                       <Input.TextArea
-                        rows={3}
-                        placeholder='[{"id":"789012","username":"spam_user"}]'
+                        rows={4}
+                        placeholder="@spammer, 987654"
                       />
                     </Form.Item>
                   </Col>
