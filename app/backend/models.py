@@ -304,7 +304,10 @@ class DatabaseHelper:
             'user_sessions',
             'telegram_clients',
             'bot_settings',
-            'users'
+            'users',
+            'media_monitor_rules',
+            'download_tasks',
+            'media_files'
         ]
 
 class User(Base):
@@ -339,3 +342,190 @@ class User(Base):
     
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}')>"
+
+
+# ==================== 媒体文件管理模型 ====================
+
+class MediaMonitorRule(Base):
+    """媒体监控规则模型"""
+    __tablename__ = 'media_monitor_rules'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, comment='规则名称')
+    description = Column(Text, comment='规则描述')
+    is_active = Column(Boolean, default=True, comment='是否启用')
+    client_id = Column(String(50), nullable=False, comment='使用的客户端ID')
+    
+    # 监听源（JSON数组格式）
+    source_chats = Column(Text, comment='监听的频道/群组列表，JSON格式：["channel_123", "group_456"]')
+    
+    # 媒体过滤
+    media_types = Column(Text, comment='文件类型过滤，JSON格式：["photo", "video", "audio", "document"]')
+    min_size_mb = Column(Integer, default=0, comment='最小文件大小(MB)')
+    max_size_mb = Column(Integer, default=2000, comment='最大文件大小(MB)')
+    filename_include = Column(Text, comment='文件名包含关键词（逗号分隔）')
+    filename_exclude = Column(Text, comment='文件名排除关键词（逗号分隔）')
+    file_extensions = Column(Text, comment='允许的文件扩展名，JSON格式：[".mp4", ".mkv"]')
+    
+    # 发送者过滤
+    enable_sender_filter = Column(Boolean, default=False, comment='是否启用发送者过滤')
+    sender_filter_mode = Column(String(20), default='whitelist', comment='过滤模式：whitelist/blacklist')
+    sender_whitelist = Column(Text, comment='发送者白名单（简单文本格式：@user1, @user2, 123456）')
+    sender_blacklist = Column(Text, comment='发送者黑名单（简单文本格式）')
+    
+    # 下载设置
+    temp_folder = Column(String(255), default='/app/media/downloads', comment='临时下载文件夹')
+    concurrent_downloads = Column(Integer, default=3, comment='并发下载数量')
+    retry_on_failure = Column(Boolean, default=True, comment='失败时是否重试')
+    max_retries = Column(Integer, default=3, comment='最大重试次数')
+    
+    # 元数据提取
+    extract_metadata = Column(Boolean, default=True, comment='是否提取元数据')
+    metadata_mode = Column(String(20), default='lightweight', comment='元数据提取模式：disabled/lightweight/full')
+    metadata_timeout = Column(Integer, default=10, comment='元数据提取超时（秒）')
+    async_metadata_extraction = Column(Boolean, default=True, comment='是否异步提取元数据')
+    
+    # 归档配置
+    organize_enabled = Column(Boolean, default=False, comment='是否启用文件归档')
+    organize_target_type = Column(String(20), default='local', comment='归档目标：local/clouddrive_mount/clouddrive_api')
+    organize_local_path = Column(String(255), comment='本地归档路径')
+    organize_clouddrive_mount = Column(String(255), comment='CloudDrive挂载路径')
+    organize_mode = Column(String(20), default='copy', comment='归档方式：copy/move')
+    keep_temp_file = Column(Boolean, default=False, comment='归档后是否保留临时文件')
+    
+    # CloudDrive API配置
+    clouddrive_enabled = Column(Boolean, default=False, comment='是否启用CloudDrive API上传')
+    clouddrive_url = Column(String(255), comment='CloudDrive服务地址')
+    clouddrive_username = Column(String(100), comment='CloudDrive用户名')
+    clouddrive_password = Column(String(255), comment='CloudDrive密码（加密存储）')
+    clouddrive_remote_path = Column(String(255), comment='CloudDrive远程路径')
+    
+    # 文件夹结构
+    folder_structure = Column(String(50), default='date', comment='文件夹组织方式：flat/date/type/source/sender/custom')
+    custom_folder_template = Column(String(255), comment='自定义文件夹模板：{year}/{month}/{type}')
+    rename_files = Column(Boolean, default=False, comment='是否重命名文件')
+    filename_template = Column(String(255), comment='文件名模板：{date}_{sender}_{original_name}')
+    
+    # 清理设置
+    auto_cleanup_enabled = Column(Boolean, default=True, comment='是否启用自动清理')
+    auto_cleanup_days = Column(Integer, default=7, comment='自动清理天数')
+    cleanup_only_organized = Column(Boolean, default=True, comment='是否只清理已归档文件')
+    
+    # 存储容量限制
+    max_storage_gb = Column(Integer, default=100, comment='最大存储容量(GB)')
+    
+    # 统计数据
+    total_downloaded = Column(Integer, default=0, comment='累计下载数量')
+    total_size_mb = Column(Integer, default=0, comment='累计下载大小(MB)')
+    last_download_at = Column(DateTime, comment='最后下载时间')
+    failed_downloads = Column(Integer, default=0, comment='失败下载数量')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
+    
+    # 关系
+    download_tasks = relationship("DownloadTask", back_populates="monitor_rule", cascade="all, delete-orphan")
+    media_files = relationship("MediaFile", back_populates="monitor_rule", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<MediaMonitorRule(id={self.id}, name='{self.name}', active={self.is_active})>"
+
+
+class DownloadTask(Base):
+    """下载任务模型"""
+    __tablename__ = 'download_tasks'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    monitor_rule_id = Column(Integer, ForeignKey('media_monitor_rules.id'), nullable=False, comment='关联的监控规则ID')
+    message_id = Column(Integer, comment='消息ID')
+    chat_id = Column(String(50), comment='聊天ID')
+    
+    # 文件信息
+    file_name = Column(String(255), comment='文件名')
+    file_type = Column(String(50), comment='文件类型：photo/video/audio/document')
+    file_size_mb = Column(Integer, comment='文件大小(MB)')
+    
+    # 任务状态
+    status = Column(String(20), default='pending', comment='任务状态：pending/downloading/success/failed/retrying/paused')
+    priority = Column(Integer, default=0, comment='优先级：-10到10')
+    
+    # 下载进度
+    downloaded_bytes = Column(Integer, default=0, comment='已下载字节数')
+    total_bytes = Column(Integer, comment='总字节数')
+    progress_percent = Column(Integer, default=0, comment='进度百分比')
+    download_speed_mbps = Column(Integer, comment='下载速度(MB/s)')
+    
+    # 重试信息
+    retry_count = Column(Integer, default=0, comment='重试次数')
+    max_retries = Column(Integer, default=3, comment='最大重试次数')
+    last_error = Column(Text, comment='最后一次错误信息')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    started_at = Column(DateTime, comment='开始下载时间')
+    completed_at = Column(DateTime, comment='完成时间')
+    failed_at = Column(DateTime, comment='失败时间')
+    
+    # 关系
+    monitor_rule = relationship("MediaMonitorRule", back_populates="download_tasks")
+    media_file = relationship("MediaFile", back_populates="download_task", uselist=False)
+    
+    def __repr__(self):
+        return f"<DownloadTask(id={self.id}, file='{self.file_name}', status='{self.status}')>"
+
+
+class MediaFile(Base):
+    """媒体文件模型"""
+    __tablename__ = 'media_files'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    monitor_rule_id = Column(Integer, ForeignKey('media_monitor_rules.id'), nullable=False, comment='关联的监控规则ID')
+    download_task_id = Column(Integer, ForeignKey('download_tasks.id'), comment='关联的下载任务ID')
+    message_id = Column(Integer, comment='消息ID')
+    
+    # 文件路径
+    temp_path = Column(String(500), comment='临时文件路径')
+    final_path = Column(String(500), comment='最终归档路径')
+    clouddrive_path = Column(String(500), comment='CloudDrive远程路径')
+    file_hash = Column(String(64), unique=True, comment='文件哈希(SHA-256)，用于去重')
+    
+    # 基础信息
+    file_name = Column(String(255), comment='文件名')
+    file_type = Column(String(50), comment='文件类型：image/video/audio/document')
+    file_size_mb = Column(Integer, comment='文件大小(MB)')
+    extension = Column(String(10), comment='文件扩展名')
+    original_name = Column(String(255), comment='原始文件名')
+    
+    # 元数据（JSON存储）
+    metadata = Column(Text, comment='完整元数据JSON')
+    
+    # 快捷字段（从metadata提取，方便查询）
+    width = Column(Integer, comment='宽度（图片/视频）')
+    height = Column(Integer, comment='高度（图片/视频）')
+    duration_seconds = Column(Integer, comment='时长（视频/音频）')
+    resolution = Column(String(20), comment='分辨率')
+    codec = Column(String(50), comment='编码格式')
+    bitrate_kbps = Column(Integer, comment='比特率(kbps)')
+    
+    # 来源信息
+    source_chat = Column(String(100), comment='来源频道/群组')
+    sender_id = Column(String(50), comment='发送者ID')
+    sender_username = Column(String(100), comment='发送者用户名')
+    
+    # 状态
+    is_organized = Column(Boolean, default=False, comment='是否已归档')
+    is_uploaded_to_cloud = Column(Boolean, default=False, comment='是否已上传到云端')
+    is_starred = Column(Boolean, default=False, comment='是否收藏')
+    
+    # 时间戳
+    downloaded_at = Column(DateTime, default=get_local_now, comment='下载时间')
+    organized_at = Column(DateTime, comment='归档时间')
+    uploaded_at = Column(DateTime, comment='上传时间')
+    
+    # 关系
+    monitor_rule = relationship("MediaMonitorRule", back_populates="media_files")
+    download_task = relationship("DownloadTask", back_populates="media_file")
+    
+    def __repr__(self):
+        return f"<MediaFile(id={self.id}, name='{self.file_name}', type='{self.file_type}')>"
