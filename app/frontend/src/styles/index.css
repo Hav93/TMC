@@ -962,24 +962,68 @@ body.theme-dark,
   background: var(--color-bg-container);
 }
 
-/* Select下拉 */
-.theme-dark .ant-select-dropdown {
-  background: var(--color-bg-container);
-  border: 1px solid var(--color-border-light);
-  box-shadow: var(--shadow-md);
+/* Select组件样式 - 完全覆盖 */
+.theme-dark .ant-select-selector,
+[data-theme="dark"] .ant-select-selector {
+  background: var(--color-bg-tertiary) !important;
+  border-color: var(--color-border-base) !important;
+  color: var(--color-text-primary) !important;
 }
 
-.theme-dark .ant-select-item {
-  color: var(--color-text-primary);
+.theme-dark .ant-select-selector:hover,
+[data-theme="dark"] .ant-select-selector:hover {
+  border-color: var(--color-border-strong) !important;
+  background: var(--color-bg-container) !important;
 }
 
-.theme-dark .ant-select-item:hover {
-  background: var(--color-bg-tertiary);
+.theme-dark .ant-select-focused .ant-select-selector,
+[data-theme="dark"] .ant-select-focused .ant-select-selector {
+  border-color: var(--color-primary-600) !important;
+  box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.2) !important;
+  background: var(--color-bg-container) !important;
 }
 
-.theme-dark .ant-select-item-option-selected {
-  background: var(--color-primary-500);
-  color: var(--color-text-inverse);
+/* Select下拉面板 - 强制样式 */
+.theme-dark .ant-select-dropdown,
+[data-theme="dark"] .ant-select-dropdown {
+  background: var(--color-bg-container) !important;
+  border: 1px solid var(--color-border-light) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+.theme-dark .ant-select-item,
+[data-theme="dark"] .ant-select-item {
+  color: var(--color-text-primary) !important;
+}
+
+.theme-dark .ant-select-item:hover,
+[data-theme="dark"] .ant-select-item:hover {
+  background: var(--color-bg-tertiary) !important;
+}
+
+.theme-dark .ant-select-item-option-selected,
+[data-theme="dark"] .ant-select-item-option-selected {
+  background: var(--color-primary-500) !important;
+  color: var(--color-text-inverse) !important;
+}
+
+.theme-dark .ant-select-item-option-selected:not(.ant-select-item-option-disabled),
+[data-theme="dark"] .ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  font-weight: 600 !important;
+}
+
+/* Select箭头和清除按钮 */
+.theme-dark .ant-select-arrow,
+.theme-dark .ant-select-clear,
+[data-theme="dark"] .ant-select-arrow,
+[data-theme="dark"] .ant-select-clear {
+  color: var(--color-text-secondary) !important;
+}
+
+/* Select placeholder */
+.theme-dark .ant-select-selection-placeholder,
+[data-theme="dark"] .ant-select-selection-placeholder {
+  color: var(--color-text-tertiary) !important;
 }
 
 /* Modal样式 - 高对比 */
