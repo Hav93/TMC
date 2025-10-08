@@ -260,64 +260,6 @@ class TelegramClientManager:
             except Exception as e:
                 self.logger.warning(f"断开登录客户端失败: {e}")
     
-    async def _validate_session_api_match(self, session_file: str):
-        """
-        验证 session 文件是否与当前 API 凭证匹配
-        
-        Telegram 的 session 文件与 API_ID 绑定，如果 API_ID 变化，
-        使用旧 session 会导致 "user 不存在" 错误。
-        
-        解决方案：检测 API 凭证变化时自动删除旧 session
-        """
-        try:
-            import os
-            
-            # 获取当前应该使用的 API_ID
-            current_api_id = int(self.api_id) if self.api_id else None
-            if not current_api_id:
-                current_api_id = Config.API_ID
-            
-            if not current_api_id:
-                return  # 没有 API_ID，跳过验证
-            
-            # 检查数据库中记录的 api_id 是否与当前一致
-            # Telethon session 文件结构不直接存储 api_id，我们通过数据库记录来判断
-            try:
-                async for db in get_db():
-                    from sqlalchemy import select
-                    from models import TelegramClient
-                    
-                    result = await db.execute(
-                        select(TelegramClient).where(TelegramClient.client_id == self.client_id)
-                    )
-                    db_client = result.scalar_one_or_none()
-                    
-                    if db_client and db_client.api_id:
-                        stored_api_id = int(db_client.api_id) if db_client.api_id else None
-                        if stored_api_id and stored_api_id != current_api_id:
-                            self.logger.warning(f"⚠️ 检测到 API_ID 变化: {stored_api_id} → {current_api_id}")
-                            self.logger.warning(f"⚠️ 删除旧 session 文件以避免认证错误")
-                            try:
-                                os.remove(session_file)
-                                # 同时删除相关文件
-                                for ext in ['.session-journal']:
-                                    related_file = session_file.replace('.session', ext)
-                                    if os.path.exists(related_file):
-                                        os.remove(related_file)
-                                self.logger.info(f"✅ 旧 session 文件已删除")
-                            except Exception as remove_error:
-                                self.logger.error(f"❌ 删除 session 文件失败: {remove_error}")
-                    break
-                    
-            except Exception as e:
-                # 数据库查询失败，记录日志但不删除 session
-                self.logger.warning(f"⚠️ Session 验证失败: {e}")
-                # 不删除 session 文件，让 Telethon 自己判断是否有效
-                
-        except Exception as e:
-            self.logger.error(f"验证 session 失败: {e}")
-            # 验证失败不影响后续流程
-    
     def _notify_status_change(self, status: str, data: Dict[str, Any] = None):
         """通知状态变化"""
         for callback in self.status_callbacks:
@@ -575,14 +517,6 @@ class TelegramClientManager:
             self.logger.info(f"   - 客户端API Hash: {'***' if self.api_hash else None}")
             self.logger.info(f"   - 全局API ID: {Config.API_ID}")
             self.logger.info(f"   - 全局API Hash: {'***' if Config.API_HASH else None}")
-            
-            # 【修复】检查 session 文件的 API 凭证是否匹配
-            # 如果 session 存在但 API 凭证变化，删除旧 session 以避免 "user 不存在" 错误
-            if session_exists:
-                await self._validate_session_api_match(session_file)
-                # 重新检查 session 是否存在（可能已被删除）
-                session_exists = os.path.exists(session_file)
-                self.logger.info(f"   - Session重新检查: {session_exists}")
             
             # 根据客户端类型使用不同的配置
             if self.client_type == "bot":
