@@ -1761,64 +1761,6 @@ class MultiClientManager:
         """获取客户端"""
         return self.clients.get(client_id)
     
-    def scan_orphan_sessions(self) -> List[Dict[str, str]]:
-        """
-        扫描孤立的 session 文件（存在于文件系统但不在数据库中）
-        
-        Returns:
-            List[Dict]: 孤立 session 文件列表，每项包含 client_id, client_type, file_path
-        """
-        try:
-            import os
-            from pathlib import Path
-            from config import Config
-            
-            sessions_dir = Path(Config.SESSIONS_DIR)
-            if not sessions_dir.exists():
-                return []
-            
-            orphan_sessions = []
-            
-            # 扫描所有 .session 文件
-            for session_file in sessions_dir.glob("*.session"):
-                filename = session_file.stem  # 不带扩展名的文件名
-                
-                # 解析文件名：格式应为 {type}_{client_id}
-                parts = filename.split('_', 1)
-                if len(parts) != 2:
-                    self.logger.warning(f"⚠️ 跳过格式不正确的 session 文件: {session_file.name}")
-                    continue
-                
-                client_type, client_id = parts
-                
-                # 验证类型
-                if client_type not in ['user', 'bot']:
-                    self.logger.warning(f"⚠️ 跳过未知类型的 session 文件: {session_file.name}")
-                    continue
-                
-                # 检查是否已在内存或数据库中
-                if client_id in self.clients:
-                    continue  # 已在内存中，不是孤立的
-                
-                # 记录孤立的 session
-                orphan_sessions.append({
-                    'client_id': client_id,
-                    'client_type': client_type,
-                    'file_path': str(session_file),
-                    'file_name': session_file.name,
-                    'file_size': session_file.stat().st_size,
-                    'modified_time': session_file.stat().st_mtime
-                })
-            
-            if orphan_sessions:
-                self.logger.info(f"🔍 发现 {len(orphan_sessions)} 个孤立的 session 文件")
-            
-            return orphan_sessions
-            
-        except Exception as e:
-            self.logger.error(f"❌ 扫描 session 文件失败: {e}")
-            return []
-    
     def start_client(self, client_id: str) -> bool:
         """启动客户端"""
         client = self.clients.get(client_id)
