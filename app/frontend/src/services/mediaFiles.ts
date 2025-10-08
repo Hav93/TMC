@@ -42,7 +42,9 @@ export const mediaFilesApi = {
    * 更新任务优先级
    */
   updateTaskPriority: async (taskId: number, priority: number) => {
-    const { data } = await axios.put(`${API_BASE}/tasks/${taskId}/priority`, { priority });
+    const { data } = await axios.post(`${API_BASE}/tasks/${taskId}/priority`, null, {
+      params: { priority }
+    });
     return data;
   },
 
@@ -87,7 +89,7 @@ export const mediaFilesApi = {
    * 下载文件
    */
   downloadFile: async (fileId: number) => {
-    const response = await axios.get(`${API_BASE}/files/${fileId}/download`, {
+    const response = await axios.get(`${API_BASE}/download/${fileId}`, {
       responseType: 'blob',
     });
     return response;

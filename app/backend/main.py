@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 # 导入API路由
-from api.routes import system, rules, logs, chats, clients, settings, dashboard, auth, users
+from api.routes import system, rules, logs, chats, clients, settings, dashboard, auth, users, media_monitor, media_files
 
 # 导入核心业务逻辑
 from enhanced_bot import EnhancedTelegramBot
@@ -98,6 +98,8 @@ app.include_router(chats.router, prefix="/api/chats", tags=["聊天管理"])
 app.include_router(clients.router, prefix="/api/clients", tags=["客户端管理"])
 app.include_router(settings.router, prefix="/api/settings", tags=["系统设置"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["仪表板"])
+app.include_router(media_monitor.router, prefix="/api/media/monitor", tags=["媒体监控"])
+app.include_router(media_files.router, prefix="/api/media", tags=["媒体文件"])
 
 
 @app.get("/health")

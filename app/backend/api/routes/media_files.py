@@ -16,7 +16,7 @@ from models import MediaFile, DownloadTask, MediaMonitorRule
 from core.logger import logger
 from services.storage_manager import get_storage_manager
 
-router = APIRouter(prefix="/api/media", tags=["media_files"])
+router = APIRouter(tags=["media_files"])
 
 
 # ==================== 下载任务 API ====================

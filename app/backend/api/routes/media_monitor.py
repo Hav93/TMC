@@ -13,7 +13,7 @@ from database import get_db
 from models import MediaMonitorRule
 from core.logger import logger
 
-router = APIRouter(prefix="/api/media/monitor", tags=["media_monitor"])
+router = APIRouter(tags=["media_monitor"])
 
 
 # ==================== 监控规则 API ====================
