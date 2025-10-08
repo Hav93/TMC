@@ -271,7 +271,6 @@ class TelegramClientManager:
         """
         try:
             import os
-            import sqlite3
             
             # 获取当前应该使用的 API_ID
             current_api_id = int(self.api_id) if self.api_id else None
@@ -281,30 +280,9 @@ class TelegramClientManager:
             if not current_api_id:
                 return  # 没有 API_ID，跳过验证
             
-            # 读取 session 文件中的 API_ID
-            # Telethon 的 session 是 SQLite 数据库格式
+            # 检查数据库中记录的 api_id 是否与当前一致
+            # Telethon session 文件结构不直接存储 api_id，我们通过数据库记录来判断
             try:
-                conn = sqlite3.connect(session_file)
-                cursor = conn.cursor()
-                cursor.execute("SELECT value FROM sessions WHERE key = 'dc_id'")
-                # 注意：session 中没有直接存储 api_id，但我们可以通过创建时的 api_id 来判断
-                # 更安全的做法是：如果用户更改了 api_id，直接删除旧 session
-                conn.close()
-                
-                # 读取 session 文件的元数据
-                # 如果客户端配置中有 api_id，检查是否与之前不同
-                # 由于 Telethon session 文件结构限制，我们采用更简单的策略：
-                # 当检测到 API 配置变化时，提示用户或自动清理
-                
-                # 检查 session 文件的修改时间
-                import time
-                session_mtime = os.path.getmtime(session_file)
-                age_hours = (time.time() - session_mtime) / 3600
-                
-                # 如果 session 文件很旧（超过24小时未使用），且用户重新配置了 API，可能不匹配
-                # 为了安全起见，我们在数据库中记录每个 session 对应的 api_id
-                
-                # 简化方案：检查数据库中记录的 api_id 是否与当前一致
                 async for db in get_db():
                     from sqlalchemy import select
                     from models import TelegramClient
@@ -319,27 +297,22 @@ class TelegramClientManager:
                         if stored_api_id and stored_api_id != current_api_id:
                             self.logger.warning(f"⚠️ 检测到 API_ID 变化: {stored_api_id} → {current_api_id}")
                             self.logger.warning(f"⚠️ 删除旧 session 文件以避免认证错误")
-                            os.remove(session_file)
-                            # 同时删除相关文件
-                            for ext in ['.session-journal']:
-                                related_file = session_file.replace('.session', ext)
-                                if os.path.exists(related_file):
-                                    os.remove(related_file)
-                            self.logger.info(f"✅ 旧 session 文件已删除")
+                            try:
+                                os.remove(session_file)
+                                # 同时删除相关文件
+                                for ext in ['.session-journal']:
+                                    related_file = session_file.replace('.session', ext)
+                                    if os.path.exists(related_file):
+                                        os.remove(related_file)
+                                self.logger.info(f"✅ 旧 session 文件已删除")
+                            except Exception as remove_error:
+                                self.logger.error(f"❌ 删除 session 文件失败: {remove_error}")
                     break
                     
             except Exception as e:
-                # session 文件读取失败，可能已损坏，删除它
-                self.logger.warning(f"⚠️ Session 文件读取失败（可能已损坏）: {e}")
-                self.logger.warning(f"⚠️ 删除损坏的 session 文件")
-                try:
-                    os.remove(session_file)
-                    for ext in ['.session-journal']:
-                        related_file = session_file.replace('.session', ext)
-                        if os.path.exists(related_file):
-                            os.remove(related_file)
-                except Exception as remove_error:
-                    self.logger.error(f"❌ 删除 session 文件失败: {remove_error}")
+                # 数据库查询失败，记录日志但不删除 session
+                self.logger.warning(f"⚠️ Session 验证失败: {e}")
+                # 不删除 session 文件，让 Telethon 自己判断是否有效
                 
         except Exception as e:
             self.logger.error(f"验证 session 失败: {e}")
