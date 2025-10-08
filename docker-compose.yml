@@ -11,13 +11,17 @@ services:
       # 时区配置
       - TZ=${TZ:-Asia/Shanghai}
       
-      # === Telegram API 配置（完全可选）===
-      # 建议通过 Web 界面为每个客户端单独配置，无需在此填写
-      # 仅当需要多个客户端共享相同默认配置时才填写以下内容
+      # === Telegram 客户端配置（完全可选）===
+      # 【推荐】通过 Web 界面为每个客户端单独配置，无需在此填写
+      # 以下仅作为默认值，当客户端未单独配置时使用
       - API_ID=${API_ID:-}
       - API_HASH=${API_HASH:-}
       - BOT_TOKEN=${BOT_TOKEN:-}
       - PHONE_NUMBER=${PHONE_NUMBER:-}
+      
+      # === Web 管理界面配置（可选）===
+      # 管理员 Telegram 用户 ID（多个用逗号分隔，用于权限控制）
+      # 留空表示所有登录用户都可以管理
       - ADMIN_USER_IDS=${ADMIN_USER_IDS:-}
       
       # 代理配置（可选，外网环境通常不需要）
