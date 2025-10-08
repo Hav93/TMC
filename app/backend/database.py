@@ -138,22 +138,19 @@ class DatabaseManager:
             logger.warning(f"⚠️ SQLite优化失败: {e}")
     
     async def create_tables(self):
-        """创建所有数据库表"""
+        """验证数据库表（不再自动创建，由 Alembic 管理）"""
         try:
-            from models import Base
+            # 【重要】不再使用 create_all()，所有表结构由 Alembic 迁移管理
+            # 这里只做验证，确保数据库已通过 Alembic 初始化
             
-            # 使用 SQLAlchemy 创建所有表
-            async with self.engine.begin() as conn:
-                await conn.run_sync(Base.metadata.create_all)
-            
-            logger.info("✅ 数据库表创建成功")
+            logger.info("✅ 数据库表结构由 Alembic 管理")
             
             # 验证表是否正确创建
             await self.verify_tables()
             
         except Exception as e:
-            logger.error(f"❌ 数据库表创建失败: {e}")
-            raise
+            logger.warning(f"⚠️ 数据库表验证失败: {e}")
+            # 不抛出异常，因为可能是首次启动，Alembic 还未运行
     
     async def verify_tables(self):
         """验证数据库表完整性"""
@@ -194,10 +191,8 @@ db_manager = DatabaseManager()
 async def init_database():
     """初始化数据库"""
     await db_manager.init_db()
-    # 确保所有表都被创建
+    # 验证数据库表（不创建，由 Alembic 管理）
     await db_manager.create_tables()
-    # 执行自动数据库迁移
-    await _auto_migrate_database()
 
 async def get_db():
     """获取数据库会话"""
@@ -213,38 +208,4 @@ async def get_db():
         finally:
             await session.close()
 
-async def _auto_migrate_database():
-    """自动数据库迁移 - 添加缺失的字段"""
-    try:
-        from sqlalchemy import text
-        logger.info("🔄 开始自动数据库迁移...")
-        
-        async with db_manager.async_session() as session:
-            # 检查replace_rules表是否存在is_regex字段
-            try:
-                result = await session.execute(text("PRAGMA table_info(replace_rules)"))
-                columns = [row[1] for row in result.fetchall()]
-                
-                if 'is_regex' not in columns:
-                    logger.info("🔧 添加is_regex字段到replace_rules表...")
-                    await session.execute(text("ALTER TABLE replace_rules ADD COLUMN is_regex BOOLEAN DEFAULT 1"))
-                    await session.commit()
-                    logger.info("✅ is_regex字段已添加")
-                else:
-                    logger.debug("✅ is_regex字段已存在")
-                    
-            except Exception as e:
-                # 如果表不存在，跳过迁移（表会在create_tables中创建）
-                if "no such table" in str(e).lower():
-                    logger.debug("replace_rules表不存在，跳过迁移")
-                else:
-                    logger.warning(f"⚠️ 迁移replace_rules表时出错: {e}")
-            
-            # 可以在这里添加更多的迁移逻辑
-            # 例如：添加其他缺失的字段、索引等
-            
-            logger.info("✅ 自动数据库迁移完成")
-            
-    except Exception as e:
-        logger.error(f"❌ 自动数据库迁移失败: {e}")
-        # 不抛出异常，避免影响正常启动
+# 【已移除】_auto_migrate_database() - 所有迁移现在由 Alembic 管理
