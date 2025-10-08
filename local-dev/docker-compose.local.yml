@@ -18,11 +18,11 @@ services:
       - ../sessions:/app/sessions
       - tmc-logs:/app/logs
     environment:
-      - API_ID=${API_ID}
-      - API_HASH=${API_HASH}
-      - BOT_TOKEN=${BOT_TOKEN}
-      - PHONE_NUMBER=${PHONE_NUMBER}
-      - ADMIN_USER_IDS=${ADMIN_USER_IDS}
+      # Telegram 客户端配置（完全可选，推荐通过 Web 界面配置）
+      - API_ID=${API_ID:-}
+      - API_HASH=${API_HASH:-}
+      - BOT_TOKEN=${BOT_TOKEN:-}
+      - PHONE_NUMBER=${PHONE_NUMBER:-}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-change-in-production}
       - DATABASE_URL=${DATABASE_URL:-sqlite:///app/data/app.db}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
