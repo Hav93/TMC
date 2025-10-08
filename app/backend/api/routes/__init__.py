@@ -9,13 +9,15 @@ from fastapi import APIRouter
 
 # 导入所有路由模块
 from . import (
-    system,      # 系统管理 - /api/system
-    rules,       # 转发规则 - /api/rules
-    logs,        # 日志管理 - /api/logs
-    chats,       # 聊天管理 - /api/chats
-    clients,     # 客户端管理 - /api/clients
-    settings,    # 系统设置 - /api/settings
-    dashboard,   # 仪表板 - /api/dashboard
+    system,         # 系统管理 - /api/system
+    rules,          # 转发规则 - /api/rules
+    logs,           # 日志管理 - /api/logs
+    chats,          # 聊天管理 - /api/chats
+    clients,        # 客户端管理 - /api/clients
+    settings,       # 系统设置 - /api/settings
+    dashboard,      # 仪表板 - /api/dashboard
+    media_monitor,  # 媒体监控 - /api/media/monitor
+    media_files,    # 媒体文件 - /api/media
 )
 
 # 导出所有路由器
@@ -27,6 +29,8 @@ __all__ = [
     'clients',
     'settings',
     'dashboard',
+    'media_monitor',
+    'media_files',
 ]
 
 # API路由配置信息（用于文档和验证）
@@ -65,6 +69,16 @@ API_ROUTE_CONFIG = {
         'prefix': '/api/dashboard',
         'tags': ['仪表板'],
         'router': dashboard.router,
+    },
+    'media_monitor': {
+        'prefix': '/api/media/monitor',
+        'tags': ['媒体监控'],
+        'router': media_monitor.router,
+    },
+    'media_files': {
+        'prefix': '/api/media',
+        'tags': ['媒体文件'],
+        'router': media_files.router,
     },
 }
 
