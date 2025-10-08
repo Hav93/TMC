@@ -26,8 +26,9 @@ services:
       - PROXY_PORT=${PROXY_PORT:-7890}
       
       # 权限配置（NAS推荐，避免权限问题）
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
+      # 如需自定义用户ID，请修改以下值或在 .env 中设置 PUID 和 PGID
+      - PUID=1000
+      - PGID=1000
       
       # 数据库配置
       - DATABASE_URL=${DATABASE_URL:-sqlite:///data/bot.db}
