@@ -14,6 +14,7 @@ from pathlib import Path
 from database import get_db
 from models import MediaFile, DownloadTask, MediaMonitorRule
 from core.logger import logger
+from services.storage_manager import get_storage_manager
 
 router = APIRouter(prefix="/api/media", tags=["media_files"])
 
@@ -618,4 +619,65 @@ def file_to_dict(file: MediaFile) -> dict:
         "organized_at": file.organized_at.isoformat() if file.organized_at else None,
         "uploaded_at": file.uploaded_at.isoformat() if file.uploaded_at else None
     }
+
+
+# ==================== 存储管理 API ====================
+
+@router.get("/storage/usage")
+async def get_storage_usage(
+    rule_id: Optional[int] = None
+):
+    """获取存储使用情况"""
+    try:
+        storage_manager = get_storage_manager()
+        usage = await storage_manager.get_storage_usage(rule_id)
+        return usage
+    except Exception as e:
+        logger.error(f"获取存储使用情况失败: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"获取失败: {str(e)}"}
+        )
+
+
+@router.post("/storage/cleanup")
+async def manual_cleanup(
+    rule_id: int = Query(..., description="规则ID"),
+    days: int = Query(7, ge=1, le=365, description="保留天数"),
+    only_organized: bool = Query(True, description="是否只清理已归档文件"),
+    delete_db_records: bool = Query(False, description="是否删除数据库记录")
+):
+    """手动清理存储空间"""
+    try:
+        storage_manager = get_storage_manager()
+        result = await storage_manager.manual_cleanup(
+            rule_id=rule_id,
+            days=days,
+            only_organized=only_organized,
+            delete_db_records=delete_db_records
+        )
+        return result
+    except Exception as e:
+        logger.error(f"手动清理失败: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"清理失败: {str(e)}"}
+        )
+
+
+@router.post("/storage/check")
+async def check_storage(
+    rule_id: int = Query(..., description="规则ID")
+):
+    """检查存储空间并根据需要自动清理"""
+    try:
+        storage_manager = get_storage_manager()
+        result = await storage_manager.check_and_cleanup_if_needed(rule_id)
+        return result
+    except Exception as e:
+        logger.error(f"存储检查失败: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"检查失败: {str(e)}"}
+        )
 
