@@ -347,7 +347,7 @@ async def toggle_monitor_rule(
 async def get_monitor_stats(
     db: AsyncSession = Depends(get_db)
 ):
-    """获取监控统计数据"""
+    """获取全局监控统计数据（用于仪表盘）"""
     try:
         # 总规则数
         total_rules = await db.scalar(select(func.count(MediaMonitorRule.id)))
@@ -379,6 +379,52 @@ async def get_monitor_stats(
         
     except Exception as e:
         logger.error(f"获取监控统计失败: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"获取统计失败: {str(e)}"}
+        )
+
+
+@router.get("/rules/{rule_id}/stats")
+async def get_rule_stats(
+    rule_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取单个规则的统计数据"""
+    try:
+        result = await db.execute(
+            select(MediaMonitorRule).where(MediaMonitorRule.id == rule_id)
+        )
+        rule = result.scalar_one_or_none()
+        
+        if not rule:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "规则不存在"}
+            )
+        
+        # 计算成功率
+        total_attempts = (rule.total_downloaded or 0) + (rule.failed_downloads or 0)
+        success_rate = round((rule.total_downloaded / total_attempts * 100), 2) if total_attempts > 0 else 100
+        
+        return {
+            "success": True,
+            "stats": {
+                "rule_id": rule.id,
+                "rule_name": rule.name,
+                "is_active": rule.is_active,
+                "total_downloaded": rule.total_downloaded or 0,
+                "total_size_mb": rule.total_size_mb or 0,
+                "total_size_gb": round((rule.total_size_mb or 0) / 1024, 2),
+                "failed_downloads": rule.failed_downloads or 0,
+                "success_rate": success_rate,
+                "last_download_at": rule.last_download_at.isoformat() if rule.last_download_at else None,
+                "created_at": rule.created_at.isoformat() if rule.created_at else None,
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"获取规则统计失败: {e}")
         return JSONResponse(
             status_code=500,
             content={"success": False, "message": f"获取统计失败: {str(e)}"}

@@ -56,7 +56,15 @@ export const mediaMonitorApi = {
   },
 
   /**
-   * 获取规则统计
+   * 获取全局监控统计（用于仪表盘）
+   */
+  getGlobalStats: async () => {
+    const { data } = await axios.get(`${API_BASE}/stats`);
+    return data;
+  },
+
+  /**
+   * 获取单个规则统计
    */
   getRuleStats: async (id: number) => {
     const { data } = await axios.get(`${API_BASE}/rules/${id}/stats`);
