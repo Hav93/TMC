@@ -6,9 +6,13 @@ echo "🚀 Starting Telegram Message Forwarder..."
 # 等待数据库文件目录准备好
 mkdir -p /app/data /app/logs /app/sessions /app/temp /app/config
 
+# 修复 Alembic 版本记录（如果需要）
+echo "🔧 Checking Alembic version..."
+cd /app
+python3 fix_alembic_version.py || echo "⚠️  Version check skipped"
+
 # 运行数据库迁移
 echo "📦 Running database migrations..."
-cd /app
 alembic upgrade head 2>&1 || echo "⚠️  Migration failed or already up to date"
 echo "✅ Migration completed"
 
