@@ -401,7 +401,7 @@ const RuleForm: React.FC = () => {
               <Input
                 placeholder="将根据选择的客户端自动设置"
                 readOnly
-                style={{ backgroundColor: '#f5f5f5' }}
+                disabled
               />
             </Form.Item>
           </Col>
