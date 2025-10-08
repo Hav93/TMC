@@ -325,11 +325,11 @@ async def remove_client(client_id: str):
             logger.warning(f"查询客户端类型失败: {e}")
         
         # 从内存中移除客户端（会自动删除 session 文件）
-        memory_removed = enhanced_bot.multi_client_manager.remove_client(client_id)
-        
-        # 如果客户端不在内存中，手动删除 session 文件
-        if not memory_removed and client_type:
-            enhanced_bot.multi_client_manager._delete_session_file(client_id, client_type)
+        # 如果客户端不在内存中，force_delete_session=True 会强制删除 session 文件
+        memory_removed = enhanced_bot.multi_client_manager.remove_client(
+            client_id, 
+            force_delete_session=True  # 删除时始终清理 session 文件
+        )
         
         # 从数据库删除
         db_deleted = False

@@ -1678,15 +1678,43 @@ class MultiClientManager:
         self.logger.info(f"✅ 添加带配置的客户端: {client_id} ({client_type})")
         return client
     
-    def remove_client(self, client_id: str) -> bool:
-        """移除客户端（包括删除 session 文件）"""
+    def remove_client(self, client_id: str, force_delete_session: bool = False) -> bool:
+        """
+        移除客户端（包括删除 session 文件）
+        
+        Args:
+            client_id: 客户端ID
+            force_delete_session: 是否强制删除 session 文件（即使客户端不在内存中）
+        
+        Returns:
+            bool: 是否成功从内存中移除客户端
+        """
         if client_id not in self.clients:
-            # 即使客户端不在内存中，也尝试删除 session 文件
-            self._delete_session_file(client_id)
+            # 客户端不在内存中
+            if force_delete_session:
+                # 强制删除 session 文件（用于清理数据库中的客户端）
+                self._delete_session_file(client_id)
+                self.logger.info(f"💡 客户端 {client_id} 不在内存中，但已删除 session 文件")
+            else:
+                self.logger.debug(f"💡 客户端 {client_id} 不在内存中")
             return False
         
         client = self.clients[client_id]
-        client.stop()
+        
+        # 检查客户端是否正在运行
+        if client.running:
+            self.logger.warning(f"⚠️ 客户端 {client_id} 正在运行，先停止客户端")
+            client.stop()
+            # 等待客户端完全停止
+            import time
+            timeout = 5
+            for _ in range(timeout * 10):
+                if not client.running:
+                    break
+                time.sleep(0.1)
+            
+            if client.running:
+                self.logger.error(f"❌ 客户端 {client_id} 停止超时，强制移除")
         
         # 删除 session 文件
         self._delete_session_file(client_id, client.client_type)
