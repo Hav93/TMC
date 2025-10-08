@@ -6,6 +6,11 @@ echo "🚀 Starting Telegram Message Forwarder..."
 # 等待数据库文件目录准备好
 mkdir -p /app/data /app/logs /app/sessions /app/temp /app/config
 
+# 创建媒体管理目录（v1.3.0 新增）
+mkdir -p /app/media/downloads /app/media/storage
+mkdir -p /app/media/storage/photos /app/media/storage/videos
+mkdir -p /app/media/storage/documents /app/media/storage/audio
+
 # 修复 Alembic 版本记录（如果需要）
 echo "🔧 Checking Alembic version..."
 cd /app

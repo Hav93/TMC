@@ -42,6 +42,12 @@ services:
       - ${SESSIONS_PATH:-./sessions}:/app/sessions  # Telegram会话文件（重要：登录状态）
       - ${TEMP_PATH:-./temp}:/app/temp              # 临时文件
       - ${CONFIG_PATH:-./config}:/app/config        # 配置文件目录
+      
+      # 媒体管理相关目录（v1.3.0 新增）
+      - ${MEDIA_DOWNLOAD_PATH:-./media/downloads}:/app/media/downloads    # 媒体下载临时目录
+      - ${MEDIA_STORAGE_PATH:-./media/storage}:/app/media/storage        # 媒体归档存储目录
+      # 如果使用 CloudDrive 本地挂载，可以映射到 CloudDrive 挂载点：
+      # - /mnt/clouddrive:/app/media/clouddrive     # CloudDrive 本地挂载路径（可选）
     
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9393/api/health"]

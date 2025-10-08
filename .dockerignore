@@ -56,3 +56,10 @@ cleanup.ps1
 GITHUB_SETUP.md
 RELEASE_NOTES.md
 
+# 媒体文件目录（v1.3.0 新增 - 避免包含大文件）
+media/
+data/
+logs/
+sessions/
+temp/
+config/
