@@ -440,9 +440,14 @@ class TelegramClientManager:
                     bot_token = self.bot_token or Config.BOT_TOKEN
                     await self.client.start(bot_token=bot_token)
                 else:
-                    phone = self.phone or Config.PHONE_NUMBER
+                    # 【修复】用户客户端只能通过 session 文件启动，不能在命令行环境交互登录
+                    if not await self.client.is_user_authorized():
+                        self.logger.error("❌ 用户客户端未登录，请通过 Web 界面完成登录")
+                        raise Exception("用户客户端需要通过 Web 界面登录，不能在命令行环境中启动")
+                    
                     self.logger.info(f"📞 正在连接到 Telegram 服务器...")
-                    await self.client.start(phone=phone)
+                    # 使用 lambda 函数阻止命令行输入
+                    await self.client.start(phone=lambda: None)
             except Exception as start_error:
                 error_msg = str(start_error)
                 if "Server closed the connection" in error_msg or "0 bytes read" in error_msg:
