@@ -214,56 +214,71 @@ class EnhancedTelegramBot:
     async def _auto_fix_database_records(self):
         """自动修复数据库记录中的类型问题"""
         try:
-            from sqlalchemy import delete
+            from sqlalchemy import delete, select
             from database import get_db
             from models import TelegramClient
             from config import Config
             
             async for db in get_db():
-                self.logger.info("🗑️ 清理有问题的客户端记录...")
+                self.logger.info("🔧 检查并修复数据库记录...")
                 
-                # 删除所有现有记录，重新创建
-                await db.execute(delete(TelegramClient))
+                # 【优化】不删除所有记录，而是检查并更新/创建必要的记录
                 
-                # 重新创建main_user记录
-                main_user = TelegramClient(
-                    client_id='main_user',
-                    client_type='user',
-                    api_id=str(Config.API_ID) if hasattr(Config, 'API_ID') and Config.API_ID else None,
-                    api_hash=Config.API_HASH if hasattr(Config, 'API_HASH') and Config.API_HASH else None,
-                    phone=Config.PHONE_NUMBER if hasattr(Config, 'PHONE_NUMBER') and Config.PHONE_NUMBER else None,
-                    is_active=True,
-                    auto_start=False
+                # 检查并修复/创建 main_user
+                result = await db.execute(
+                    select(TelegramClient).where(TelegramClient.client_id == 'main_user')
                 )
-                db.add(main_user)
-                self.logger.info("✅ 重新创建main_user记录")
+                main_user_exists = result.scalar_one_or_none()
                 
-                # 重新创建main_bot记录（正确处理admin_user_id）
-                admin_user_id = None
-                if hasattr(Config, 'ADMIN_USER_IDS') and Config.ADMIN_USER_IDS:
-                    if isinstance(Config.ADMIN_USER_IDS, list):
-                        admin_user_id = ','.join(str(uid) for uid in Config.ADMIN_USER_IDS)
-                    else:
-                        admin_user_id = str(Config.ADMIN_USER_IDS)
+                if not main_user_exists and hasattr(Config, 'PHONE_NUMBER') and Config.PHONE_NUMBER:
+                    main_user = TelegramClient(
+                        client_id='main_user',
+                        client_type='user',
+                        api_id=str(Config.API_ID) if hasattr(Config, 'API_ID') and Config.API_ID else None,
+                        api_hash=Config.API_HASH if hasattr(Config, 'API_HASH') and Config.API_HASH else None,
+                        phone=Config.PHONE_NUMBER,
+                        is_active=True,
+                        auto_start=False
+                    )
+                    db.add(main_user)
+                    self.logger.info("✅ 创建main_user记录")
+                else:
+                    self.logger.debug("💡 main_user记录已存在，跳过")
                 
-                main_bot = TelegramClient(
-                    client_id='main_bot',
-                    client_type='bot',
-                    bot_token=Config.BOT_TOKEN if hasattr(Config, 'BOT_TOKEN') and Config.BOT_TOKEN else None,
-                    admin_user_id=admin_user_id,
-                    is_active=True,
-                    auto_start=False
+                # 检查并修复/创建 main_bot
+                result = await db.execute(
+                    select(TelegramClient).where(TelegramClient.client_id == 'main_bot')
                 )
-                db.add(main_bot)
-                self.logger.info("✅ 重新创建main_bot记录")
+                main_bot_exists = result.scalar_one_or_none()
+                
+                if not main_bot_exists and hasattr(Config, 'BOT_TOKEN') and Config.BOT_TOKEN:
+                    admin_user_id = None
+                    if hasattr(Config, 'ADMIN_USER_IDS') and Config.ADMIN_USER_IDS:
+                        if isinstance(Config.ADMIN_USER_IDS, list):
+                            admin_user_id = ','.join(str(uid) for uid in Config.ADMIN_USER_IDS)
+                        else:
+                            admin_user_id = str(Config.ADMIN_USER_IDS)
+                    
+                    main_bot = TelegramClient(
+                        client_id='main_bot',
+                        client_type='bot',
+                        bot_token=Config.BOT_TOKEN,
+                        admin_user_id=admin_user_id,
+                        is_active=True,
+                        auto_start=False
+                    )
+                    db.add(main_bot)
+                    self.logger.info("✅ 创建main_bot记录")
+                else:
+                    self.logger.debug("💡 main_bot记录已存在，跳过")
                 
                 await db.commit()
-                self.logger.info("🎉 数据库记录自动修复完成！")
+                self.logger.info("🎉 数据库记录检查完成！")
                 break
                 
         except Exception as fix_error:
             self.logger.error(f"❌ 自动修复失败: {fix_error}")
-            self.logger.info("💡 建议手动运行: python reset_database.py")
+            self.logger.info("💡 建议手动检查数据库或运行: python reset_database.py")
     
     async def _verify_and_fix_database(self):
         """验证数据库完整性并自动修复问题"""
