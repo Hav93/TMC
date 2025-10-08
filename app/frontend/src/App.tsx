@@ -28,6 +28,8 @@ import LoginPage from './pages/Login/index';
 import ContainerLogs from './pages/ContainerLogs/index';
 import ProfilePage from './pages/Profile/index';
 import MediaMonitorPage from './pages/MediaMonitor/index';
+import DownloadTasksPage from './pages/DownloadTasks/index';
+import MediaLibraryPage from './pages/MediaLibrary/index';
 
 // Styles
 import './styles/index.css';
@@ -92,6 +94,8 @@ const AppContent: React.FC = () => {
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="rules/*" element={<RulesPage />} />
                 <Route path="media-monitor/*" element={<MediaMonitorPage />} />
+                <Route path="download-tasks" element={<DownloadTasksPage />} />
+                <Route path="media-library" element={<MediaLibraryPage />} />
                 <Route path="system-logs" element={<LogsPage />} />
                 <Route path="chats" element={<ChatsPage />} />
                 <Route path="clients" element={<ClientManagement />} />

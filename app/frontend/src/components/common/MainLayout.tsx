@@ -23,6 +23,8 @@ import {
   LogoutOutlined,
   SafetyOutlined,
   CloudDownloadOutlined,
+  DownloadOutlined,
+  FolderOpenOutlined,
 } from '@ant-design/icons';
 import ThemeSwitcher from './ThemeSwitcher';
 import { useAuth } from '../../contexts/AuthContext';
@@ -55,6 +57,22 @@ const menuItems = [
     path: '/media-monitor',
     title: '📥 媒体监控',
     description: '自动下载和管理媒体文件',
+  },
+  {
+    key: '/download-tasks',
+    icon: <DownloadOutlined />,
+    label: '下载任务',
+    path: '/download-tasks',
+    title: '⬇️ 下载任务',
+    description: '查看媒体文件下载进度和队列',
+  },
+  {
+    key: '/media-library',
+    icon: <FolderOpenOutlined />,
+    label: '媒体文件库',
+    path: '/media-library',
+    title: '📁 媒体文件库',
+    description: '浏览和管理已下载的媒体文件',
   },
   {
     key: '/system-logs',
