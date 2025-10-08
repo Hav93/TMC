@@ -225,6 +225,9 @@ class TelegramClientManager:
         # 状态回调
         self.status_callbacks: List[Callable] = []
         
+        # 错误信息（供 API 使用）
+        self.last_error: Optional[str] = None
+        
         # 登录流程状态
         self.login_session = None
         self.login_state = "idle"  # idle, waiting_code, waiting_password, completed
@@ -423,8 +426,13 @@ class TelegramClientManager:
             await self.client.run_until_disconnected()
             
         except Exception as e:
-            self.logger.error(f"客户端运行失败: {e}")
-            self._notify_status_change("error", {"error": str(e)})
+            error_msg = str(e)
+            self.logger.error(f"客户端运行失败: {error_msg}")
+            
+            # 保存错误信息供 API 使用
+            self.last_error = error_msg
+            
+            self._notify_status_change("error", {"error": error_msg})
             raise
         finally:
             self.running = False

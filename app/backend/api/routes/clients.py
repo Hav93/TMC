@@ -239,25 +239,96 @@ async def start_client(client_id: str):
     """启动客户端"""
     try:
         enhanced_bot = get_enhanced_bot()
-        if enhanced_bot:
-            success = enhanced_bot.multi_client_manager.start_client(client_id)
-            if success:
-                return JSONResponse(content={
-                    "success": True,
-                    "message": f"客户端 {client_id} 启动成功"
-                })
-            else:
-                return JSONResponse(content={
-                    "success": False,
-                    "message": f"客户端 {client_id} 启动失败"
-                }, status_code=400)
-        else:
+        if not enhanced_bot:
             return JSONResponse(content={
                 "success": False,
                 "message": "增强版客户端管理器不可用"
             }, status_code=400)
+        
+        # 【修复】如果客户端不在内存中，先从数据库加载
+        if client_id not in enhanced_bot.multi_client_manager.clients:
+            logger.info(f"客户端 {client_id} 不在内存中，尝试从数据库加载...")
+            
+            try:
+                from models import TelegramClient
+                from database import get_db
+                from sqlalchemy import select
+                
+                async for db in get_db():
+                    result = await db.execute(
+                        select(TelegramClient).where(TelegramClient.client_id == client_id)
+                    )
+                    db_client = result.scalar_one_or_none()
+                    
+                    if not db_client:
+                        return JSONResponse(content={
+                            "success": False,
+                            "message": f"客户端 {client_id} 不存在"
+                        }, status_code=404)
+                    
+                    # 准备配置数据
+                    config_data = {}
+                    if db_client.client_type == 'bot':
+                        config_data = {
+                            'bot_token': db_client.bot_token,
+                            'admin_user_id': db_client.admin_user_id,
+                            'api_id': db_client.api_id,
+                            'api_hash': db_client.api_hash
+                        }
+                    elif db_client.client_type == 'user':
+                        from config import Config
+                        config_data = {
+                            'api_id': db_client.api_id or Config.API_ID,
+                            'api_hash': db_client.api_hash or Config.API_HASH,
+                            'phone': db_client.phone or Config.PHONE_NUMBER
+                        }
+                    
+                    # 添加到运行时管理器
+                    client = enhanced_bot.multi_client_manager.add_client_with_config(
+                        db_client.client_id,
+                        db_client.client_type,
+                        config_data=config_data
+                    )
+                    
+                    # 注册状态回调
+                    client.add_status_callback(
+                        lambda status, data, cid=client_id: enhanced_bot._notify_status_change(cid, status, data or {})
+                    )
+                    
+                    logger.info(f"✅ 从数据库加载客户端配置: {client_id}")
+                    break
+                    
+            except Exception as load_error:
+                logger.error(f"从数据库加载客户端失败: {load_error}")
+                return JSONResponse(content={
+                    "success": False,
+                    "message": f"加载客户端配置失败: {str(load_error)}"
+                }, status_code=500)
+        
+        # 启动客户端
+        success = enhanced_bot.multi_client_manager.start_client(client_id)
+        if success:
+            return JSONResponse(content={
+                "success": True,
+                "message": f"客户端 {client_id} 启动成功"
+            })
+        else:
+            # 获取更详细的错误信息
+            client = enhanced_bot.multi_client_manager.get_client(client_id)
+            if client and hasattr(client, 'last_error'):
+                error_msg = client.last_error
+            else:
+                error_msg = "启动失败，请查看日志获取详细信息"
+            
+            return JSONResponse(content={
+                "success": False,
+                "message": f"客户端 {client_id} 启动失败: {error_msg}"
+            }, status_code=400)
+            
     except Exception as e:
         logger.error(f"启动客户端失败: {e}")
+        import traceback
+        traceback.print_exc()
         return JSONResponse(content={
             "success": False,
             "message": f"启动客户端失败: {str(e)}"
