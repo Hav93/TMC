@@ -22,6 +22,7 @@ import {
   ContainerOutlined,
   LogoutOutlined,
   SafetyOutlined,
+  CloudDownloadOutlined,
 } from '@ant-design/icons';
 import ThemeSwitcher from './ThemeSwitcher';
 import { useAuth } from '../../contexts/AuthContext';
@@ -46,6 +47,14 @@ const menuItems = [
     path: '/rules',
     title: '⚙️ 转发规则',
     description: '配置和管理消息转发规则',
+  },
+  {
+    key: '/media-monitor',
+    icon: <CloudDownloadOutlined />,
+    label: '媒体监控',
+    path: '/media-monitor',
+    title: '📥 媒体监控',
+    description: '自动下载和管理媒体文件',
   },
   {
     key: '/system-logs',
