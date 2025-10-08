@@ -32,12 +32,14 @@ import {
   FolderOutlined,
   ClockCircleOutlined,
   DownloadOutlined,
-  ExclamationCircleOutlined
+  ExclamationCircleOutlined,
+  BarChartOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { mediaMonitorApi } from '../../services/mediaMonitor';
 import type { MediaMonitorRule } from '../../types/media';
+import RuleStatsModal from './RuleStatsModal';
 
 const { Title } = Typography;
 const { Search } = Input;
@@ -48,6 +50,10 @@ const MonitorRulesList: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchText, setSearchText] = useState('');
   const { colors } = useThemeContext();
+  
+  // 统计对话框
+  const [statsVisible, setStatsVisible] = useState(false);
+  const [selectedRule, setSelectedRule] = useState<MediaMonitorRule | null>(null);
 
   // 获取监控规则列表
   const { data: rulesData, isLoading, refetch } = useQuery({
@@ -249,6 +255,17 @@ const MonitorRulesList: React.FC = () => {
       fixed: 'right' as const,
       render: (_: any, record: MediaMonitorRule) => (
         <Space size="small">
+          <Tooltip title="查看统计">
+            <Button
+              type="link"
+              size="small"
+              icon={<BarChartOutlined />}
+              onClick={() => {
+                setSelectedRule(record);
+                setStatsVisible(true);
+              }}
+            />
+          </Tooltip>
           <Tooltip title="编辑">
             <Button
               type="link"
@@ -363,6 +380,16 @@ const MonitorRulesList: React.FC = () => {
           scroll={{ x: 1400 }}
         />
       </Card>
+
+      {/* 规则统计对话框 */}
+      <RuleStatsModal
+        visible={statsVisible}
+        rule={selectedRule}
+        onClose={() => {
+          setStatsVisible(false);
+          setSelectedRule(null);
+        }}
+      />
     </div>
   );
 };
