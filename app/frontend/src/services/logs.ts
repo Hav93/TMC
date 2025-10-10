@@ -64,10 +64,14 @@ export const logsApi = {
   // 导出日志
   export: async (filters?: LogFilters): Promise<Blob> => {
     try {
+      // 获取认证令牌（注意：登录时存储的键名是 access_token）
+      const token = localStorage.getItem('access_token');
+      
       const response = await fetch('/api/logs/export', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         },
         body: JSON.stringify(filters || {}),
       });

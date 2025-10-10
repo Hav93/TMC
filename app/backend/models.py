@@ -4,7 +4,7 @@
 from datetime import datetime, timezone
 import os
 from typing import List, Optional
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import bcrypt
@@ -400,6 +400,9 @@ class MediaMonitorRule(Base):
     clouddrive_password = Column(String(255), comment='CloudDrive密码（加密存储）')
     clouddrive_remote_path = Column(String(255), comment='CloudDrive远程路径')
     
+    # 115网盘配置
+    pan115_remote_path = Column(String(255), comment='115网盘远程路径（如 /Telegram媒体）')
+    
     # 文件夹结构
     folder_structure = Column(String(50), default='date', comment='文件夹组织方式：flat/date/type/source/sender/custom')
     custom_folder_template = Column(String(255), comment='自定义文件夹模板：{year}/{month}/{type}')
@@ -475,6 +478,51 @@ class DownloadTask(Base):
         return f"<DownloadTask(id={self.id}, file='{self.file_name}', status='{self.status}')>"
 
 
+class MediaSettings(Base):
+    """媒体管理全局配置模型"""
+    __tablename__ = 'media_settings'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # CloudDrive 配置
+    clouddrive_enabled = Column(Boolean, default=False, comment='启用CloudDrive')
+    clouddrive_url = Column(String(200), comment='CloudDrive服务地址')
+    clouddrive_username = Column(String(100), comment='CloudDrive用户名')
+    clouddrive_password = Column(String(200), comment='CloudDrive密码(加密存储)')
+    clouddrive_remote_path = Column(String(500), default='/Media', comment='CloudDrive远程路径')
+    
+    # 115网盘配置
+    pan115_app_id = Column(String(50), comment='115开放平台AppID')
+    pan115_user_id = Column(String(100), comment='115用户ID')
+    pan115_user_key = Column(String(200), comment='115用户密钥')
+    pan115_request_interval = Column(Float, default=1.0, comment='API请求间隔(秒)')
+    
+    # 下载设置
+    temp_folder = Column(String(500), default='/app/media/downloads', comment='临时下载文件夹')
+    concurrent_downloads = Column(Integer, default=3, comment='并发下载数')
+    retry_on_failure = Column(Boolean, default=True, comment='失败时重试')
+    max_retries = Column(Integer, default=3, comment='最大重试次数')
+    
+    # 元数据提取
+    extract_metadata = Column(Boolean, default=True, comment='提取元数据')
+    metadata_mode = Column(String(20), default='lightweight', comment='提取模式：disabled/lightweight/full')
+    metadata_timeout = Column(Integer, default=10, comment='超时时间(秒)')
+    async_metadata_extraction = Column(Boolean, default=True, comment='异步提取元数据')
+    
+    # 存储清理
+    auto_cleanup_enabled = Column(Boolean, default=True, comment='启用自动清理')
+    auto_cleanup_days = Column(Integer, default=7, comment='临时文件保留天数')
+    cleanup_only_organized = Column(Boolean, default=True, comment='只清理已归档文件')
+    max_storage_gb = Column(Integer, default=100, comment='最大存储容量(GB)')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
+    
+    def __repr__(self):
+        return f"<MediaSettings(id={self.id}, clouddrive={self.clouddrive_enabled})>"
+
+
 class MediaFile(Base):
     """媒体文件模型"""
     __tablename__ = 'media_files'
@@ -517,6 +565,8 @@ class MediaFile(Base):
     is_organized = Column(Boolean, default=False, comment='是否已归档')
     is_uploaded_to_cloud = Column(Boolean, default=False, comment='是否已上传到云端')
     is_starred = Column(Boolean, default=False, comment='是否收藏')
+    organize_failed = Column(Boolean, default=False, comment='归档是否失败')
+    organize_error = Column(Text, comment='归档失败原因')
     
     # 时间戳
     downloaded_at = Column(DateTime, default=get_local_now, comment='下载时间')

@@ -26,6 +26,10 @@ python-dateutil==2.9.0.post0
 # 其他工具
 cryptography==43.0.3
 Pillow==11.0.0
+protobuf>=4.21.0
+
+# 115网盘SDK
+p115client>=0.0.6.11.8
 
 # 认证
 bcrypt==4.2.1

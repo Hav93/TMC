@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 
 from database import get_db
-from models import MediaFile, DownloadTask, MediaMonitorRule, User
+from models import MediaFile, DownloadTask, MediaMonitorRule, User, MediaSettings
 from auth import get_current_user
 from log_manager import get_logger
 
@@ -73,7 +73,7 @@ async def get_task_stats(
 ):
     """获取下载任务统计"""
     try:
-        # 按状态统计
+        # 当前任务统计（按状态）
         pending_count = await db.scalar(
             select(func.count(DownloadTask.id)).where(DownloadTask.status == 'pending')
         ) or 0
@@ -94,15 +94,29 @@ async def get_task_stats(
             select(func.count(DownloadTask.id)).where(DownloadTask.status == 'paused')
         ) or 0
         
+        # 历史累计统计（从监控规则汇总）
+        rules_result = await db.execute(select(MediaMonitorRule))
+        rules = rules_result.scalars().all()
+        
+        total_downloaded_ever = sum(rule.total_downloaded or 0 for rule in rules)
+        total_size_ever_mb = sum(rule.total_size_mb or 0 for rule in rules)
+        total_failed_ever = sum(rule.failed_downloads or 0 for rule in rules)
+        
         return {
             "success": True,
             "stats": {
+                # 当前任务统计
                 "pending_count": pending_count,
                 "downloading_count": downloading_count,
                 "success_count": success_count,
                 "failed_count": failed_count,
                 "paused_count": paused_count,
-                "total_count": pending_count + downloading_count + success_count + failed_count + paused_count
+                "total_count": pending_count + downloading_count + success_count + failed_count + paused_count,
+                
+                # 历史累计统计
+                "total_downloaded_ever": total_downloaded_ever,
+                "total_size_ever_mb": total_size_ever_mb,
+                "total_failed_ever": total_failed_ever
             }
         }
         
@@ -132,6 +146,69 @@ async def retry_download_task(
                 content={"success": False, "message": "任务不存在"}
             )
         
+        # 获取媒体监控服务实例
+        from main import get_enhanced_bot
+        enhanced_bot = get_enhanced_bot()
+        if not enhanced_bot:
+            return JSONResponse(
+                status_code=503,
+                content={"success": False, "message": "媒体监控服务未启动"}
+            )
+        
+        media_monitor = enhanced_bot.media_monitor
+        if not media_monitor:
+            return JSONResponse(
+                status_code=503,
+                content={"success": False, "message": "媒体监控服务不可用"}
+            )
+        
+        # 获取客户端
+        multi_client_manager = enhanced_bot.multi_client_manager
+        if not multi_client_manager or not task.chat_id:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "无法重试：缺少客户端或聊天信息"}
+            )
+        
+        # 查找对应的客户端
+        client_wrapper = None
+        client = None
+        for client_manager in multi_client_manager.clients.values():
+            if client_manager.client and client_manager.connected and client_manager.running:
+                client_wrapper = client_manager
+                client = client_manager.client
+                break
+        
+        if not client:
+            return JSONResponse(
+                status_code=503,
+                content={"success": False, "message": "没有可用的客户端"}
+            )
+        
+        # 重新获取消息
+        try:
+            import asyncio
+            # 在客户端的事件循环中获取消息
+            future = asyncio.run_coroutine_threadsafe(
+                client.get_messages(int(task.chat_id), task.message_id),
+                client_wrapper.loop
+            )
+            message = future.result(timeout=10)
+            
+            if not message:
+                return JSONResponse(
+                    status_code=404,
+                    content={"success": False, "message": "无法获取原始消息，消息可能已被删除"}
+                )
+        except Exception as e:
+            logger.error(f"获取消息失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": f"获取消息失败: {str(e)}"}
+            )
+        
         # 重置任务状态
         task.status = 'pending'
         task.retry_count = 0
@@ -141,16 +218,39 @@ async def retry_download_task(
         
         await db.commit()
         
-        logger.info(f"重试下载任务: {task.file_name} (ID: {task_id})")
+        # 重新加入下载队列
+        try:
+            await media_monitor.download_queue.put({
+                'task_id': task.id,
+                'rule_id': task.monitor_rule_id,
+                'message_id': task.message_id,
+                'chat_id': int(task.chat_id),
+                'file_name': task.file_name,
+                'file_type': task.file_type,
+                'client': client,
+                'message': message,
+                'client_wrapper': client_wrapper
+            })
+            logger.info(f"✅ 任务已加入下载队列: {task.file_name} (ID: {task.id})")
+        except Exception as e:
+            logger.error(f"加入下载队列失败: {e}")
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": f"加入下载队列失败: {str(e)}"}
+            )
+        
+        logger.info(f"✅ 重试下载任务: {task.file_name} (ID: {task_id})")
         
         return {
             "success": True,
-            "message": "任务已加入队列"
+            "message": "任务已加入下载队列"
         }
         
     except Exception as e:
         await db.rollback()
         logger.error(f"重试下载任务失败: {e}")
+        import traceback
+        traceback.print_exc()
         return JSONResponse(
             status_code=500,
             content={"success": False, "message": f"重试失败: {str(e)}"}
@@ -229,6 +329,56 @@ async def delete_download_task(
         return JSONResponse(
             status_code=500,
             content={"success": False, "message": f"删除失败: {str(e)}"}
+        )
+
+
+@router.post("/tasks/batch-delete")
+async def batch_delete_download_tasks(
+    task_ids: List[int],
+    db: AsyncSession = Depends(get_db)
+):
+    """批量删除下载任务"""
+    try:
+        if not task_ids:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "未指定要删除的任务"}
+            )
+        
+        # 查询要删除的任务
+        result = await db.execute(
+            select(DownloadTask).where(DownloadTask.id.in_(task_ids))
+        )
+        tasks = result.scalars().all()
+        
+        if not tasks:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "未找到要删除的任务"}
+            )
+        
+        # 批量删除
+        deleted_count = 0
+        for task in tasks:
+            await db.delete(task)
+            deleted_count += 1
+        
+        await db.commit()
+        
+        logger.info(f"批量删除下载任务: {deleted_count} 个")
+        
+        return {
+            "success": True,
+            "message": f"成功删除 {deleted_count} 个任务",
+            "deleted_count": deleted_count
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"批量删除下载任务失败: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"批量删除失败: {str(e)}"}
         )
 
 
@@ -563,6 +713,70 @@ async def delete_media_file(
         )
 
 
+@router.post("/files/batch-delete")
+async def batch_delete_media_files(
+    file_ids: List[int],
+    db: AsyncSession = Depends(get_db)
+):
+    """批量删除媒体文件"""
+    try:
+        if not file_ids:
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "未指定要删除的文件"}
+            )
+        
+        # 查询要删除的文件
+        result = await db.execute(
+            select(MediaFile).where(MediaFile.id.in_(file_ids))
+        )
+        files = result.scalars().all()
+        
+        if not files:
+            return JSONResponse(
+                status_code=404,
+                content={"success": False, "message": "未找到要删除的文件"}
+            )
+        
+        # 批量删除
+        deleted_count = 0
+        failed_count = 0
+        
+        for file in files:
+            # 删除物理文件
+            for path in [file.temp_path, file.final_path]:
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                        logger.info(f"删除文件: {path}")
+                    except Exception as e:
+                        logger.warning(f"删除物理文件失败: {e}")
+                        failed_count += 1
+            
+            # 删除数据库记录
+            await db.delete(file)
+            deleted_count += 1
+        
+        await db.commit()
+        
+        logger.info(f"批量删除媒体文件: 成功 {deleted_count} 个，失败 {failed_count} 个")
+        
+        return {
+            "success": True,
+            "message": f"成功删除 {deleted_count} 个文件" + (f"，{failed_count} 个物理文件删除失败" if failed_count > 0 else ""),
+            "deleted_count": deleted_count,
+            "failed_count": failed_count
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"批量删除媒体文件失败: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"批量删除失败: {str(e)}"}
+        )
+
+
 # ==================== 辅助函数 ====================
 
 def task_to_dict(task: DownloadTask) -> dict:
@@ -620,6 +834,8 @@ def file_to_dict(file: MediaFile) -> dict:
         "is_organized": file.is_organized,
         "is_uploaded_to_cloud": file.is_uploaded_to_cloud,
         "is_starred": file.is_starred,
+        "organize_failed": file.organize_failed,
+        "organize_error": file.organize_error,
         "downloaded_at": file.downloaded_at.isoformat() if file.downloaded_at else None,
         "organized_at": file.organized_at.isoformat() if file.organized_at else None,
         "uploaded_at": file.uploaded_at.isoformat() if file.uploaded_at else None
@@ -684,5 +900,165 @@ async def check_storage(
         return JSONResponse(
             status_code=500,
             content={"success": False, "message": f"检查失败: {str(e)}"}
+        )
+
+@router.post("/files/{file_id}/reorganize")
+async def reorganize_media_file(
+    file_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """重新整理媒体文件（上传到115网盘）"""
+    try:
+        # 获取媒体文件记录
+        file_query = select(MediaFile).where(MediaFile.id == file_id)
+        result = await db.execute(file_query)
+        media_file = result.scalar_one_or_none()
+        
+        if not media_file:
+            raise HTTPException(status_code=404, detail="文件不存在")
+        
+        # 获取关联的监控规则
+        rule_query = select(MediaMonitorRule).where(MediaMonitorRule.id == media_file.monitor_rule_id)
+        rule_result = await db.execute(rule_query)
+        rule = rule_result.scalar_one_or_none()
+        
+        if not rule:
+            raise HTTPException(status_code=404, detail="关联的监控规则不存在")
+        
+        # 检查是否启用了115网盘上传
+        if rule.organize_target_type != 'pan115':
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "该规则未启用115网盘上传"}
+            )
+        
+        # 检查源文件是否存在
+        source_file = media_file.final_path or media_file.temp_path
+        logger.info(f"📁 源文件检查: final_path={media_file.final_path}, temp_path={media_file.temp_path}, source_file={source_file}")
+        
+        if not source_file or not os.path.exists(source_file):
+            error_msg = f"源文件不存在: {source_file}"
+            logger.error(f"❌ {error_msg}")
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": error_msg}
+            )
+        
+        logger.info(f"📤 开始重新整理文件: {media_file.file_name} (ID: {file_id})")
+        
+        # 获取115网盘配置（直接从数据库查询）
+        settings_query = select(MediaSettings)
+        settings_result = await db.execute(settings_query)
+        settings = settings_result.scalar_one_or_none()
+        
+        if not settings:
+            error_msg = "媒体设置未初始化"
+            logger.error(f"❌ {error_msg}")
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": error_msg}
+            )
+        
+        pan115_user_key = settings.pan115_user_key
+        pan115_remote_base = rule.pan115_remote_path or settings.pan115_remote_path or '/Telegram媒体'
+        
+        logger.info(f"🔑 获取到的cookies前50字符: {pan115_user_key[:50] if pan115_user_key else 'None'}...")
+        logger.info(f"📂 远程基础路径: {pan115_remote_base}")
+        
+        if not pan115_user_key:
+            error_msg = "115网盘未配置，请先在设置页面扫码登录"
+            logger.error(f"❌ {error_msg}")
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": error_msg}
+            )
+        
+        # 构建元数据
+        from services.media_monitor_service import FileOrganizer
+        organize_metadata = {
+            'type': media_file.file_type,
+            'sender_id': media_file.sender_id,
+            'sender_username': media_file.sender_username,
+            'sender_name': media_file.sender_username or str(media_file.sender_id),
+            'source_chat': media_file.source_chat or 'unknown',
+            'source_chat_id': media_file.source_chat or 'unknown'
+        }
+        
+        # 生成远程路径
+        remote_dir = FileOrganizer.generate_target_directory(rule, organize_metadata)
+        remote_filename = FileOrganizer.generate_filename(rule, media_file.file_name, organize_metadata)
+        
+        # 完整的115网盘目标路径
+        remote_target_dir = os.path.join(pan115_remote_base, remote_dir).replace('\\', '/')
+        pan115_path = os.path.join(remote_target_dir, remote_filename).replace('\\', '/')
+        
+        logger.info(f"📤 上传到115网盘: {pan115_path}")
+        logger.info(f"📤 上传参数: source={source_file}, target_dir={remote_target_dir}, filename={remote_filename}")
+        
+        # 使用P115Service上传
+        from services.p115_service import P115Service
+        p115 = P115Service()
+        
+        try:
+            upload_result = await p115.upload_file(
+                cookies=pan115_user_key,
+                file_path=source_file,
+                target_dir=remote_target_dir,
+                file_name=remote_filename
+            )
+            logger.info(f"📤 上传结果: success={upload_result.get('success')}, message={upload_result.get('message')}")
+        except Exception as upload_error:
+            logger.error(f"❌ 上传异常: {upload_error}")
+            import traceback
+            traceback.print_exc()
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": f"上传异常: {str(upload_error)}"}
+            )
+        
+        if upload_result.get('success'):
+            # 更新媒体文件记录
+            media_file.clouddrive_path = pan115_path
+            media_file.is_uploaded_to_cloud = True
+            media_file.organize_failed = False
+            media_file.organize_error = None
+            media_file.uploaded_at = datetime.now()
+            
+            await db.commit()
+            
+            logger.info(f"✅ 文件重新整理成功: {media_file.file_name}")
+            
+            return {
+                "success": True,
+                "message": "重新整理成功",
+                "path": pan115_path,
+                "is_quick": upload_result.get('is_quick', False),
+                "pickcode": upload_result.get('pickcode')
+            }
+        else:
+            error_msg = upload_result.get('message', '未知错误')
+            
+            # 更新失败记录
+            media_file.organize_failed = True
+            media_file.organize_error = f"115网盘上传失败: {error_msg}"
+            await db.commit()
+            
+            logger.warning(f"⚠️ 文件重新整理失败: {error_msg}")
+            
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "message": error_msg}
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 重新整理文件失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"重新整理失败: {str(e)}"}
         )
 

@@ -14,12 +14,23 @@ services:
     ports:
       - "9393:9393"
     volumes:
+      # 开发模式：挂载关键代码文件实现热更新
+      - ../app/backend/api:/app/api
+      - ../app/backend/services:/app/services
+      - ../app/backend/models.py:/app/models.py
+      - ../app/backend/main.py:/app/main.py
+      - ../app/backend/enhanced_bot.py:/app/enhanced_bot.py
+      # 前端dist由镜像内构建，不挂载宿主机目录，避免覆盖新构建的文件
+      # - ../app/frontend/dist:/app/frontend/dist
+      # 数据目录
       - ../data:/app/data
       - ../sessions:/app/sessions
       - tmc-logs:/app/logs
       # 媒体管理相关目录（v1.3.0 新增）
       - ../media/downloads:/app/media/downloads
       - ../media/storage:/app/media/storage
+      # CloudDrive 和外部挂载目录（可选）
+      - tmc-mnt:/mnt
     environment:
       # Telegram 客户端配置（完全可选，推荐通过 Web 界面配置）
       - API_ID=${API_ID:-}
@@ -27,7 +38,7 @@ services:
       - BOT_TOKEN=${BOT_TOKEN:-}
       - PHONE_NUMBER=${PHONE_NUMBER:-}
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-secret-key-change-in-production}
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///app/data/app.db}
+      - DATABASE_URL=sqlite:////app/data/bot.db
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - HTTP_PROXY=${HTTP_PROXY:-}
       - HTTPS_PROXY=${HTTPS_PROXY:-}
@@ -43,6 +54,8 @@ services:
 
 volumes:
   tmc-logs:
+    driver: local
+  tmc-mnt:
     driver: local
 
 networks:

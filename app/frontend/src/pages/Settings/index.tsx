@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Card, 
   Form, 
@@ -20,9 +20,10 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { settingsApi } from '../../services/settings';
 import { useThemeContext } from '../../theme';
+import MediaSettingsPage from './MediaSettings';
+import Pan115Settings from './Pan115Settings';
 
 const { Title, Text } = Typography;
-const { TabPane } = Tabs;
 const { Option } = Select;
 
 const SettingsPage: React.FC = () => {
@@ -152,9 +153,15 @@ const SettingsPage: React.FC = () => {
           style={{ marginBottom: '24px' }}
         />
         
-        <Tabs activeKey={activeTab} onChange={setActiveTab}>
-          {/* 代理设置 */}
-          <TabPane tab="代理设置" key="proxy">
+        <Tabs 
+          activeKey={activeTab} 
+          onChange={setActiveTab}
+          items={[
+            {
+              key: 'proxy',
+              label: '代理设置',
+              children: (
+                    <div>
             <Form
               form={proxyForm}
               layout="vertical"
@@ -247,10 +254,14 @@ const SettingsPage: React.FC = () => {
                 </Button>
               </Space>
             </Form>
-          </TabPane>
-
-          {/* 系统设置 */}
-          <TabPane tab="系统设置" key="system">
+                </div>
+              ),
+            },
+            {
+              key: 'system',
+              label: '系统设置',
+              children: (
+                <div>
             <Form
               form={systemForm}
               layout="vertical"
@@ -293,17 +304,30 @@ const SettingsPage: React.FC = () => {
                 <InputNumber min={1} max={1000} style={{ width: '100%' }} />
               </Form.Item>
 
-              <Button
-                type="primary"
-                icon={<SaveOutlined />}
+                <Button
+                  type="primary"
+                  icon={<SaveOutlined />}
                 onClick={handleSaveSystem}
                 loading={saveSystemMutation.isPending}
-              >
+                >
                 保存配置
-              </Button>
+                </Button>
             </Form>
-          </TabPane>
-        </Tabs>
+                </div>
+              ),
+            },
+            {
+              key: 'media',
+              label: '媒体管理',
+              children: <MediaSettingsPage />,
+            },
+            {
+              key: 'pan115',
+              label: '115网盘',
+              children: <Pan115Settings />,
+            },
+          ]}
+        />
       </Card>
     </div>
   );

@@ -311,10 +311,15 @@ class TelegramClientManager:
         
         if self.loop and self.client:
             # 在客户端的事件循环中执行断开连接
-            asyncio.run_coroutine_threadsafe(
-                self.client.disconnect(), 
-                self.loop
-            )
+            try:
+                if self.client.is_connected:
+                    future = asyncio.run_coroutine_threadsafe(
+                        self.client.stop(), 
+                        self.loop
+                    )
+                    future.result(timeout=5)  # 等待最多5秒
+            except Exception as e:
+                logger.warning(f"停止客户端时出错: {e}")
         
         if self.thread:
             self.thread.join(timeout=10)
@@ -679,23 +684,25 @@ class TelegramClientManager:
             self.logger.info(f"📨 收到监控消息: 聊天ID={chat_id}, 消息ID={message.id}")
             self.logger.debug(f"处理监听消息: 聊天ID={chat_id}, 消息ID={message.id}")
             
-            # 获取适用的转发规则
+            # 1. 处理转发规则
             rules = await self._get_applicable_rules(chat_id)
             
-            if not rules:
-                self.logger.info(f"⚠️ 聊天ID {chat_id} 没有适用的激活转发规则")
-                return
-            
-            # 并发处理多个规则（如果有多个）
-            if len(rules) > 1:
-                tasks = []
-                for rule in rules:
-                    task = asyncio.create_task(self._process_rule_safe(rule, message, event))
-                    tasks.append(task)
-                await asyncio.gather(*tasks, return_exceptions=True)
+            if rules:
+                # 并发处理多个规则（如果有多个）
+                if len(rules) > 1:
+                    tasks = []
+                    for rule in rules:
+                        task = asyncio.create_task(self._process_rule_safe(rule, message, event))
+                        tasks.append(task)
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                else:
+                    # 单个规则直接处理
+                    await self._process_rule_safe(rules[0], message, event)
             else:
-                # 单个规则直接处理
-                await self._process_rule_safe(rules[0], message, event)
+                self.logger.debug(f"聊天ID {chat_id} 没有适用的转发规则")
+            
+            # 2. 处理媒体监控规则
+            await self._process_media_monitor(chat_id, message)
                 
             # 性能监控
             processing_time = (time.time() - start_time) * 1000
@@ -704,6 +711,45 @@ class TelegramClientManager:
                     
         except Exception as e:
             self.logger.error(f"消息处理失败: {e}")
+    
+    async def _process_media_monitor(self, chat_id: int, message):
+        """处理媒体监控"""
+        try:
+            # 获取媒体监控服务
+            from services.media_monitor_service import get_media_monitor_service
+            media_monitor = get_media_monitor_service()
+            
+            # 检查是否有适用的媒体监控规则
+            from models import MediaMonitorRule
+            from sqlalchemy import select
+            
+            async for db in get_db():
+                # 查找适用的媒体监控规则
+                result = await db.execute(
+                    select(MediaMonitorRule).where(
+                        MediaMonitorRule.is_active == True,
+                        MediaMonitorRule.client_id == self.client_id
+                    )
+                )
+                rules = result.scalars().all()
+                
+                for rule in rules:
+                    # 解析 source_chats（JSON 字符串）
+                    import json
+                    source_chats = json.loads(rule.source_chats) if rule.source_chats else []
+                    
+                    # 检查消息是否来自监控的聊天
+                    if str(chat_id) in source_chats:
+                        self.logger.info(f"📹 触发媒体监控规则: {rule.name} (ID: {rule.id})")
+                        # 处理媒体消息（传递客户端包装器self，以便访问事件循环）
+                        await media_monitor.process_message(self.client, message, rule.id, client_wrapper=self)
+                
+                break
+                
+        except Exception as e:
+            self.logger.error(f"媒体监控处理失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def _get_applicable_rules(self, chat_id: int) -> List[ForwardRule]:
         """获取适用的转发规则"""
@@ -1185,23 +1231,61 @@ class TelegramClientManager:
         self.logger.info("🛑 日志队列处理任务已停止")
     
     async def _update_monitored_chats(self):
-        """更新监听的聊天列表"""
+        """更新监听的聊天列表（包含转发规则和媒体监控规则）"""
         try:
             async for db in get_db():
                 from sqlalchemy import select, distinct
+                import json
                 
-                # 获取所有活跃规则的源聊天ID
+                monitored_set = set()
+                
+                # 1. 获取所有活跃转发规则的源聊天ID
                 stmt = select(distinct(ForwardRule.source_chat_id)).where(
                     ForwardRule.is_active == True
                 )
                 result = await db.execute(stmt)
-                chat_ids = result.scalars().all()
+                forward_chat_ids = result.scalars().all()
+                monitored_set.update(int(chat_id) for chat_id in forward_chat_ids)
                 
-                self.monitored_chats = set(int(chat_id) for chat_id in chat_ids)
-                self.logger.info(f"🎯 更新监听聊天列表: {list(self.monitored_chats)}")
+                # 2. 获取所有活跃媒体监控规则的源聊天ID
+                from models import MediaMonitorRule
+                stmt = select(MediaMonitorRule).where(
+                    MediaMonitorRule.is_active == True,
+                    MediaMonitorRule.client_id == self.client_id
+                )
+                result = await db.execute(stmt)
+                media_rules = result.scalars().all()
+                
+                for rule in media_rules:
+                    # 解析 source_chats（可能是JSON字符串或已解析的列表）
+                    if rule.source_chats:
+                        self.logger.info(f"🔍 规则 {rule.id} 的 source_chats 类型: {type(rule.source_chats)}, 值: {repr(rule.source_chats)}")
+                        # 如果是字符串，解析为JSON
+                        if isinstance(rule.source_chats, str):
+                            try:
+                                source_chats = json.loads(rule.source_chats)
+                                self.logger.info(f"✅ JSON第一次解析: {repr(source_chats)}, 类型: {type(source_chats)}")
+                                
+                                # 如果解析结果仍是字符串（双重编码），再解析一次
+                                if isinstance(source_chats, str):
+                                    source_chats = json.loads(source_chats)
+                                    self.logger.info(f"✅ JSON第二次解析: {source_chats}")
+                            except json.JSONDecodeError as e:
+                                self.logger.error(f"❌ JSON解析失败: {e}")
+                                continue
+                        else:
+                            source_chats = rule.source_chats
+                        # 将字符串格式的聊天ID转换为整数
+                        monitored_set.update(int(chat_id) for chat_id in source_chats)
+                
+                self.monitored_chats = monitored_set
+                self.logger.info(f"🎯 更新监听聊天列表 (转发: {len(forward_chat_ids)}, 媒体监控: {len(media_rules)}): {list(self.monitored_chats)}")
+                break
                 
         except Exception as e:
             self.logger.error(f"更新监听聊天列表失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def send_verification_code(self) -> Dict[str, Any]:
         """发送验证码"""
@@ -1250,17 +1334,56 @@ class TelegramClientManager:
                     # 保存客户端配置到数据库
                     await self._save_client_config()
                     
-                    return {
-                        "success": True,
-                        "message": "用户已登录，无需重复操作",
-                        "step": "completed",
-                        "user_info": {
-                            "id": me.id,
-                            "username": getattr(me, 'username', ''),
-                            "first_name": getattr(me, 'first_name', ''),
-                            "phone": getattr(me, 'phone', '')
+                    # 【新方案】保持连接并自动启动客户端运行
+                    # 不断开连接，而是直接启动运行线程，这样用户点击启动时可以直接继承这个连接
+                    self.logger.info("🚀 检测到已登录，保持连接并准备启动...")
+                    
+                    # 启动客户端运行线程（类似 start() 方法的逻辑）
+                    try:
+                        # 设置运行状态
+                        self.running = True
+                        self.status = "running"
+                        
+                        # 启动运行线程
+                        self.thread = threading.Thread(
+                            target=self._run_client_thread,
+                            daemon=True,
+                            name=f"telegram_client_{self.client_id}"
+                        )
+                        self.thread.start()
+                        
+                        self.logger.info(f"✅ 客户端 {self.client_id} 已自动启动（使用已验证的连接）")
+                        
+                        return {
+                            "success": True,
+                            "message": f"用户已登录，客户端已自动启动",
+                            "step": "completed",
+                            "auto_started": True,  # 标记为自动启动
+                            "user_info": {
+                                "id": me.id,
+                                "username": getattr(me, 'username', ''),
+                                "first_name": getattr(me, 'first_name', ''),
+                                "phone": getattr(me, 'phone', '')
+                            }
                         }
-                    }
+                    except Exception as start_error:
+                        self.logger.error(f"自动启动失败: {start_error}")
+                        # 启动失败，断开连接
+                        if self.client and self.client.is_connected():
+                            await self.client.disconnect()
+                            self.connected = False
+                        
+                        return {
+                            "success": True,
+                            "message": "用户已登录，但自动启动失败，请手动启动",
+                            "step": "completed",
+                            "user_info": {
+                                "id": me.id,
+                                "username": getattr(me, 'username', ''),
+                                "first_name": getattr(me, 'first_name', ''),
+                                "phone": getattr(me, 'phone', '')
+                            }
+                        }
             except Exception as auth_check_error:
                 # 检查失败不影响后续流程，继续发送验证码
                 self.logger.warning(f"检查登录状态失败: {auth_check_error}")

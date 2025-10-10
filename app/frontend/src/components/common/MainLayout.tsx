@@ -32,8 +32,9 @@ import { useThemeContext } from '../../theme';
 
 const { Header, Sider } = Layout;
 
-// 菜单项配置
+// 菜单项配置 - 按功能分组优化
 const menuItems = [
+  // 仪表板 - 入口
   {
     key: '/dashboard',
     icon: <DashboardOutlined />,
@@ -41,46 +42,14 @@ const menuItems = [
     path: '/dashboard',
     title: '📊 仪表板',
     description: '系统运行状态和数据统计概览',
+    group: 'overview',
   },
+  
+  // 消息转发 - 核心功能组
   {
-    key: '/rules',
-    icon: <SettingOutlined />,
-    label: '转发规则',
-    path: '/rules',
-    title: '⚙️ 转发规则',
-    description: '配置和管理消息转发规则',
-  },
-  {
-    key: '/media-monitor',
-    icon: <CloudDownloadOutlined />,
-    label: '媒体监控',
-    path: '/media-monitor',
-    title: '📥 媒体监控',
-    description: '自动下载和管理媒体文件',
-  },
-  {
-    key: '/download-tasks',
-    icon: <DownloadOutlined />,
-    label: '下载任务',
-    path: '/download-tasks',
-    title: '⬇️ 下载任务',
-    description: '查看媒体文件下载进度和队列',
-  },
-  {
-    key: '/media-library',
-    icon: <FolderOpenOutlined />,
-    label: '媒体文件库',
-    path: '/media-library',
-    title: '📁 媒体文件库',
-    description: '浏览和管理已下载的媒体文件',
-  },
-  {
-    key: '/system-logs',
-    icon: <FileTextOutlined />,
-    label: '消息日志',
-    path: '/system-logs',
-    title: '📝 消息日志',
-    description: '查看消息转发历史记录',
+    key: 'divider-1',
+    type: 'divider',
+    group: 'message',
   },
   {
     key: '/chats',
@@ -89,6 +58,66 @@ const menuItems = [
     path: '/chats',
     title: '💬 聊天管理',
     description: '管理群组和频道信息',
+    group: 'message',
+  },
+  {
+    key: '/rules',
+    icon: <SettingOutlined />,
+    label: '转发规则',
+    path: '/rules',
+    title: '⚙️ 转发规则',
+    description: '配置和管理消息转发规则',
+    group: 'message',
+  },
+  {
+    key: '/system-logs',
+    icon: <FileTextOutlined />,
+    label: '消息日志',
+    path: '/system-logs',
+    title: '📝 消息日志',
+    description: '查看消息转发历史记录',
+    group: 'message',
+  },
+  
+  // 媒体管理 - 扩展功能组
+  {
+    key: 'divider-2',
+    type: 'divider',
+    group: 'media',
+  },
+  {
+    key: '/media-monitor',
+    icon: <CloudDownloadOutlined />,
+    label: '媒体监控',
+    path: '/media-monitor',
+    title: '📥 媒体监控',
+    description: '自动下载和管理媒体文件',
+    group: 'media',
+  },
+  {
+    key: '/download-tasks',
+    icon: <DownloadOutlined />,
+    label: '下载任务',
+    path: '/download-tasks',
+    title: '⬇️ 下载任务',
+    description: '查看媒体文件下载进度和队列',
+    group: 'media',
+  },
+  {
+    key: '/media-library',
+    icon: <FolderOpenOutlined />,
+    label: '媒体文件库',
+    path: '/media-library',
+    title: '📁 媒体文件库',
+    description: '浏览和管理已下载的媒体文件',
+    group: 'media',
+  },
+  
+  // 系统管理 - 系统功能组
+  {
+    key: 'divider-3',
+    type: 'divider',
+    group: 'system',
   },
   {
     key: '/clients',
@@ -97,14 +126,7 @@ const menuItems = [
     path: '/clients',
     title: '🤖 客户端管理',
     description: '管理Telegram客户端实例',
-  },
-  {
-    key: '/users',
-    icon: <SafetyOutlined />,
-    label: '用户管理',
-    path: '/users',
-    title: '👥 用户管理',
-    description: '管理系统用户账号和权限',
+    group: 'system',
   },
   {
     key: '/container-logs',
@@ -113,6 +135,7 @@ const menuItems = [
     path: '/container-logs',
     title: '🐳 容器日志',
     description: '实时查看Docker容器运行日志',
+    group: 'system',
   },
   {
     key: '/settings',
@@ -121,6 +144,7 @@ const menuItems = [
     path: '/settings',
     title: '🔧 系统设置',
     description: '配置系统参数和Bot设置',
+    group: 'system',
   },
 ];
 
@@ -179,8 +203,8 @@ const MainLayout: React.FC = () => {
 
   // 菜单点击处理
   const handleMenuClick = (key: string) => {
-    const item = menuItems.find(item => item.key === key);
-    if (item) {
+    const item = menuItems.find(item => item.key === key && item.type !== 'divider');
+    if (item && item.path) {
       navigate(item.path);
     }
   };
@@ -189,7 +213,7 @@ const MainLayout: React.FC = () => {
   const getSelectedKeys = () => {
     const path = location.pathname;
     for (const item of menuItems) {
-      if (path.startsWith(item.key)) {
+      if (item.type !== 'divider' && item.key && path.startsWith(item.key)) {
         return [item.key];
       }
     }
@@ -200,7 +224,7 @@ const MainLayout: React.FC = () => {
   const getCurrentPageInfo = () => {
     const path = location.pathname;
     for (const item of menuItems) {
-      if (path.startsWith(item.key)) {
+      if (item.type !== 'divider' && item.key && path.startsWith(item.key)) {
         return { title: item.title, description: item.description };
       }
     }
@@ -311,12 +335,23 @@ const MainLayout: React.FC = () => {
               background: 'transparent',
               height: '100%',
             }}
-            items={menuItems.map(item => ({
-              key: item.key,
-              icon: item.icon,
-              label: item.label,
-              onClick: () => handleMenuClick(item.key),
-            }))}
+            items={menuItems.map(item => {
+              // 处理分隔线
+              if (item.type === 'divider') {
+                return {
+                  key: item.key,
+                  type: 'divider' as const,
+                  style: { margin: '8px 0' },
+                };
+              }
+              // 处理普通菜单项
+              return {
+                key: item.key,
+                icon: item.icon,
+                label: item.label,
+                onClick: () => handleMenuClick(item.key),
+              };
+            })}
           />
         </div>
 

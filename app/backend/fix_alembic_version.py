@@ -19,10 +19,20 @@ import os
 from pathlib import Path
 
 DB_PATH = "data/bot.db"
-LATEST_REVISION = "20250108_add_media_management"  # 最新的迁移版本
+LATEST_REVISION = "20250108_add_media_settings"  # 最新的迁移版本
 
 # 版本检测规则（按时间倒序）
 VERSION_RULES = [
+    {
+        "version": "20250108_add_media_settings",
+        "check": lambda c: check_table_exists(c, "media_settings"),
+        "desc": "媒体管理全局配置"
+    },
+    {
+        "version": "20250108_add_last_connected",
+        "check": lambda c: check_column_exists(c, "telegram_clients", "last_connected"),
+        "desc": "客户端最后连接时间"
+    },
     {
         "version": "20250108_add_media_management",
         "check": lambda c: (

@@ -37,7 +37,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 创建必要的目录
-RUN mkdir -p /app/data /app/logs /app/sessions
+RUN mkdir -p /app/data /app/logs /app/sessions /mnt/clouddrive /mnt/data
 
 # 暴露端口
 EXPOSE 9393

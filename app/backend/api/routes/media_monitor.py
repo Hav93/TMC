@@ -8,15 +8,34 @@ from sqlalchemy import select, func, and_, or_
 from typing import Optional, List
 from datetime import datetime
 import json
+import asyncio
 
 from database import get_db
 from models import MediaMonitorRule, User
 from auth import get_current_user
 from log_manager import get_logger
+from telegram_client_manager import multi_client_manager
 
 logger = get_logger('api.media_monitor')
 
 router = APIRouter(tags=["media_monitor"])
+
+
+async def notify_client_reload_chats(client_id: str):
+    """通知客户端重新加载监听的聊天列表"""
+    try:
+        client_wrapper = multi_client_manager.get_client(client_id)
+        if client_wrapper and client_wrapper.loop:
+            # 在客户端的事件循环中执行更新
+            asyncio.run_coroutine_threadsafe(
+                client_wrapper._update_monitored_chats(),
+                client_wrapper.loop
+            )
+            logger.info(f"✅ 已通知客户端 {client_id} 重新加载监听列表")
+        else:
+            logger.warning(f"⚠️ 客户端 {client_id} 未运行或事件循环不可用")
+    except Exception as e:
+        logger.error(f"❌ 通知客户端重新加载失败: {e}")
 
 
 # ==================== 监控规则 API ====================
@@ -98,13 +117,18 @@ async def get_monitor_rule(
                 content={"success": False, "message": "规则不存在"}
             )
         
+        rule_dict = rule_to_dict(rule)
+        logger.info(f"📤 返回规则详情: {rule_dict}")
+        
         return {
             "success": True,
-            "rule": rule_to_dict(rule)
+            "rule": rule_dict
         }
         
     except Exception as e:
         logger.error(f"获取监控规则详情失败: {e}")
+        import traceback
+        traceback.print_exc()
         return JSONResponse(
             status_code=500,
             content={"success": False, "message": f"获取详情失败: {str(e)}"}
@@ -139,16 +163,16 @@ async def create_monitor_rule(
             is_active=rule_data.get('is_active', True),
             client_id=rule_data.get('client_id'),
             
-            # 监听源
-            source_chats=json.dumps(rule_data.get('source_chats', [])) if rule_data.get('source_chats') else None,
+            # 监听源（前端已JSON化，直接保存）
+            source_chats=rule_data.get('source_chats'),
             
-            # 媒体过滤
-            media_types=json.dumps(rule_data.get('media_types', [])) if rule_data.get('media_types') else None,
+            # 媒体过滤（前端已JSON化，直接保存）
+            media_types=rule_data.get('media_types'),
             min_size_mb=rule_data.get('min_size_mb', 0),
             max_size_mb=rule_data.get('max_size_mb', 2000),
             filename_include=rule_data.get('filename_include'),
             filename_exclude=rule_data.get('filename_exclude'),
-            file_extensions=json.dumps(rule_data.get('file_extensions', [])) if rule_data.get('file_extensions') else None,
+            file_extensions=rule_data.get('file_extensions'),
             
             # 发送者过滤
             enable_sender_filter=rule_data.get('enable_sender_filter', False),
@@ -204,6 +228,10 @@ async def create_monitor_rule(
         
         logger.info(f"创建监控规则成功: {rule.name} (ID: {rule.id})")
         
+        # 通知客户端重新加载监听列表
+        if rule.is_active:
+            await notify_client_reload_chats(rule.client_id)
+        
         return {
             "success": True,
             "message": "创建成功",
@@ -244,7 +272,10 @@ async def update_monitor_rule(
         # 更新字段
         for key, value in rule_data.items():
             if key in ['source_chats', 'media_types', 'file_extensions'] and value is not None:
-                value = json.dumps(value)
+                # 只对列表/数组进行JSON编码，字符串直接使用（前端已编码）
+                if isinstance(value, (list, tuple)):
+                    value = json.dumps(value)
+                # 如果已经是字符串，直接使用（前端已JSON.stringify）
             if hasattr(rule, key):
                 setattr(rule, key, value)
         
@@ -254,6 +285,9 @@ async def update_monitor_rule(
         await db.refresh(rule)
         
         logger.info(f"更新监控规则成功: {rule.name} (ID: {rule.id})")
+        
+        # 通知客户端重新加载监听列表
+        await notify_client_reload_chats(rule.client_id)
         
         return {
             "success": True,
@@ -290,11 +324,15 @@ async def delete_monitor_rule(
             )
         
         rule_name = rule.name
+        client_id = rule.client_id
         
         await db.delete(rule)
         await db.commit()
         
         logger.info(f"删除监控规则成功: {rule_name} (ID: {rule_id})")
+        
+        # 通知客户端重新加载监听列表
+        await notify_client_reload_chats(client_id)
         
         return {
             "success": True,
@@ -336,6 +374,9 @@ async def toggle_monitor_rule(
         await db.refresh(rule)
         
         logger.info(f"切换监控规则状态: {rule.name} -> {'启用' if rule.is_active else '禁用'}")
+        
+        # 通知客户端重新加载监听列表
+        await notify_client_reload_chats(rule.client_id)
         
         return {
             "success": True,
@@ -446,6 +487,23 @@ async def get_rule_stats(
 
 def rule_to_dict(rule: MediaMonitorRule) -> dict:
     """将监控规则对象转换为字典"""
+    
+    # 辅助函数：处理可能的双重JSON编码
+    def parse_json_field(field_value):
+        if not field_value:
+            return []
+        # 如果已经是列表，直接返回
+        if isinstance(field_value, list):
+            return field_value
+        # 如果是字符串，尝试解析
+        if isinstance(field_value, str):
+            parsed = json.loads(field_value)
+            # 如果解析结果仍是字符串（双重编码），再解析一次
+            if isinstance(parsed, str):
+                parsed = json.loads(parsed)
+            return parsed if isinstance(parsed, list) else []
+        return []
+    
     return {
         "id": rule.id,
         "name": rule.name,
@@ -454,15 +512,15 @@ def rule_to_dict(rule: MediaMonitorRule) -> dict:
         "client_id": rule.client_id,
         
         # 监听源
-        "source_chats": json.loads(rule.source_chats) if rule.source_chats else [],
+        "source_chats": parse_json_field(rule.source_chats),
         
         # 媒体过滤
-        "media_types": json.loads(rule.media_types) if rule.media_types else [],
+        "media_types": parse_json_field(rule.media_types),
         "min_size_mb": rule.min_size_mb,
         "max_size_mb": rule.max_size_mb,
         "filename_include": rule.filename_include,
         "filename_exclude": rule.filename_exclude,
-        "file_extensions": json.loads(rule.file_extensions) if rule.file_extensions else [],
+        "file_extensions": parse_json_field(rule.file_extensions),
         
         # 发送者过滤
         "enable_sender_filter": rule.enable_sender_filter,

@@ -9,15 +9,17 @@ from fastapi import APIRouter
 
 # 导入所有路由模块
 from . import (
-    system,         # 系统管理 - /api/system
-    rules,          # 转发规则 - /api/rules
-    logs,           # 日志管理 - /api/logs
-    chats,          # 聊天管理 - /api/chats
-    clients,        # 客户端管理 - /api/clients
-    settings,       # 系统设置 - /api/settings
-    dashboard,      # 仪表板 - /api/dashboard
-    media_monitor,  # 媒体监控 - /api/media/monitor
-    media_files,    # 媒体文件 - /api/media
+    system,          # 系统管理 - /api/system
+    rules,           # 转发规则 - /api/rules
+    logs,            # 日志管理 - /api/logs
+    chats,           # 聊天管理 - /api/chats
+    clients,         # 客户端管理 - /api/clients
+    settings,        # 系统设置 - /api/settings
+    dashboard,       # 仪表板 - /api/dashboard
+    media_monitor,   # 媒体监控 - /api/media/monitor
+    media_files,     # 媒体文件 - /api/media
+    media_settings,  # 媒体配置 - /api/settings/media
+    pan115,          # 115网盘 - /api/pan115
 )
 
 # 导出所有路由器
@@ -31,6 +33,8 @@ __all__ = [
     'dashboard',
     'media_monitor',
     'media_files',
+    'media_settings',
+    'pan115',
 ]
 
 # API路由配置信息（用于文档和验证）
@@ -79,6 +83,16 @@ API_ROUTE_CONFIG = {
         'prefix': '/api/media',
         'tags': ['媒体文件'],
         'router': media_files.router,
+    },
+    'media_settings': {
+        'prefix': '/api/settings/media',
+        'tags': ['媒体配置'],
+        'router': media_settings.router,
+    },
+    'pan115': {
+        'prefix': '/api/pan115',
+        'tags': ['115网盘'],
+        'router': pan115.router,
     },
 }
 

@@ -86,7 +86,14 @@ export const ClientLoginModal: React.FC<ClientLoginModalProps> = ({
           console.log('🎉 登录完成');
           setCurrentStep(3);
           setLoginStep('completed');
-          message.success(data.message || '登录成功');
+          
+          // 【优化】检查是否自动启动
+          if (data.auto_started) {
+            message.success(data.message || '登录成功，客户端已自动启动');
+          } else {
+            message.success(data.message || '登录成功');
+          }
+          
           setTimeout(() => {
             onSuccess();
             handleReset();

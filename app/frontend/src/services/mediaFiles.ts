@@ -1,7 +1,7 @@
 /**
  * 媒体文件和下载任务 API 服务
  */
-import axios from 'axios';
+import { apiClient } from './api';
 import type { MediaFile, DownloadTask, StorageUsage } from '../types/media';
 
 const API_BASE = '/api/media';
@@ -18,7 +18,7 @@ export const mediaFilesApi = {
     page?: number;
     page_size?: number;
   }) => {
-    const { data } = await axios.get(`${API_BASE}/tasks`, { params });
+    const { data } = await apiClient.get(`${API_BASE}/tasks`, { params });
     return data;
   },
 
@@ -26,7 +26,7 @@ export const mediaFilesApi = {
    * 重试下载任务
    */
   retryTask: async (taskId: number) => {
-    const { data } = await axios.post(`${API_BASE}/tasks/${taskId}/retry`);
+    const { data } = await apiClient.post(`${API_BASE}/tasks/${taskId}/retry`);
     return data;
   },
 
@@ -34,7 +34,15 @@ export const mediaFilesApi = {
    * 删除下载任务
    */
   deleteTask: async (taskId: number) => {
-    const { data } = await axios.delete(`${API_BASE}/tasks/${taskId}`);
+    const { data } = await apiClient.delete(`${API_BASE}/tasks/${taskId}`);
+    return data;
+  },
+
+  /**
+   * 批量删除下载任务
+   */
+  batchDeleteTasks: async (taskIds: number[]) => {
+    const { data } = await apiClient.post(`${API_BASE}/tasks/batch-delete`, taskIds);
     return data;
   },
 
@@ -42,7 +50,7 @@ export const mediaFilesApi = {
    * 更新任务优先级
    */
   updateTaskPriority: async (taskId: number, priority: number) => {
-    const { data } = await axios.post(`${API_BASE}/tasks/${taskId}/priority`, null, {
+    const { data } = await apiClient.post(`${API_BASE}/tasks/${taskId}/priority`, null, {
       params: { priority }
     });
     return data;
@@ -52,7 +60,7 @@ export const mediaFilesApi = {
    * 获取任务统计
    */
   getTaskStats: async () => {
-    const { data } = await axios.get(`${API_BASE}/tasks/stats`);
+    const { data } = await apiClient.get(`${API_BASE}/tasks/stats`);
     return data;
   },
 
@@ -73,7 +81,7 @@ export const mediaFilesApi = {
     page?: number;
     page_size?: number;
   }) => {
-    const { data } = await axios.get(`${API_BASE}/files`, { params });
+    const { data } = await apiClient.get(`${API_BASE}/files`, { params });
     return data;
   },
 
@@ -81,7 +89,7 @@ export const mediaFilesApi = {
    * 获取文件详情
    */
   getFile: async (fileId: number) => {
-    const { data } = await axios.get(`${API_BASE}/files/${fileId}`);
+    const { data } = await apiClient.get(`${API_BASE}/files/${fileId}`);
     return data;
   },
 
@@ -89,7 +97,7 @@ export const mediaFilesApi = {
    * 下载文件
    */
   downloadFile: async (fileId: number) => {
-    const response = await axios.get(`${API_BASE}/download/${fileId}`, {
+    const response = await apiClient.get(`${API_BASE}/download/${fileId}`, {
       responseType: 'blob',
     });
     return response;
@@ -99,7 +107,7 @@ export const mediaFilesApi = {
    * 收藏/取消收藏文件
    */
   toggleStar: async (fileId: number) => {
-    const { data } = await axios.post(`${API_BASE}/files/${fileId}/star`);
+    const { data } = await apiClient.post(`${API_BASE}/files/${fileId}/star`);
     return data;
   },
 
@@ -107,7 +115,23 @@ export const mediaFilesApi = {
    * 删除文件
    */
   deleteFile: async (fileId: number) => {
-    const { data } = await axios.delete(`${API_BASE}/files/${fileId}`);
+    const { data } = await apiClient.delete(`${API_BASE}/files/${fileId}`);
+    return data;
+  },
+
+  /**
+   * 批量删除文件
+   */
+  batchDeleteFiles: async (fileIds: number[]) => {
+    const { data } = await apiClient.post(`${API_BASE}/files/batch-delete`, fileIds);
+    return data;
+  },
+
+  /**
+   * 重新整理文件（重新上传到115网盘）
+   */
+  reorganizeFile: async (fileId: number) => {
+    const { data } = await apiClient.post(`${API_BASE}/files/${fileId}/reorganize`);
     return data;
   },
 
@@ -115,7 +139,7 @@ export const mediaFilesApi = {
    * 获取文件统计
    */
   getFileStats: async () => {
-    const { data } = await axios.get(`${API_BASE}/files/stats`);
+    const { data } = await apiClient.get(`${API_BASE}/files/stats`);
     return data;
   },
 
@@ -126,7 +150,7 @@ export const mediaFilesApi = {
    */
   getStorageUsage: async (ruleId?: number): Promise<StorageUsage> => {
     const params = ruleId ? { rule_id: ruleId } : {};
-    const { data } = await axios.get(`${API_BASE}/storage/usage`, { params });
+    const { data } = await apiClient.get(`${API_BASE}/storage/usage`, { params });
     return data;
   },
 
@@ -139,7 +163,7 @@ export const mediaFilesApi = {
     only_organized?: boolean;
     delete_db_records?: boolean;
   }) => {
-    const { data } = await axios.post(`${API_BASE}/storage/cleanup`, null, { params });
+    const { data } = await apiClient.post(`${API_BASE}/storage/cleanup`, null, { params });
     return data;
   },
 
@@ -147,7 +171,7 @@ export const mediaFilesApi = {
    * 检查存储并自动清理
    */
   checkStorage: async (ruleId: number) => {
-    const { data } = await axios.post(`${API_BASE}/storage/check`, null, {
+    const { data } = await apiClient.post(`${API_BASE}/storage/check`, null, {
       params: { rule_id: ruleId },
     });
     return data;

@@ -128,6 +128,8 @@ export interface MediaFile {
   is_organized?: boolean;
   is_uploaded_to_cloud?: boolean;
   is_starred?: boolean;
+  organize_failed?: boolean;
+  organize_error?: string;
   downloaded_at?: string;
   organized_at?: string;
   uploaded_at?: string;
@@ -152,4 +154,3 @@ export interface StorageUsage {
     total_size_gb: number;
   }>;
 }
-
