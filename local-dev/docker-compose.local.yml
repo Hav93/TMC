@@ -22,7 +22,7 @@ services:
       - ../app/backend/main.py:/app/main.py
       - ../app/backend/enhanced_bot.py:/app/enhanced_bot.py
       - ../app/backend/telegram_client_manager.py:/app/telegram_client_manager.py
-      - ../app/backend/fix_alembic_version.py:/app/fix_alembic_version.py
+      - ../app/backend/docker-entrypoint.sh:/docker-entrypoint.sh
       # 前端热挂载（开发模式）
       - ../app/frontend/dist:/app/frontend/dist
       # 数据目录
