@@ -483,15 +483,16 @@ async def get_dashboard_insights():
             today = date.today()
             
             # ==================== 今日高峰时段 ====================
+            # SQLite 使用 strftime 而不是 hour 函数
             hourly_stats_query = select(
-                func.hour(DownloadTask.created_at).label('hour'),
+                func.strftime('%H', DownloadTask.created_at).label('hour'),
                 func.count(DownloadTask.id).label('count')
             ).where(
                 and_(
                     func.date(DownloadTask.created_at) == today,
                     DownloadTask.status == 'success'
                 )
-            ).group_by(func.hour(DownloadTask.created_at)).order_by(desc('count'))
+            ).group_by(func.strftime('%H', DownloadTask.created_at)).order_by(desc('count'))
             
             hourly_stats_result = await db.execute(hourly_stats_query)
             peak_hour_row = hourly_stats_result.first()
@@ -499,7 +500,8 @@ async def get_dashboard_insights():
             peak_hour = None
             peak_count = 0
             if peak_hour_row:
-                peak_hour = f"{peak_hour_row[0]:02d}:00-{peak_hour_row[0]+1:02d}:00"
+                hour_int = int(peak_hour_row[0]) if peak_hour_row[0] else 0
+                peak_hour = f"{hour_int:02d}:00-{(hour_int+1):02d}:00"
                 peak_count = peak_hour_row[1]
             
             # ==================== 最活跃规则 ====================

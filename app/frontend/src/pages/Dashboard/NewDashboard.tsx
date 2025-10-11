@@ -43,6 +43,29 @@ const COLORS = {
   chartColors: ['#1890ff', '#722ed1', '#52c41a', '#faad14', '#f5222d', '#13c2c2'],
 };
 
+// 格式化存储大小，自动选择合适的单位
+const formatStorageSize = (sizeInGB: number): { value: string; unit: string } => {
+  if (sizeInGB >= 1024 * 1024) {
+    // PB
+    return {
+      value: (sizeInGB / (1024 * 1024)).toFixed(2),
+      unit: 'PB'
+    };
+  } else if (sizeInGB >= 1024) {
+    // TB
+    return {
+      value: (sizeInGB / 1024).toFixed(2),
+      unit: 'TB'
+    };
+  } else {
+    // GB
+    return {
+      value: sizeInGB.toFixed(2),
+      unit: 'GB'
+    };
+  }
+};
+
 const NewDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { themeType, colors } = useThemeContext();
@@ -558,12 +581,20 @@ const NewDashboard: React.FC = () => {
                       <Text type="secondary" style={{ fontSize: 12 }}>💾 网盘空间</Text>
                       {overview.storage_distribution.cloud.pan115_space.total_gb > 0 ? (
                         <>
-                          <Text strong style={{ fontSize: 16 }}>
-                            {overview.storage_distribution.cloud.pan115_space.total_gb} GB
-                          </Text>
-                          <Text type="secondary" style={{ fontSize: 11 }}>
-                            剩余 {overview.storage_distribution.cloud.pan115_space.available_gb.toFixed(2)} GB
-                          </Text>
+                          {(() => {
+                            const totalSize = formatStorageSize(overview.storage_distribution.cloud.pan115_space.total_gb);
+                            const availableSize = formatStorageSize(overview.storage_distribution.cloud.pan115_space.available_gb);
+                            return (
+                              <>
+                                <Text strong style={{ fontSize: 16 }}>
+                                  {totalSize.value} {totalSize.unit}
+                                </Text>
+                                <Text type="secondary" style={{ fontSize: 11 }}>
+                                  剩余 {availableSize.value} {availableSize.unit}
+                                </Text>
+                              </>
+                            );
+                          })()}
                           <Progress 
                             percent={Math.round(overview.storage_distribution.cloud.pan115_space.usage_percentage)} 
                             size="small"
