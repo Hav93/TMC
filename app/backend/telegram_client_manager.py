@@ -1922,7 +1922,7 @@ class MultiClientManager:
     def process_history_messages(self, rule) -> Dict[str, Any]:
         """处理历史消息 - 在客户端的事件循环中执行"""
         try:
-            from services import HistoryMessageService
+            from services.business_services import HistoryMessageService
             import asyncio
             import threading
             

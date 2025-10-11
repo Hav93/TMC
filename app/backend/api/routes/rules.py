@@ -29,7 +29,7 @@ router = APIRouter()
 async def list_rules():
     """获取所有规则列表"""
     try:
-        from services import ForwardRuleService
+        from services.business_services import ForwardRuleService
         rules = await ForwardRuleService.get_all_rules()
         
         # 添加调试日志
@@ -94,7 +94,7 @@ async def create_rule(request: Request):
     """创建新规则"""
     try:
         data = await request.json()
-        from services import ForwardRuleService
+        from services.business_services import ForwardRuleService
         
         # 验证必需的字段
         required_fields = ['name', 'source_chat_id', 'target_chat_id']
@@ -176,7 +176,7 @@ async def create_rule(request: Request):
 async def get_rule(rule_id: int):
     """获取单个规则详情"""
     try:
-        from services import ForwardRuleService
+        from services.business_services import ForwardRuleService
         rule = await ForwardRuleService.get_rule_by_id(rule_id)
         
         if not rule:
@@ -251,7 +251,7 @@ async def update_rule(rule_id: int, request: Request):
     """更新规则"""
     try:
         data = await request.json()
-        from services import ForwardRuleService
+        from services.business_services import ForwardRuleService
         
         # 检查规则是否存在
         existing_rule = await ForwardRuleService.get_rule_by_id(rule_id)
@@ -359,7 +359,7 @@ async def update_rule(rule_id: int, request: Request):
 async def delete_rule(rule_id: int):
     """删除规则"""
     try:
-        from services import ForwardRuleService
+        from services.business_services import ForwardRuleService
         
         # 检查规则是否存在
         existing_rule = await ForwardRuleService.get_rule_by_id(rule_id)

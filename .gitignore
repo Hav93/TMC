@@ -98,6 +98,11 @@ Thumbs.db
 # 归档
 _archived/
 
+# 测试文件和数据
+tests/fixtures/*.db
+tests/fixtures/temp_*
+scripts/maintenance/*.bat
+
 # 用户文件
 docker-compose.user.yml
 .env.user.example

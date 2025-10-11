@@ -323,7 +323,7 @@ class EnhancedTelegramBot:
     async def _process_active_rules_history(self):
         """系统启动时处理所有已激活规则的历史消息"""
         try:
-            from services import ForwardRuleService
+            from services.business_services import ForwardRuleService
             
             self.logger.info("🔄 检查已激活的规则以处理历史消息...")
             
@@ -354,7 +354,7 @@ class EnhancedTelegramBot:
     async def forward_history_messages(self, rule_id: int, hours: int = 24):
         """转发历史消息（当规则从关闭状态激活时或系统启动时）"""
         try:
-            from services import ForwardRuleService
+            from services.business_services import ForwardRuleService
             
             # 获取规则信息
             rule = await ForwardRuleService.get_rule_by_id(rule_id)
