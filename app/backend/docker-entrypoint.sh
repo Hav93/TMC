@@ -16,39 +16,44 @@ cd /app
 echo ""
 echo "📦 数据库初始化"
 
-# 获取最新的 Alembic 版本号
-LATEST_VERSION=$(alembic heads | grep -o '[a-z0-9_]*' | head -1)
-echo "   ├─ 最新版本: $LATEST_VERSION"
-
 if [ -f "$DB_FILE" ]; then
     echo "   ├─ 检测到已有数据库"
     
-    # 检查 alembic_version 表是否存在
-    if sqlite3 "$DB_FILE" "SELECT name FROM sqlite_master WHERE type='table' AND name='alembic_version';" 2>/dev/null | grep -q alembic_version; then
-        # 获取当前数据库版本
-        CURRENT_VERSION=$(sqlite3 "$DB_FILE" "SELECT version_num FROM alembic_version LIMIT 1;" 2>/dev/null || echo "")
-        
-        if [ "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
-            echo "   ├─ ✅ 数据库版本匹配: $CURRENT_VERSION"
-            echo "   └─ 直接使用现有数据库"
-        else
-            echo ""
-            echo "❌ 数据库版本不匹配"
-            echo "   当前版本: ${CURRENT_VERSION:-未知}"
-            echo "   需要版本: $LATEST_VERSION"
-            echo ""
-            echo "💡 test 分支不支持数据迁移，请删除数据库："
-            echo "   docker-compose down -v"
-            echo "   docker-compose up -d"
-            echo ""
-            exit 1
-        fi
+    # 检查 Alembic 版本表
+    CURRENT_VERSION=$(python3 -c "
+import sqlite3
+try:
+    conn = sqlite3.connect('$DB_FILE')
+    cursor = conn.cursor()
+    cursor.execute('SELECT version_num FROM alembic_version LIMIT 1')
+    print(cursor.fetchone()[0])
+except:
+    print('none')
+" 2>/dev/null)
+    
+    if [ "$CURRENT_VERSION" = "none" ]; then
+        echo "   ├─ ⚠️  数据库缺少版本信息"
+        echo "   ├─ 尝试自动迁移..."
     else
+        echo "   ├─ 当前版本: $CURRENT_VERSION"
+    fi
+    
+    # 尝试迁移到最新版本
+    echo "   ├─ 执行数据库迁移..."
+    MIGRATION_OUTPUT=$(alembic upgrade head 2>&1)
+    MIGRATION_EXIT=$?
+    
+    if [ $MIGRATION_EXIT -eq 0 ]; then
+        echo "   └─ ✅ 数据库迁移成功"
+    else
+        # 显示错误信息
+        echo "$MIGRATION_OUTPUT" | grep -v "^INFO" | grep -v "^$"
         echo ""
-        echo "❌ 数据库结构不完整（缺少版本表）"
+        echo "❌ 数据库迁移失败"
         echo ""
-        echo "💡 请删除数据库后重新启动："
-        echo "   docker-compose down -v"
+        echo "💡 建议删除旧数据库后重新启动："
+        echo "   docker-compose down"
+        echo "   rm -rf data/bot.db*"
         echo "   docker-compose up -d"
         echo ""
         exit 1
@@ -57,10 +62,14 @@ else
     echo "   ├─ 未检测到数据库"
     echo "   ├─ 创建全新数据库..."
     
-    # 创建全新数据库
-    if alembic upgrade head 2>&1 | grep -v "^INFO"; then
+    # 使用 Alembic 创建数据库
+    MIGRATION_OUTPUT=$(alembic upgrade head 2>&1)
+    MIGRATION_EXIT=$?
+    
+    if [ $MIGRATION_EXIT -eq 0 ]; then
         echo "   └─ ✅ 数据库创建成功"
     else
+        echo "$MIGRATION_OUTPUT" | grep -v "^INFO" | grep -v "^$"
         echo ""
         echo "❌ 数据库创建失败"
         exit 1

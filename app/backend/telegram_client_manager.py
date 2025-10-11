@@ -312,12 +312,16 @@ class TelegramClientManager:
         if self.loop and self.client:
             # 在客户端的事件循环中执行断开连接
             try:
-                if self.client.is_connected:
-                    future = asyncio.run_coroutine_threadsafe(
-                        self.client.disconnect(), 
-                        self.loop
-                    )
-                    future.result(timeout=5)  # 等待最多5秒
+                # 创建一个异步函数来断开连接
+                async def disconnect_client():
+                    if self.client.is_connected():
+                        await self.client.disconnect()
+                
+                future = asyncio.run_coroutine_threadsafe(
+                    disconnect_client(), 
+                    self.loop
+                )
+                future.result(timeout=5)  # 等待最多5秒
             except Exception as e:
                 self.logger.warning(f"停止客户端时出错: {e}")
         
@@ -382,15 +386,44 @@ class TelegramClientManager:
             except Exception as start_error:
                 error_msg = str(start_error)
                 if "database is locked" in error_msg:
-                    self.logger.error(f"❌ Session 文件被锁定，可能是以下原因:")
-                    self.logger.error("   1. 另一个进程正在使用此 session")
-                    self.logger.error("   2. Session 文件损坏或未正确关闭")
-                    self.logger.error("   3. 文件系统延迟（Docker 卷挂载）")
-                    self.logger.error("💡 建议解决方案:")
-                    self.logger.error("   1. 确保没有其他进程使用此客户端")
-                    self.logger.error("   2. 重启 Docker 容器")
-                    self.logger.error("   3. 如果问题持续，删除并重新登录此客户端")
-                    raise Exception(f"Session 文件被锁定，请重启容器或重新登录: {error_msg}")
+                    self.logger.warning(f"⚠️ Session 文件被锁定，尝试自动修复...")
+                    
+                    # 尝试自动修复：清理锁定的 session 文件
+                    try:
+                        import sqlite3
+                        session_path = Path(Config.SESSIONS_DIR) / f"{self.client_type}_{self.client_id}.session"
+                        
+                        if session_path.exists():
+                            # 尝试连接并立即关闭，清除可能的锁定
+                            try:
+                                conn = sqlite3.connect(str(session_path), timeout=1.0, check_same_thread=False)
+                                conn.close()
+                                self.logger.info("   ├─ ✅ Session 文件锁定已清除")
+                            except:
+                                # 如果无法清除锁，删除 -wal 和 -shm 文件
+                                wal_file = session_path.with_suffix('.session-wal')
+                                shm_file = session_path.with_suffix('.session-shm')
+                                
+                                if wal_file.exists():
+                                    wal_file.unlink()
+                                    self.logger.info("   ├─ 🗑️ 删除 WAL 文件")
+                                if shm_file.exists():
+                                    shm_file.unlink()
+                                    self.logger.info("   ├─ 🗑️ 删除 SHM 文件")
+                            
+                            # 等待一下，让文件系统同步
+                            await asyncio.sleep(0.5)
+                            
+                            # 重试启动
+                            self.logger.info("   └─ 🔄 重试启动客户端...")
+                            await self.client.start()
+                            self.logger.info("   └─ ✅ 客户端启动成功（锁定已修复）")
+                    except Exception as fix_error:
+                        self.logger.error(f"❌ 自动修复失败: {fix_error}")
+                        self.logger.error("💡 建议手动解决方案:")
+                        self.logger.error("   1. 重启 Docker 容器")
+                        self.logger.error("   2. 如果问题持续，删除并重新登录此客户端")
+                        raise Exception(f"Session 文件被锁定且无法自动修复: {error_msg}")
                 elif "Server closed the connection" in error_msg or "0 bytes read" in error_msg:
                     self.logger.error(f"❌ Telegram 服务器连接失败: {error_msg}")
                     self.logger.error("💡 可能的解决方案:")
@@ -532,6 +565,25 @@ class TelegramClientManager:
             # 检查session文件是否存在
             import os
             session_exists = os.path.exists(session_file)
+            
+            # 预防性清理：删除可能存在的 WAL 和 SHM 锁定文件
+            if session_exists:
+                wal_file = f"{session_file}-wal"
+                shm_file = f"{session_file}-shm"
+                
+                if os.path.exists(wal_file):
+                    try:
+                        os.remove(wal_file)
+                        self.logger.debug(f"🗑️ 清理旧 WAL 文件")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ 无法删除 WAL 文件: {e}")
+                
+                if os.path.exists(shm_file):
+                    try:
+                        os.remove(shm_file)
+                        self.logger.debug(f"🗑️ 清理旧 SHM 文件")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ 无法删除 SHM 文件: {e}")
             
             self.logger.info(f"🔍 客户端 {self.client_id} 配置检查:")
             self.logger.info(f"   - Session路径: {session_file}")
@@ -1693,13 +1745,19 @@ class TelegramClientManager:
                 if self.client_type == "bot":
                     client_display_name = f"机器人: {getattr(self.user_info, 'first_name', self.client_id)}"
                 else:
-                    first_name = getattr(self.user_info, 'first_name', '')
-                    last_name = getattr(self.user_info, 'last_name', '')
-                    username = getattr(self.user_info, 'username', '')
+                    first_name = getattr(self.user_info, 'first_name', '') or ''
+                    last_name = getattr(self.user_info, 'last_name', '') or ''
+                    username = getattr(self.user_info, 'username', '') or ''
+                    
+                    # 构建全名（只包含非空部分）
+                    name_parts = [first_name, last_name]
+                    full_name = ' '.join(part for part in name_parts if part).strip()
+                    
                     if username:
-                        client_display_name = f"用户: {first_name} {last_name} (@{username})".strip()
+                        client_display_name = f"用户: {full_name} (@{username})".strip()
                     else:
-                        client_display_name = f"用户: {first_name} {last_name}".strip()
+                        client_display_name = f"用户: {full_name}".strip()
+                    
                     if not client_display_name.replace("用户: ", "").strip():
                         client_display_name = f"用户: {self.client_id}"
             
