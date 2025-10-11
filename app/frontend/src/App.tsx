@@ -30,6 +30,7 @@ import ProfilePage from './pages/Profile/index';
 import MediaMonitorPage from './pages/MediaMonitor/index';
 import DownloadTasksPage from './pages/DownloadTasks/index';
 import MediaLibraryPage from './pages/MediaLibrary/index';
+import ResourceMonitorPage from './pages/ResourceMonitor/index';
 
 // Styles
 import './styles/index.css';
@@ -96,6 +97,7 @@ const AppContent: React.FC = () => {
                 <Route path="media-monitor/*" element={<MediaMonitorPage />} />
                 <Route path="download-tasks" element={<DownloadTasksPage />} />
                 <Route path="media-library" element={<MediaLibraryPage />} />
+                <Route path="resource-monitor" element={<ResourceMonitorPage />} />
                 <Route path="system-logs" element={<LogsPage />} />
                 <Route path="chats" element={<ChatsPage />} />
                 <Route path="clients" element={<ClientManagement />} />

@@ -112,6 +112,15 @@ const menuItems = [
     description: '浏览和管理已下载的媒体文件',
     group: 'media',
   },
+  {
+    key: '/resource-monitor',
+    icon: <LinkOutlined />,
+    label: '资源监控',
+    path: '/resource-monitor',
+    title: '📚 资源监控',
+    description: '监控Telegram消息中的资源链接并自动转存到115',
+    group: 'media',
+  },
   
   // 系统管理 - 系统功能组
   {
