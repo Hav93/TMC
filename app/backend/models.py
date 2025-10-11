@@ -518,7 +518,7 @@ class MediaFile(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     monitor_rule_id = Column(Integer, ForeignKey('media_monitor_rules.id'), nullable=False, comment='关联的监控规则ID')
-    download_task_id = Column(Integer, ForeignKey('download_tasks.id'), comment='关联的下载任务ID')
+    download_task_id = Column(Integer, ForeignKey('download_tasks.id', ondelete='SET NULL'), comment='关联的下载任务ID')
     message_id = Column(Integer, comment='消息ID')
     
     # 文件路径

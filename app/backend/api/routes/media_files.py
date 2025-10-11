@@ -968,6 +968,61 @@ async def check_storage(
         )
 
 
+@router.post("/storage/cleanup-orphans")
+async def cleanup_orphan_records(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """清理孤儿记录（物理文件已删除但数据库记录仍存在）"""
+    try:
+        # 查询所有媒体文件记录
+        result = await db.execute(select(MediaFile))
+        all_files = result.scalars().all()
+        
+        orphan_count = 0
+        checked_count = 0
+        
+        for file in all_files:
+            checked_count += 1
+            # 检查物理文件是否存在
+            file_exists = False
+            
+            # 检查所有可能的路径
+            for path in [file.temp_path, file.final_path]:
+                if path and os.path.exists(path):
+                    file_exists = True
+                    break
+            
+            # 如果是115网盘文件，认为存在（不检查远程文件）
+            if file.pan115_path and file.is_uploaded_to_cloud:
+                file_exists = True
+            
+            # 如果所有路径都不存在，删除数据库记录
+            if not file_exists:
+                logger.info(f"删除孤儿记录: {file.file_name} (ID: {file.id})")
+                await db.delete(file)
+                orphan_count += 1
+        
+        await db.commit()
+        
+        logger.info(f"孤儿记录清理完成: 检查 {checked_count} 个文件，删除 {orphan_count} 个孤儿记录")
+        
+        return {
+            "success": True,
+            "message": f"清理完成",
+            "checked_count": checked_count,
+            "orphan_count": orphan_count
+        }
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"清理孤儿记录失败: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"清理失败: {str(e)}"}
+        )
+
+
 @router.post("/files/{file_id}/reorganize")
 async def reorganize_media_file(
     file_id: int,
