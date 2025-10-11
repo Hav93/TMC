@@ -150,12 +150,20 @@ async def save_settings(request: Request):
         from config import Config
         Config.reload()
         
-        logger.info("🔄 配置重新加载完成")
-        logger.info("✅ 系统配置保存成功！需要重启应用以完全生效")
+        # 重新加载代理管理器（重要！确保代理配置立即生效）
+        from proxy_utils import reload_proxy_manager
+        reload_proxy_manager()
+        
+        logger.info("🔄 配置重新加载完成（包括代理管理器）")
+        logger.info("✅ 系统配置保存成功！代理配置已生效，新启动的客户端将使用新配置")
+        
+        # 检查是否有代理配置变更
+        proxy_changed = enable_proxy or data.get('proxy_host') or data.get('proxy_port')
         
         return JSONResponse(content={
             "success": True,
-            "message": "设置保存成功，需要重启应用以生效"
+            "message": "设置保存成功！代理配置已更新，请重启已运行的客户端以使其生效。" if proxy_changed else "设置保存成功！",
+            "requires_client_restart": proxy_changed
         })
     except Exception as e:
         logger.error(f"❌ 保存设置失败: {e}", exc_info=True)

@@ -89,8 +89,15 @@ const SettingsPage: React.FC = () => {
   // 保存代理配置
   const saveProxyMutation = useMutation({
     mutationFn: settingsApi.save,
-    onSuccess: () => {
-      message.success('✅ 代理配置保存成功');
+    onSuccess: (data: any) => {
+      if (data.requires_client_restart) {
+        message.warning({
+          content: '✅ 代理配置保存成功！请重启已运行的客户端以使新配置生效。',
+          duration: 5,
+        });
+      } else {
+        message.success('✅ 代理配置保存成功');
+      }
       refetch();
     },
     onError: (error: any) => {
