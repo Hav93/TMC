@@ -51,10 +51,10 @@ async def get_pan115_config(
                 "is_configured": False
             }
         
-        # 检查是否已配置（脱敏显示）
+        # 检查是否已配置：只要有user_id和user_key就算配置完成
         is_configured = bool(
-            getattr(settings, 'pan115_app_id', None) and
-            getattr(settings, 'pan115_user_id', None)
+            getattr(settings, 'pan115_user_id', None) and
+            getattr(settings, 'pan115_user_key', None)
         )
         
         user_key_masked = None
