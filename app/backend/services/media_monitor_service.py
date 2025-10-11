@@ -751,7 +751,22 @@ class MediaMonitorService:
             
             db.add(task)
             await db.commit()
-            await db.refresh(task)
+            
+            # 刷新任务对象以获取数据库生成的ID
+            try:
+                await db.refresh(task)
+            except Exception as refresh_error:
+                # 如果刷新失败，尝试重新查询获取ID
+                logger.warning(f"⚠️ 刷新任务失败，尝试重新查询: {refresh_error}")
+                result = await db.execute(
+                    select(DownloadTask).where(
+                        DownloadTask.file_unique_id == file_unique_id,
+                        DownloadTask.monitor_rule_id == rule.id
+                    ).order_by(DownloadTask.id.desc())
+                )
+                task = result.scalar_one_or_none()
+                if not task:
+                    raise Exception("无法获取创建的下载任务")
             
             logger.info(f"📥 创建下载任务: {filename} (ID: {task.id})")
             
