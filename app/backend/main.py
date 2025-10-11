@@ -43,6 +43,15 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 启动FastAPI应用...")
     
     try:
+        # 检查并应用数据库迁移
+        auto_migrate = os.getenv("AUTO_MIGRATE", "false").lower() == "true"
+        if auto_migrate:
+            logger.info("🔍 检查数据库迁移...")
+            from services.migration_manager import check_and_migrate
+            migration_success = check_and_migrate(auto_migrate=True, backup_first=True)
+            if not migration_success:
+                logger.warning("⚠️ 数据库迁移未完全成功，但将继续启动")
+        
         # 初始化数据库
         await init_database()
         logger.info("✅ 数据库初始化完成")

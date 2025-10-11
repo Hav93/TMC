@@ -11,7 +11,7 @@ from sqlalchemy.engine.reflection import Inspector
 
 # revision identifiers, used by Alembic.
 revision = 'fix_keywords_replace_schema_20251009'
-down_revision = 'add_media_settings_20250108'
+down_revision = 'add_dedup_and_sender_filter_20251008'
 branch_labels = None
 depends_on = None
 
