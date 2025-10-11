@@ -39,7 +39,8 @@ import {
   EyeOutlined,
   AppstoreOutlined,
   UnorderedListOutlined,
-  ExclamationCircleOutlined
+  ExclamationCircleOutlined,
+  ClearOutlined
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { mediaFilesApi } from '../../services/mediaFiles';
@@ -228,6 +229,37 @@ const MediaLibraryPage: React.FC = () => {
       okType: 'danger',
       cancelText: '取消',
       onOk: () => batchDeleteMutation.mutate(selectedRowKeys as number[]),
+    });
+  };
+
+  // 清理孤儿记录
+  const cleanupOrphansMutation = useMutation({
+    mutationFn: () => mediaFilesApi.cleanupOrphans(),
+    onSuccess: (data) => {
+      message.success(`清理完成：检查 ${data.checked_count} 个文件，删除 ${data.orphan_count} 个孤儿记录`);
+      queryClient.invalidateQueries({ queryKey: ['media-files'] });
+      queryClient.invalidateQueries({ queryKey: ['media-files-stats'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '清理失败');
+    },
+  });
+
+  const handleCleanupOrphans = () => {
+    confirm({
+      title: '清理孤儿记录',
+      icon: <ExclamationCircleOutlined />,
+      content: (
+        <div>
+          <p>此操作将扫描所有数据库记录，删除物理文件已不存在的记录。</p>
+          <p style={{ color: '#ff4d4f', marginTop: 8 }}>
+            注意：115网盘文件不会被检查（只检查本地文件）
+          </p>
+        </div>
+      ),
+      okText: '开始清理',
+      cancelText: '取消',
+      onOk: () => cleanupOrphansMutation.mutate(),
     });
   };
 
@@ -590,6 +622,15 @@ const MediaLibraryPage: React.FC = () => {
                 批量删除 ({selectedRowKeys.length})
               </Button>
             )}
+            <Tooltip title="清理孤儿记录（删除物理文件已不存在的数据库记录）">
+              <Button
+                icon={<ClearOutlined />}
+                onClick={handleCleanupOrphans}
+                loading={cleanupOrphansMutation.isPending}
+              >
+                清理孤儿记录
+              </Button>
+            </Tooltip>
             <Tooltip title="刷新">
               <Button 
                 icon={<ReloadOutlined />} 

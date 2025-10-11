@@ -176,5 +176,13 @@ export const mediaFilesApi = {
     });
     return data;
   },
+
+  /**
+   * 清理孤儿记录（物理文件已删除但数据库记录仍存在）
+   */
+  cleanupOrphans: async () => {
+    const { data } = await apiClient.post(`${API_BASE}/storage/cleanup-orphans`);
+    return data;
+  },
 };
 
