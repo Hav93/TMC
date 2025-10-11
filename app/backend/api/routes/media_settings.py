@@ -52,13 +52,6 @@ def get_cached_clouddrive_client(url: str, username: str, password: str):
 
 class MediaSettingsSchema(BaseModel):
     """媒体配置Schema"""
-    # CloudDrive 配置
-    clouddrive_enabled: bool = False
-    clouddrive_url: Optional[str] = None
-    clouddrive_username: Optional[str] = None
-    clouddrive_password: Optional[str] = None
-    clouddrive_remote_path: str = "/Media"
-    
     # 下载设置
     temp_folder: str = "/app/media/downloads"
     concurrent_downloads: int = 3
@@ -91,8 +84,6 @@ async def get_media_settings(
         if not settings:
             # 如果没有配置，创建默认配置
             settings = MediaSettings(
-                clouddrive_enabled=False,
-                clouddrive_remote_path="/Media",
                 temp_folder="/app/media/downloads",
                 concurrent_downloads=3,
                 retry_on_failure=True,
@@ -113,11 +104,6 @@ async def get_media_settings(
         
         return {
             "id": settings.id,
-            "clouddrive_enabled": settings.clouddrive_enabled,
-            "clouddrive_url": settings.clouddrive_url,
-            "clouddrive_username": settings.clouddrive_username,
-            "clouddrive_password": settings.clouddrive_password,
-            "clouddrive_remote_path": settings.clouddrive_remote_path,
             "temp_folder": settings.temp_folder,
             "concurrent_downloads": settings.concurrent_downloads,
             "retry_on_failure": settings.retry_on_failure,
@@ -155,11 +141,6 @@ async def update_media_settings(
             db.add(settings)
         
         # 更新所有字段
-        settings.clouddrive_enabled = data.clouddrive_enabled
-        settings.clouddrive_url = data.clouddrive_url
-        settings.clouddrive_username = data.clouddrive_username
-        settings.clouddrive_password = data.clouddrive_password
-        settings.clouddrive_remote_path = data.clouddrive_remote_path
         settings.temp_folder = data.temp_folder
         settings.concurrent_downloads = data.concurrent_downloads
         settings.retry_on_failure = data.retry_on_failure
