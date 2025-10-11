@@ -49,11 +49,88 @@ export interface TelegramStatus {
   error?: string;
 }
 
+// 新增：仪表盘总览数据类型
+export interface DashboardOverview {
+  system_overview: {
+    total_rules: number;
+    active_rules: number;
+    today_downloads: number;
+    total_storage_gb: number;
+    system_status: 'normal' | 'warning' | 'busy';
+  };
+  forward_module: {
+    today_count: number;
+    active_rules: number;
+    total_rules: number;
+    success_rate: number;
+    processing_count: number;
+    trend: Array<{ date: string; count: number }>;
+  };
+  media_module: {
+    today_count: number;
+    active_rules: number;
+    total_rules: number;
+    success_rate: number;
+    downloading_count: number;
+    storage_gb: number;
+    trend: Array<{ date: string; count: number }>;
+  };
+  file_type_distribution: {
+    [key: string]: {
+      count: number;
+      size_gb: number;
+    };
+  };
+  storage_distribution: {
+    local: {
+      count: number;
+      size_gb: number;
+    };
+    cloud: {
+      count: number;
+      size_gb: number;
+    };
+    total_gb: number;
+    cloud_percentage: number;
+  };
+  other_stats: {
+    starred_count: number;
+    total_files: number;
+  };
+}
+
+// 新增：智能洞察数据类型
+export interface DashboardInsights {
+  peak_hour: string | null;
+  peak_count: number;
+  most_active_rule: string | null;
+  most_active_count: number;
+  storage_warning: {
+    should_warn: boolean;
+    days_until_80_percent: number;
+    current_usage_gb: number;
+    total_capacity_gb: number;
+    usage_percentage: number;
+  };
+}
+
 export const dashboardApi = {
-  // 获取统计数据
+  // 获取统计数据（原有）
   getStats: async (): Promise<DashboardStats> => {
     const response = await api.get<DashboardStats>('/api/stats');
     return response;
+  },
+
+  // 新增：获取仪表盘总览数据
+  getOverview: async (): Promise<DashboardOverview> => {
+    const response = await api.get<{ success: boolean; data: DashboardOverview }>('/api/dashboard/overview');
+    return response.data;
+  },
+
+  // 新增：获取智能洞察
+  getInsights: async (): Promise<DashboardInsights> => {
+    const response = await api.get<{ success: boolean; insights: DashboardInsights }>('/api/dashboard/insights');
+    return response.insights;
   },
 
   // 获取Telegram状态
