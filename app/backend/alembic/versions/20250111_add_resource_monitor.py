@@ -1,7 +1,7 @@
 """add resource monitor tables
 
 Revision ID: 20250111_add_resource_monitor
-Revises: 20250108_add_media_settings
+Revises: test_branch_init
 Create Date: 2025-01-11 20:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20250111_add_resource_monitor'
-down_revision = '20250108_add_media_settings'
+down_revision = 'test_branch_init'
 branch_labels = None
 depends_on = None
 
