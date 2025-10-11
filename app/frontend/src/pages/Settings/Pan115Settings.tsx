@@ -283,7 +283,7 @@ const Pan115Settings: React.FC = () => {
             <Alert
               message="当前登录用户"
               description={
-                <Space direction="vertical" size="small" style={{ width: '100%' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 24px' }}>
                   <div>
                     <Text strong>用户ID：</Text>
                     <Text>{config.user_info.user_id}</Text>
@@ -331,7 +331,7 @@ const Pan115Settings: React.FC = () => {
                       <Text>{config.user_info.mobile}</Text>
                     </div>
                   )}
-                </Space>
+                </div>
               }
               type="success"
               icon={<CheckCircleOutlined />}
