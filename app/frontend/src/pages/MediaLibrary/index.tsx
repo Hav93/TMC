@@ -731,9 +731,9 @@ const MediaLibraryPage: React.FC = () => {
                       ? new Date(selectedFile.uploaded_at).toLocaleString('zh-CN')
                       : '-'}
                   </Descriptions.Item>
-                  <Descriptions.Item label="云端路径" span={2}>
+                  <Descriptions.Item label="115网盘路径" span={2}>
                     <Text code style={{ fontSize: 12 }}>
-                      {selectedFile.clouddrive_path || '-'}
+                      {selectedFile.pan115_path || '-'}
                     </Text>
                   </Descriptions.Item>
                 </>

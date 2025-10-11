@@ -879,7 +879,7 @@ def file_to_dict(file: MediaFile) -> dict:
         "message_id": file.message_id,
         "temp_path": file.temp_path,
         "final_path": file.final_path,
-        "clouddrive_path": file.clouddrive_path,
+        "pan115_path": file.pan115_path,
         "file_hash": file.file_hash,
         "file_name": file.file_name,
         "file_type": file.file_type,
@@ -1085,7 +1085,7 @@ async def reorganize_media_file(
         
         if upload_result.get('success'):
             # 更新媒体文件记录
-            media_file.clouddrive_path = pan115_path
+            media_file.pan115_path = pan115_path
             media_file.is_uploaded_to_cloud = True
             media_file.organize_failed = False
             media_file.organize_error = None

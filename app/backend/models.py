@@ -523,7 +523,7 @@ class MediaFile(Base):
     # 文件路径
     temp_path = Column(String(500), comment='临时文件路径')
     final_path = Column(String(500), comment='最终归档路径')
-    clouddrive_path = Column(String(500), comment='115网盘远程路径')  # 重命名字段需要数据库迁移
+    pan115_path = Column(String(500), comment='115网盘远程路径')
     file_hash = Column(String(64), unique=True, comment='文件哈希(SHA-256)，用于去重')
     
     # 基础信息

@@ -100,7 +100,7 @@ export interface MediaFile {
   message_id?: number;
   temp_path?: string;
   final_path?: string;
-  clouddrive_path?: string;
+  pan115_path?: string;
   file_hash?: string;
   file_name?: string;
   file_type?: string;

@@ -1115,7 +1115,7 @@ class MediaMonitorService:
                     message_id=message.id,
                     temp_path=str(file_path) if not final_path else None,
                     final_path=final_path,
-                    clouddrive_path=pan115_path,  # 复用字段存储115网盘路径
+                    pan115_path=pan115_path,
                     file_hash=file_hash,
                     file_name=task.file_name,
                     file_type=task.file_type,
