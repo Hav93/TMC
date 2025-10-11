@@ -159,37 +159,41 @@ const NewDashboard: React.FC = () => {
 
   // 自定义 Tooltip 组件 - 显示规则详情
   const CustomMediaTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      const data = payload[0].payload;
-      return (
-        <div style={{
-          backgroundColor: isDark ? colors.cardBg : '#fff',
-          border: `1px solid ${isDark ? colors.border : '#d9d9d9'}`,
-          borderRadius: '4px',
-          padding: '12px',
-          color: isDark ? colors.text : '#000'
-        }}>
-          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>{label}</div>
-          {data.rules && data.rules.map((rule: any, index: number) => (
-            <div key={index} style={{ marginBottom: '4px' }}>
-              <span style={{ color: COLORS.chartColors[index % COLORS.chartColors.length] }}>
-                {rule.name}:
-              </span>{' '}
-              <span style={{ fontWeight: 'bold' }}>{rule.count}个</span>
-            </div>
-          ))}
-          <div style={{ 
-            marginTop: '8px', 
-            paddingTop: '8px', 
-            borderTop: `1px solid ${isDark ? colors.border : '#e8e8e8'}`,
-            fontWeight: 'bold'
-          }}>
-            总计: {data.total}个
-          </div>
-        </div>
-      );
+    if (!active || !payload || !payload.length) {
+      return null;
     }
-    return null;
+    
+    const data = payload[0].payload;
+    return (
+      <div style={{
+        backgroundColor: isDark ? colors.cardBg : '#fff',
+        border: `1px solid ${isDark ? colors.border : '#d9d9d9'}`,
+        borderRadius: '4px',
+        padding: '12px',
+        color: isDark ? colors.text : '#000',
+        boxShadow: isDark 
+          ? '0 2px 8px rgba(0, 0, 0, 0.45)' 
+          : '0 2px 8px rgba(0, 0, 0, 0.15)'
+      }}>
+        <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>{label}</div>
+        {data.rules && data.rules.map((rule: any, index: number) => (
+          <div key={index} style={{ marginBottom: '4px' }}>
+            <span style={{ color: COLORS.chartColors[index % COLORS.chartColors.length] }}>
+              {rule.name}:
+            </span>{' '}
+            <span style={{ fontWeight: 'bold' }}>{rule.count}个</span>
+          </div>
+        ))}
+        <div style={{ 
+          marginTop: '8px', 
+          paddingTop: '8px', 
+          borderTop: `1px solid ${isDark ? colors.border : '#e8e8e8'}`,
+          fontWeight: 'bold'
+        }}>
+          总计: {data.total}个
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -396,7 +400,11 @@ const NewDashboard: React.FC = () => {
                     stroke={isDark ? colors.text : '#666'}
                   />
                   <YAxis stroke={isDark ? colors.text : '#666'} />
-                  <Tooltip content={<CustomMediaTooltip />} />
+                  <Tooltip 
+                    content={<CustomMediaTooltip />}
+                    cursor={{ fill: 'transparent' }}
+                    wrapperStyle={{ outline: 'none' }}
+                  />
                   <Bar dataKey="total" fill={COLORS.purple} radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
