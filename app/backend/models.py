@@ -568,3 +568,93 @@ class MediaFile(Base):
     
     def __repr__(self):
         return f"<MediaFile(id={self.id}, name='{self.file_name}', type='{self.file_type}')>"
+
+
+class ResourceMonitorRule(Base):
+    """资源监控规则模型"""
+    __tablename__ = 'resource_monitor_rules'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, comment='规则名称')
+    
+    # 监控配置
+    source_chats = Column(Text, comment='监控的群组/频道ID列表(JSON)')  # JSON数组
+    include_keywords = Column(Text, comment='包含关键词(JSON)')  # JSON数组
+    exclude_keywords = Column(Text, comment='排除关键词(JSON)')  # JSON数组
+    
+    # 链接类型
+    monitor_pan115 = Column(Boolean, default=True, comment='是否监控115分享链接')
+    monitor_magnet = Column(Boolean, default=True, comment='是否监控磁力链接')
+    monitor_ed2k = Column(Boolean, default=True, comment='是否监控ed2k链接')
+    
+    # 目标配置
+    target_path = Column(String(500), comment='115网盘目标路径')
+    
+    # 自动处理
+    auto_save = Column(Boolean, default=False, comment='是否自动转存到115')
+    
+    # 状态
+    is_active = Column(Boolean, default=True, comment='是否启用')
+    
+    # 统计
+    total_captured = Column(Integer, default=0, comment='总捕获数')
+    total_saved = Column(Integer, default=0, comment='总转存数')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
+    
+    # 关系
+    resource_records = relationship("ResourceRecord", back_populates="rule", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<ResourceMonitorRule(id={self.id}, name='{self.name}', active={self.is_active})>"
+
+
+class ResourceRecord(Base):
+    """资源记录模型"""
+    __tablename__ = 'resource_records'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rule_id = Column(Integer, ForeignKey('resource_monitor_rules.id'), nullable=False, comment='规则ID')
+    
+    # 原始消息信息
+    message_text = Column(Text, comment='完整消息文本')
+    message_snapshot = Column(Text, comment='消息快照(JSON)')  # JSON对象
+    
+    # 来源信息
+    chat_id = Column(String(50), comment='群组/频道ID')
+    chat_title = Column(String(200), comment='群组/频道名称')
+    message_id = Column(Integer, comment='消息ID')
+    sender_id = Column(String(50), comment='发送者ID')
+    sender_name = Column(String(200), comment='发送者名称')
+    
+    # 提取的链接
+    pan115_links = Column(Text, comment='115分享链接(JSON)')  # JSON数组
+    magnet_links = Column(Text, comment='磁力链接(JSON)')  # JSON数组
+    ed2k_links = Column(Text, comment='ed2k链接(JSON)')  # JSON数组
+    
+    # 去重
+    link_fingerprint = Column(String(64), unique=True, index=True, comment='链接指纹(MD5)')
+    
+    # 标签
+    tags = Column(Text, comment='标签(JSON)')  # JSON数组
+    
+    # 处理状态
+    status = Column(String(20), default='pending', comment='状态: pending/saved/failed/ignored')
+    target_path = Column(String(500), comment='实际保存路径')
+    error_message = Column(Text, comment='错误信息')
+    
+    # 115转存信息
+    pan115_task_id = Column(String(100), comment='115任务ID')
+    saved_at = Column(DateTime, comment='转存时间')
+    
+    # 时间戳
+    detected_at = Column(DateTime, default=get_local_now, comment='捕获时间')
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    
+    # 关系
+    rule = relationship("ResourceMonitorRule", back_populates="resource_records")
+    
+    def __repr__(self):
+        return f"<ResourceRecord(id={self.id}, rule_id={self.rule_id}, status='{self.status}')>"

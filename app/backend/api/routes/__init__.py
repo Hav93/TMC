@@ -20,6 +20,7 @@ from . import (
     media_files,     # 媒体文件 - /api/media
     media_settings,  # 媒体配置 - /api/settings/media
     pan115,          # 115网盘 - /api/pan115
+    resource_monitor,# 资源监控 - /api/resources
 )
 
 # 导出所有路由器
@@ -35,6 +36,7 @@ __all__ = [
     'media_files',
     'media_settings',
     'pan115',
+    'resource_monitor',
 ]
 
 # API路由配置信息（用于文档和验证）
@@ -93,6 +95,11 @@ API_ROUTE_CONFIG = {
         'prefix': '/api/pan115',
         'tags': ['115网盘'],
         'router': pan115.router,
+    },
+    'resource_monitor': {
+        'prefix': '/api/resources',
+        'tags': ['资源监控'],
+        'router': resource_monitor.router,
     },
 }
 
