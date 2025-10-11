@@ -122,8 +122,52 @@ const NewDashboard: React.FC = () => {
     }));
   };
 
+  // 准备媒体下载趋势数据（包含规则详情）
+  const prepareMediaTrendData = (trend: Array<{ date: string; total: number; rules: Array<{ name: string; count: number }> }>) => {
+    return trend.map(item => ({
+      date: dayjs(item.date).format('MM-DD'),
+      total: item.total,
+      rules: item.rules,
+    }));
+  };
+
   const forwardTrendData = prepareTrendData(overview.forward_module.trend);
-  const mediaTrendData = prepareTrendData(overview.media_module.trend);
+  const mediaTrendData = prepareMediaTrendData(overview.media_module.trend);
+
+  // 自定义 Tooltip 组件 - 显示规则详情
+  const CustomMediaTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      const data = payload[0].payload;
+      return (
+        <div style={{
+          backgroundColor: isDark ? colors.cardBg : '#fff',
+          border: `1px solid ${isDark ? colors.border : '#d9d9d9'}`,
+          borderRadius: '4px',
+          padding: '12px',
+          color: isDark ? colors.text : '#000'
+        }}>
+          <div style={{ fontWeight: 'bold', marginBottom: '8px' }}>{label}</div>
+          {data.rules && data.rules.map((rule: any, index: number) => (
+            <div key={index} style={{ marginBottom: '4px' }}>
+              <span style={{ color: COLORS.chartColors[index % COLORS.chartColors.length] }}>
+                {rule.name}:
+              </span>{' '}
+              <span style={{ fontWeight: 'bold' }}>{rule.count}个</span>
+            </div>
+          ))}
+          <div style={{ 
+            marginTop: '8px', 
+            paddingTop: '8px', 
+            borderTop: `1px solid ${isDark ? colors.border : '#e8e8e8'}`,
+            fontWeight: 'bold'
+          }}>
+            总计: {data.total}个
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
 
   return (
     <div style={{ padding: '24px', minHeight: '100vh' }}>
@@ -329,17 +373,8 @@ const NewDashboard: React.FC = () => {
                     stroke={isDark ? colors.text : '#666'}
                   />
                   <YAxis stroke={isDark ? colors.text : '#666'} />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: isDark ? colors.cardBg : '#fff',
-                      border: `1px solid ${isDark ? colors.border : '#d9d9d9'}`,
-                      borderRadius: '4px',
-                      color: isDark ? colors.text : '#000'
-                    }}
-                    labelStyle={{ color: isDark ? colors.text : '#000', fontWeight: 'bold' }}
-                    formatter={(value: any) => [`${value}个下载`, '下载数量']}
-                  />
-                  <Bar dataKey="count" fill={COLORS.purple} radius={[8, 8, 0, 0]} />
+                  <Tooltip content={<CustomMediaTooltip />} />
+                  <Bar dataKey="total" fill={COLORS.purple} radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (

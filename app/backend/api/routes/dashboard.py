@@ -240,22 +240,47 @@ async def get_dashboard_overview():
             total_storage_mb = await db.scalar(select(func.sum(MediaFile.file_size_mb))) or 0
             total_storage_gb = round(total_storage_mb / 1024, 2)
             
-            # 近7日下载趋势
+            # 近7日下载趋势 - 包含规则详情
             download_trend_query = select(
                 func.date(DownloadTask.created_at).label('date'),
+                MediaMonitorRule.name.label('rule_name'),
                 func.count(DownloadTask.id).label('count')
+            ).join(
+                MediaMonitorRule, DownloadTask.monitor_rule_id == MediaMonitorRule.id
             ).where(
                 and_(
                     DownloadTask.created_at >= seven_days_ago,
                     DownloadTask.status == 'success'
                 )
-            ).group_by(func.date(DownloadTask.created_at)).order_by(func.date(DownloadTask.created_at))
+            ).group_by(
+                func.date(DownloadTask.created_at),
+                MediaMonitorRule.id
+            ).order_by(func.date(DownloadTask.created_at))
             
             download_trend_result = await db.execute(download_trend_query)
-            download_trend = [
-                {"date": str(row[0]) if row[0] else None, "count": row[1]}
-                for row in download_trend_result.fetchall()
-            ]
+            
+            # 组织数据：按日期分组，每天包含多个规则
+            download_trend_dict = {}
+            for row in download_trend_result.fetchall():
+                date_str = str(row[0]) if row[0] else None
+                rule_name = row[1] or '未知规则'
+                count = row[2]
+                
+                if date_str not in download_trend_dict:
+                    download_trend_dict[date_str] = {
+                        'date': date_str,
+                        'total': 0,
+                        'rules': []
+                    }
+                
+                download_trend_dict[date_str]['total'] += count
+                download_trend_dict[date_str]['rules'].append({
+                    'name': rule_name,
+                    'count': count
+                })
+            
+            # 转换为列表并按日期排序
+            download_trend = sorted(download_trend_dict.values(), key=lambda x: x['date'])
             
             # ==================== 文件类型分布 ====================
             file_type_stats = {}

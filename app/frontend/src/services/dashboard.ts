@@ -73,7 +73,11 @@ export interface DashboardOverview {
     success_rate: number;
     downloading_count: number;
     storage_gb: number;
-    trend: Array<{ date: string; count: number }>;
+    trend: Array<{ 
+      date: string; 
+      total: number;
+      rules: Array<{ name: string; count: number }>;
+    }>;
   };
   file_type_distribution: {
     [key: string]: {
