@@ -376,11 +376,6 @@ class StorageManager:
                     organized_folder = Path(rule.organize_local_path)
                     if organized_folder.exists():
                         organized_size = sum(f.stat().st_size for f in organized_folder.rglob('*') if f.is_file())
-                
-                elif rule.organize_target_type == 'clouddrive_mount' and rule.organize_clouddrive_mount:
-                    mount_folder = Path(rule.organize_clouddrive_mount)
-                    if mount_folder.exists():
-                        organized_size = sum(f.stat().st_size for f in mount_folder.rglob('*') if f.is_file())
         
         except Exception as e:
             logger.warning(f"计算文件夹大小失败: {e}")

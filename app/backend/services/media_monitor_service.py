@@ -811,6 +811,11 @@ class MediaMonitorService:
                 # 下载文件
                 file_path = download_dir / task.file_name
                 
+                # 提前获取客户端、消息和包装器（避免作用域问题）
+                client = task_data.get('client')
+                message = task_data.get('message')
+                client_wrapper = task_data.get('client_wrapper')
+                
                 # 检查是否存在不完整的文件，如果存在则删除（Pyrogram不支持真正的断点续传）
                 skip_download = False
                 if file_path.exists():
@@ -830,11 +835,7 @@ class MediaMonitorService:
                 if not skip_download:
                     logger.info(f"⬇️ 开始下载: {task.file_name} -> {file_path}")
                     
-                    # 实际下载文件
-                    client = task_data.get('client')
-                    message = task_data.get('message')
-                    client_wrapper = task_data.get('client_wrapper')  # 获取客户端包装器
-                    
+                    # 验证客户端和消息对象
                     if not client or not message:
                         raise Exception("缺少客户端或消息对象")
                     

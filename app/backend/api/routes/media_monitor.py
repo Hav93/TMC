@@ -196,16 +196,8 @@ async def create_monitor_rule(
             organize_enabled=rule_data.get('organize_enabled', False),
             organize_target_type=rule_data.get('organize_target_type', 'local'),
             organize_local_path=rule_data.get('organize_local_path'),
-            organize_clouddrive_mount=rule_data.get('organize_clouddrive_mount'),
             organize_mode=rule_data.get('organize_mode', 'copy'),
             keep_temp_file=rule_data.get('keep_temp_file', False),
-            
-            # CloudDrive API
-            clouddrive_enabled=rule_data.get('clouddrive_enabled', False),
-            clouddrive_url=rule_data.get('clouddrive_url'),
-            clouddrive_username=rule_data.get('clouddrive_username'),
-            clouddrive_password=rule_data.get('clouddrive_password'),  # TODO: 加密存储
-            clouddrive_remote_path=rule_data.get('clouddrive_remote_path'),
             
             # 文件夹结构
             folder_structure=rule_data.get('folder_structure', 'date'),
@@ -544,16 +536,8 @@ def rule_to_dict(rule: MediaMonitorRule) -> dict:
         "organize_enabled": rule.organize_enabled,
         "organize_target_type": rule.organize_target_type,
         "organize_local_path": rule.organize_local_path,
-        "organize_clouddrive_mount": rule.organize_clouddrive_mount,
         "organize_mode": rule.organize_mode,
         "keep_temp_file": rule.keep_temp_file,
-        
-        # CloudDrive API
-        "clouddrive_enabled": rule.clouddrive_enabled,
-        "clouddrive_url": rule.clouddrive_url,
-        "clouddrive_username": rule.clouddrive_username,
-        "clouddrive_password": "******" if rule.clouddrive_password else None,  # 密码脱敏
-        "clouddrive_remote_path": rule.clouddrive_remote_path,
         
         # 文件夹结构
         "folder_structure": rule.folder_structure,
