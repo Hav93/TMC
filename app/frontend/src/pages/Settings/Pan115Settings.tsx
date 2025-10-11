@@ -29,6 +29,15 @@ import pan115Api from '../../services/pan115';
 
 const { Text, Link } = Typography;
 
+// 格式化文件大小
+const formatFileSize = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
+};
+
 const Pan115Settings: React.FC = () => {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
@@ -295,15 +304,18 @@ const Pan115Settings: React.FC = () => {
                     <>
                       <div>
                         <Text strong>总空间：</Text>
-                        <Text>{(config.user_info.space.total / 1024 / 1024 / 1024).toFixed(2)} GB</Text>
+                        <Text>{formatFileSize(config.user_info.space.total)}</Text>
                       </div>
                       <div>
                         <Text strong>已用空间：</Text>
-                        <Text>{(config.user_info.space.used / 1024 / 1024 / 1024).toFixed(2)} GB</Text>
+                        <Text>{formatFileSize(config.user_info.space.used)}</Text>
+                        <Text type="secondary" style={{ marginLeft: 8 }}>
+                          ({((config.user_info.space.used / config.user_info.space.total) * 100).toFixed(1)}%)
+                        </Text>
                       </div>
                       <div>
                         <Text strong>剩余空间：</Text>
-                        <Text>{(config.user_info.space.remain / 1024 / 1024 / 1024).toFixed(2)} GB</Text>
+                        <Text>{formatFileSize(config.user_info.space.remain)}</Text>
                       </div>
                     </>
                   )}
