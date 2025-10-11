@@ -83,6 +83,13 @@ class FileOrganizer:
                     metadata.get('sender_name') or metadata.get('sender_username') or str(metadata.get('sender_id', 'unknown'))
                 ),
                 '{sender_id}': str(metadata.get('sender_id', 'unknown')),
+                # 元数据变量
+                '{resolution}': metadata.get('resolution', 'unknown'),  # 如：1920x1080, 3840x2160
+                '{width}': str(metadata.get('width', '')),
+                '{height}': str(metadata.get('height', '')),
+                '{duration}': str(int(metadata.get('duration_seconds', 0))),  # 秒数
+                '{codec}': metadata.get('codec', 'unknown'),  # 如：h264, hevc
+                '{bitrate}': str(int(metadata.get('bitrate_kbps', 0))),  # kbps
             }
             
             path = template
@@ -129,7 +136,14 @@ class FileOrganizer:
             '{source}': FileOrganizer._sanitize_filename(metadata.get('source_chat', 'unknown')),
             '{source_id}': str(metadata.get('source_chat_id', 'unknown')),
             '{type}': metadata.get('type', 'file'),
-            '{original_name}': name_without_ext
+            '{original_name}': name_without_ext,
+            # 元数据变量
+            '{resolution}': metadata.get('resolution', 'unknown'),  # 如：1920x1080
+            '{width}': str(metadata.get('width', '')),
+            '{height}': str(metadata.get('height', '')),
+            '{duration}': str(int(metadata.get('duration_seconds', 0))),  # 秒数
+            '{codec}': metadata.get('codec', 'unknown'),  # 如：h264, hevc
+            '{bitrate}': str(int(metadata.get('bitrate_kbps', 0))),  # kbps
         }
         
         filename = template
