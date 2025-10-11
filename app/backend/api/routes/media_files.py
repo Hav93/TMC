@@ -186,20 +186,93 @@ async def retry_download_task(
             )
         
         # 重新获取消息
+        message = None
         try:
             import asyncio
-            # 在客户端的事件循环中获取消息
-            future = asyncio.run_coroutine_threadsafe(
-                client.get_messages(int(task.chat_id), task.message_id),
-                client_wrapper.loop
-            )
-            message = future.result(timeout=10)
             
+            # 方法1：尝试通过 message_id 获取消息
+            if task.message_id and task.chat_id:
+                logger.info(f"🔍 方法1：尝试获取消息: chat_id={task.chat_id}, message_id={task.message_id}")
+                try:
+                    future = asyncio.run_coroutine_threadsafe(
+                        client.get_messages(int(task.chat_id), task.message_id),
+                        client_wrapper.loop
+                    )
+                    message = future.result(timeout=10)
+                    
+                    if message and hasattr(message, 'media') and message.media:
+                        logger.info(f"✅ 方法1成功：获取到消息，包含媒体")
+                    else:
+                        logger.warning(f"⚠️ 方法1失败：消息不包含媒体或已被删除")
+                        message = None
+                except Exception as e:
+                    logger.warning(f"⚠️ 方法1失败: {e}")
+                    message = None
+            
+            # 方法2：如果方法1失败，尝试通过文件ID搜索历史消息
+            if not message and task.file_name and task.chat_id:
+                logger.info(f"🔍 方法2：通过文件名搜索历史消息: {task.file_name}")
+                try:
+                    from telethon.tl.types import InputMessagesFilterDocument
+                    
+                    future = asyncio.run_coroutine_threadsafe(
+                        client.iter_messages(
+                            int(task.chat_id),
+                            limit=100,  # 搜索最近100条消息
+                            filter=InputMessagesFilterDocument
+                        ).__anext__(),
+                        client_wrapper.loop
+                    )
+                    
+                    # 搜索匹配的文件
+                    async def search_message():
+                        async for msg in client.iter_messages(
+                            int(task.chat_id),
+                            limit=100,
+                            filter=InputMessagesFilterDocument
+                        ):
+                            if not msg.media or not hasattr(msg.media, 'document'):
+                                continue
+                            
+                            # 检查文件名是否匹配
+                            for attr in msg.media.document.attributes:
+                                if hasattr(attr, 'file_name') and attr.file_name == task.file_name:
+                                    return msg
+                            
+                            # 检查文件ID是否匹配
+                            if task.file_unique_id and str(msg.media.document.id) == task.file_unique_id:
+                                return msg
+                        
+                        return None
+                    
+                    future = asyncio.run_coroutine_threadsafe(
+                        search_message(),
+                        client_wrapper.loop
+                    )
+                    message = future.result(timeout=30)
+                    
+                    if message:
+                        logger.info(f"✅ 方法2成功：通过文件名找到消息")
+                        # 更新 message_id
+                        task.message_id = message.id
+                    else:
+                        logger.warning(f"⚠️ 方法2失败：未找到匹配的消息")
+                except Exception as e:
+                    logger.warning(f"⚠️ 方法2失败: {e}")
+                    import traceback
+                    traceback.print_exc()
+            
+            # 如果所有方法都失败
             if not message:
+                logger.error("❌ 所有方法都失败，无法获取消息")
                 return JSONResponse(
                     status_code=404,
-                    content={"success": False, "message": "无法获取原始消息，消息可能已被删除"}
+                    content={
+                        "success": False,
+                        "message": "无法获取原始消息。消息可能已被删除，或文件已从频道中移除。\n建议：删除此任务并重新发送文件。"
+                    }
                 )
+            
         except Exception as e:
             logger.error(f"获取消息失败: {e}")
             import traceback
@@ -219,25 +292,17 @@ async def retry_download_task(
         await db.commit()
         
         # 重新加入下载队列
-        try:
-            await media_monitor.download_queue.put({
-                'task_id': task.id,
-                'rule_id': task.monitor_rule_id,
-                'message_id': task.message_id,
-                'chat_id': int(task.chat_id),
-                'file_name': task.file_name,
-                'file_type': task.file_type,
-                'client': client,
-                'message': message,
-                'client_wrapper': client_wrapper
-            })
-            logger.info(f"✅ 任务已加入下载队列: {task.file_name} (ID: {task.id})")
-        except Exception as e:
-            logger.error(f"加入下载队列失败: {e}")
-            return JSONResponse(
-                status_code=500,
-                content={"success": False, "message": f"加入下载队列失败: {str(e)}"}
-            )
+        await media_monitor.download_queue.put({
+            'task_id': task.id,
+            'rule_id': task.monitor_rule_id,
+            'message_id': task.message_id,
+            'chat_id': int(task.chat_id),
+            'file_name': task.file_name,
+            'file_type': task.file_type,
+            'client': client,
+            'message': message,
+            'client_wrapper': client_wrapper
+        })
         
         logger.info(f"✅ 重试下载任务: {task.file_name} (ID: {task_id})")
         
@@ -902,6 +967,7 @@ async def check_storage(
             content={"success": False, "message": f"检查失败: {str(e)}"}
         )
 
+
 @router.post("/files/{file_id}/reorganize")
 async def reorganize_media_file(
     file_id: int,
@@ -1061,4 +1127,3 @@ async def reorganize_media_file(
             status_code=500,
             content={"success": False, "message": f"重新整理失败: {str(e)}"}
         )
-

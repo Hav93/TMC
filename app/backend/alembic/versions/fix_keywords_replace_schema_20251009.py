@@ -1,7 +1,7 @@
 """修复 keywords 和 replace_rules 表结构
 
-Revision ID: 20251009_fix_keywords_replace_schema
-Revises: 20250108_add_media_settings
+Revision ID: fix_keywords_replace_schema_20251009
+Revises: add_media_settings_20250108
 Create Date: 2025-10-09 21:45:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.engine.reflection import Inspector
 
 # revision identifiers, used by Alembic.
-revision = '20251009_fix_keywords_replace_schema'
-down_revision = '20250108_add_media_settings'
+revision = 'fix_keywords_replace_schema_20251009'
+down_revision = 'add_media_settings_20250108'
 branch_labels = None
 depends_on = None
 

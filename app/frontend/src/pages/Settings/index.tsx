@@ -20,7 +20,6 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { settingsApi } from '../../services/settings';
 import { useThemeContext } from '../../theme';
-import MediaSettingsPage from './MediaSettings';
 import Pan115Settings from './Pan115Settings';
 
 const { Title, Text } = Typography;
@@ -315,11 +314,6 @@ const SettingsPage: React.FC = () => {
             </Form>
                 </div>
               ),
-            },
-            {
-              key: 'media',
-              label: '媒体管理',
-              children: <MediaSettingsPage />,
             },
             {
               key: 'pan115',

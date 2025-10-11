@@ -17,11 +17,14 @@ services:
       # 开发模式：挂载关键代码文件实现热更新
       - ../app/backend/api:/app/api
       - ../app/backend/services:/app/services
+      - ../app/backend/alembic:/app/alembic
       - ../app/backend/models.py:/app/models.py
       - ../app/backend/main.py:/app/main.py
       - ../app/backend/enhanced_bot.py:/app/enhanced_bot.py
-      # 前端dist由镜像内构建，不挂载宿主机目录，避免覆盖新构建的文件
-      # - ../app/frontend/dist:/app/frontend/dist
+      - ../app/backend/telegram_client_manager.py:/app/telegram_client_manager.py
+      - ../app/backend/fix_alembic_version.py:/app/fix_alembic_version.py
+      # 前端热挂载（开发模式）
+      - ../app/frontend/dist:/app/frontend/dist
       # 数据目录
       - ../data:/app/data
       - ../sessions:/app/sessions

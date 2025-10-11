@@ -4,13 +4,6 @@
 export interface MediaSettings {
   id?: number;
   
-  // CloudDrive 配置
-  clouddrive_enabled: boolean;
-  clouddrive_url?: string;
-  clouddrive_username?: string;
-  clouddrive_password?: string;
-  clouddrive_remote_path: string;
-  
   // 下载设置
   temp_folder: string;
   concurrent_downloads: number;

@@ -6,13 +6,6 @@ import type { MediaSettings } from '../types/settings';
 
 const API_BASE = '/api/settings/media';
 
-export interface CloudDriveDirectory {
-  name: string;
-  path: string;
-  size: number;
-  modified?: string;
-}
-
 export interface LocalDirectory {
   name: string;
   path: string;
@@ -34,32 +27,6 @@ export const mediaSettingsApi = {
    */
   updateSettings: async (data: MediaSettings): Promise<{ message: string; id: number }> => {
     const response = await apiClient.put(`${API_BASE}/`, data);
-    return response.data;
-  },
-
-  /**
-   * 测试 CloudDrive 连接
-   */
-  testCloudDrive: async (data: MediaSettings): Promise<{ success: boolean; message: string }> => {
-    const response = await apiClient.post(`${API_BASE}/test-clouddrive`, data);
-    return response.data;
-  },
-
-  /**
-   * 浏览 CloudDrive 目录
-   */
-  browseCloudDrive: async (
-    url: string,
-    username: string | null,
-    password: string | null,
-    path: string = '/'
-  ): Promise<{ success: boolean; directories: CloudDriveDirectory[]; current_path: string; message?: string }> => {
-    const response = await apiClient.post(`${API_BASE}/clouddrive/browse`, {
-      clouddrive_url: url,
-      clouddrive_username: username,
-      clouddrive_password: password,
-      path,
-    });
     return response.data;
   },
 

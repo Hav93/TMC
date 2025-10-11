@@ -10,134 +10,25 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, List, Any
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from log_manager import get_logger
 
 logger = get_logger('media_monitor')
 from database import get_db
-from models import MediaMonitorRule, DownloadTask, MediaFile
+from models import MediaMonitorRule, DownloadTask, MediaFile, MediaSettings
 from utils.media_filters import MediaFilter
 from utils.message_deduplicator import SenderFilter
 from utils.media_metadata import MediaMetadataExtractor
 
+# 导入 115网盘 Open API 客户端
 try:
-    import aiohttp
-    AIOHTTP_AVAILABLE = True
+    from services.pan115_client import Pan115Client
+    PAN115_AVAILABLE = True
 except ImportError:
-    AIOHTTP_AVAILABLE = False
-    logger.warning("aiohttp 未安装，CloudDrive API 功能将不可用")
-
-
-class CloudDriveClient:
-    """CloudDrive Web API 客户端"""
-    
-    def __init__(self, base_url: str, username: str, password: str):
-        self.base_url = base_url.rstrip('/')
-        self.username = username
-        self.password = password
-        self.token = None
-    
-    async def login(self) -> bool:
-        """登录并获取 token"""
-        if not AIOHTTP_AVAILABLE:
-            logger.error("aiohttp 未安装，无法使用 CloudDrive API")
-            return False
-        
-        try:
-            async with aiohttp.ClientSession() as session:
-                login_data = {
-                    'username': self.username,
-                    'password': self.password
-                }
-                
-                async with session.post(
-                    f"{self.base_url}/api/auth/login",
-                    json=login_data,
-                    timeout=aiohttp.ClientTimeout(total=10)
-                ) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        self.token = result.get('token') or result.get('access_token')
-                        logger.info("✅ CloudDrive 登录成功")
-                        return True
-                    else:
-                        logger.error(f"CloudDrive 登录失败: HTTP {resp.status}")
-                        return False
-        except Exception as e:
-            logger.error(f"CloudDrive 登录异常: {e}")
-            return False
-    
-    async def upload_file(
-        self,
-        local_path: str,
-        remote_path: str,
-        on_progress=None
-    ) -> Dict[str, Any]:
-        """
-        上传文件到 CloudDrive
-        
-        Args:
-            local_path: 本地文件路径
-            remote_path: 远程文件路径
-            on_progress: 进度回调函数 callback(uploaded_bytes, total_bytes, progress_percent)
-            
-        Returns:
-            {'success': bool, 'message': str, ...}
-        """
-        if not AIOHTTP_AVAILABLE:
-            return {'success': False, 'message': 'aiohttp 未安装'}
-        
-        if not self.token:
-            if not await self.login():
-                return {'success': False, 'message': '登录失败'}
-        
-        try:
-            file_size = os.path.getsize(local_path)
-            filename = Path(local_path).name
-            
-            logger.info(f"☁️ 开始上传到 CloudDrive: {filename} ({file_size / 1024 / 1024:.2f} MB)")
-            
-            async with aiohttp.ClientSession() as session:
-                headers = {'Authorization': f'Bearer {self.token}'}
-                
-                # 方式1：尝试分块上传（如果 CloudDrive 支持）
-                # 方式2：直接上传整个文件
-                
-                with open(local_path, 'rb') as f:
-                    # 使用 multipart/form-data 上传
-                    form = aiohttp.FormData()
-                    form.add_field('file', f, filename=filename)
-                    form.add_field('path', remote_path)
-                    
-                    async with session.post(
-                        f"{self.base_url}/api/upload",
-                        headers=headers,
-                        data=form,
-                        timeout=aiohttp.ClientTimeout(total=3600)  # 1小时超时
-                    ) as resp:
-                        if resp.status in [200, 201]:
-                            logger.info(f"✅ CloudDrive 上传成功: {filename}")
-                            return {
-                                'success': True,
-                                'message': '上传成功',
-                                'remote_path': remote_path,
-                                'size': file_size
-                            }
-                        else:
-                            error_text = await resp.text()
-                            logger.error(f"CloudDrive 上传失败: HTTP {resp.status}, {error_text}")
-                            return {
-                                'success': False,
-                                'message': f'上传失败: HTTP {resp.status}'
-                            }
-                
-        except Exception as e:
-            logger.error(f"CloudDrive 上传异常: {e}")
-            import traceback
-            traceback.print_exc()
-            return {'success': False, 'message': f'上传异常: {str(e)}'}
+    PAN115_AVAILABLE = False
+    logger.warning("115网盘客户端未安装，115直传功能将不可用")
 
 
 class FileOrganizer:
@@ -177,7 +68,7 @@ class FileOrganizer:
             return FileOrganizer._sanitize_path(sender)
         
         elif rule.folder_structure == 'custom':
-            template = rule.custom_folder_template or '{year}/{month}/{type}'
+            template = rule.custom_folder_template or '{type}/{year}/{month}/{day}'
             now = datetime.now()
             
             replacements = {
@@ -186,9 +77,11 @@ class FileOrganizer:
                 '{day}': f"{now.day:02d}",
                 '{type}': metadata.get('type', 'other'),
                 '{source}': FileOrganizer._sanitize_path(metadata.get('source_chat', 'unknown')),
+                '{source_id}': metadata.get('source_chat_id', 'unknown'),
                 '{sender}': FileOrganizer._sanitize_path(
-                    metadata.get('sender_username') or metadata.get('sender_id', 'unknown')
+                    metadata.get('sender_name') or metadata.get('sender_username') or str(metadata.get('sender_id', 'unknown'))
                 ),
+                '{sender_id}': str(metadata.get('sender_id', 'unknown')),
             }
             
             path = template
@@ -226,7 +119,7 @@ class FileOrganizer:
             '{date}': now.strftime('%Y%m%d'),
             '{time}': now.strftime('%H%M%S'),
             '{sender}': FileOrganizer._sanitize_filename(
-                metadata.get('sender_username') or metadata.get('sender_id', 'unknown')
+                metadata.get('sender_name') or metadata.get('sender_username') or str(metadata.get('sender_id', 'unknown'))
             ),
             '{source}': FileOrganizer._sanitize_filename(metadata.get('source_chat', 'unknown')),
             '{type}': metadata.get('type', 'file'),
@@ -266,13 +159,7 @@ class FileOrganizer:
             target_filename = FileOrganizer.generate_filename(rule, original_filename, metadata)
             
             # 根据归档目标类型确定基础路径
-            if rule.organize_target_type == 'local':
-                base_path = Path(rule.organize_local_path or '/app/media/organized')
-            elif rule.organize_target_type == 'clouddrive_mount':
-                base_path = Path(rule.organize_clouddrive_mount or '/mnt/clouddrive')
-            else:
-                # clouddrive_api 模式先归档到本地
-                base_path = Path(rule.organize_local_path or '/app/media/organized')
+            base_path = Path(rule.organize_local_path or '/app/media/organized')
             
             # 完整目标路径
             target_dir = base_path / target_dir_relative
@@ -336,7 +223,52 @@ class MediaMonitorService:
         self.download_queue = asyncio.Queue()
         self.download_workers: List[asyncio.Task] = []
         self.is_running = False
+        self.global_settings: Optional[MediaSettings] = None
         
+    def _get_config_value(self, key: str, default: Any = None) -> Any:
+        """获取配置值（优先使用全局配置）"""
+        if self.global_settings and hasattr(self.global_settings, key):
+            value = getattr(self.global_settings, key)
+            return value if value is not None else default
+        return default
+    
+    async def _load_global_settings(self):
+        """加载全局媒体配置"""
+        try:
+            async for db in get_db():
+                result = await db.execute(select(MediaSettings))
+                settings = result.scalars().first()
+                
+                if settings:
+                    self.global_settings = settings
+                    logger.info("✅ 已加载全局媒体配置")
+                else:
+                    # 创建默认配置
+                    settings = MediaSettings(
+                        temp_folder="/app/media/downloads",
+                        concurrent_downloads=3,
+                        retry_on_failure=True,
+                        max_retries=3,
+                        extract_metadata=True,
+                        metadata_mode="lightweight",
+                        metadata_timeout=10,
+                        async_metadata_extraction=True,
+                        auto_cleanup_enabled=True,
+                        auto_cleanup_days=7,
+                        cleanup_only_organized=True,
+                        max_storage_gb=100
+                    )
+                    db.add(settings)
+                    await db.commit()
+                    await db.refresh(settings)
+                    self.global_settings = settings
+                    logger.info("📝 创建默认全局媒体配置")
+                break
+        except Exception as e:
+            logger.error(f"加载全局配置失败: {e}")
+            # 使用内存中的默认配置
+            self.global_settings = None
+    
     async def start(self):
         """启动监控服务"""
         if self.is_running:
@@ -346,11 +278,190 @@ class MediaMonitorService:
         self.is_running = True
         logger.info("🎬 启动媒体监控服务")
         
+        # 重置所有"下载中"的任务状态（容器重启后这些任务已中断）
+        await self._reset_downloading_tasks()
+        
+        # 加载全局配置
+        await self._load_global_settings()
+        
         # 启动下载工作线程
         await self._start_download_workers()
         
         # 加载并启动所有活跃的监控规则
         await self._load_active_rules()
+    
+    async def _reset_downloading_tasks(self):
+        """重置所有"下载中"状态的任务（容器重启后需要调用）"""
+        try:
+            async for db in get_db():
+                # 查找所有"下载中"、"等待中"或"失败"状态的任务（失败的也可以自动重试）
+                result = await db.execute(
+                    select(DownloadTask).where(
+                        or_(
+                            DownloadTask.status == 'downloading',
+                            DownloadTask.status == 'pending',
+                            DownloadTask.status == 'failed'
+                        )
+                    )
+                )
+                interrupted_tasks = result.scalars().all()
+                
+                if interrupted_tasks:
+                    logger.info(f"🔄 发现 {len(interrupted_tasks)} 个中断的下载任务，准备自动续传")
+                    
+                    # 将任务按规则分组，准备重新加入队列
+                    tasks_by_rule = {}
+                    for task in interrupted_tasks:
+                        if task.monitor_rule_id not in tasks_by_rule:
+                            tasks_by_rule[task.monitor_rule_id] = []
+                        tasks_by_rule[task.monitor_rule_id].append(task)
+                    
+                    # 对每个任务尝试自动续传
+                    resumed_count = 0
+                    failed_count = 0
+                    
+                    for rule_id, tasks in tasks_by_rule.items():
+                        # 获取规则
+                        rule_result = await db.execute(
+                            select(MediaMonitorRule).where(MediaMonitorRule.id == rule_id)
+                        )
+                        rule = rule_result.scalar_one_or_none()
+                        
+                        if not rule:
+                            logger.warning(f"规则不存在: {rule_id}，无法续传相关任务")
+                            for task in tasks:
+                                task.status = 'failed'
+                                task.failed_at = datetime.now()
+                                task.last_error = "关联的监控规则已删除"
+                                failed_count += 1
+                            continue
+                        
+                        # 为每个任务尝试续传
+                        for task in tasks:
+                            # 检查重试次数，避免无限重试
+                            max_auto_retry = task.max_retries or 3
+                            current_retry = task.retry_count or 0
+                            
+                            if current_retry >= max_auto_retry:
+                                logger.warning(f"   - 跳过任务（已达最大重试次数 {max_auto_retry}）: {task.file_name} (ID: {task.id})")
+                                task.status = 'failed'
+                                task.last_error = f"已达最大重试次数（{max_auto_retry}次），请手动重试"
+                                failed_count += 1
+                                continue
+                            
+                            # 重置为pending状态，保留进度信息
+                            old_status = task.status
+                            task.status = 'pending'
+                            task.retry_count = current_retry + 1
+                            task.last_error = f"容器重启自动重试中... (第{task.retry_count}/{max_auto_retry}次)"
+                            
+                            logger.info(f"   - 准备续传: {task.file_name} (ID: {task.id}, 原状态: {old_status}, 重试: {task.retry_count}/{max_auto_retry})")
+                            resumed_count += 1
+                    
+                    await db.commit()
+                    
+                    logger.info(f"✅ 任务重置完成: {resumed_count}个待续传, {failed_count}个失败")
+                    logger.info(f"💡 提示: 系统将在5秒后自动尝试续传这些任务")
+                    
+                    # 延迟5秒后启动自动续传
+                    import asyncio
+                    asyncio.create_task(self._auto_resume_tasks(db))
+                else:
+                    logger.info("✅ 没有需要重置的下载任务")
+                
+                break  # 只需要执行一次
+        except Exception as e:
+            logger.error(f"重置下载任务失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    async def _auto_resume_tasks(self, db: AsyncSession):
+        """自动续传中断的任务"""
+        try:
+            # 等待5秒，确保所有服务都已启动
+            await asyncio.sleep(5)
+            
+            logger.info("🚀 开始自动续传中断的下载任务...")
+            
+            # 查找所有pending状态的任务
+            result = await db.execute(
+                select(DownloadTask).where(DownloadTask.status == 'pending')
+            )
+            pending_tasks = result.scalars().all()
+            
+            if not pending_tasks:
+                logger.info("没有待续传的任务")
+                return
+            
+            # 获取enhanced_bot实例
+            from main import get_enhanced_bot
+            enhanced_bot = get_enhanced_bot()
+            if not enhanced_bot:
+                logger.error("无法获取enhanced_bot实例，续传失败")
+                return
+            
+            # 为每个任务重新获取消息并加入队列
+            resumed = 0
+            failed = 0
+            
+            for task in pending_tasks:
+                try:
+                    # 查找可用的客户端
+                    client_wrapper = None
+                    client = None
+                    
+                    for client_manager in enhanced_bot.multi_client_manager.clients.values():
+                        if client_manager.is_authorized and client_manager.loop and client_manager.client:
+                            client_wrapper = client_manager
+                            client = client_manager.client
+                            break
+                    
+                    if not client or not client_wrapper:
+                        raise Exception("没有可用的Telegram客户端")
+                    
+                    # 重新获取消息
+                    if not task.chat_id or not task.message_id:
+                        raise Exception("任务缺少chat_id或message_id")
+                    
+                    future = asyncio.run_coroutine_threadsafe(
+                        client.get_messages(int(task.chat_id), message_ids=task.message_id),
+                        client_wrapper.loop
+                    )
+                    message = future.result(timeout=10)
+                    
+                    if not message:
+                        raise Exception("无法获取原始消息")
+                    
+                    # 加入下载队列
+                    await self.download_queue.put({
+                        'task_id': task.id,
+                        'rule_id': task.monitor_rule_id,
+                        'message_id': task.message_id,
+                        'chat_id': int(task.chat_id),
+                        'file_name': task.file_name,
+                        'file_type': task.file_type,
+                        'client': client,
+                        'message': message,
+                        'client_wrapper': client_wrapper
+                    })
+                    
+                    logger.info(f"✅ 续传任务已加入队列: {task.file_name}")
+                    resumed += 1
+                    
+                except Exception as e:
+                    logger.error(f"❌ 续传任务失败 {task.file_name}: {e}")
+                    task.status = 'failed'
+                    task.failed_at = datetime.now()
+                    task.last_error = f"自动续传失败: {str(e)}"
+                    failed += 1
+            
+            await db.commit()
+            logger.info(f"🎉 自动续传完成: {resumed}个成功, {failed}个失败")
+            
+        except Exception as e:
+            logger.error(f"自动续传任务异常: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def stop(self):
         """停止监控服务"""
@@ -386,8 +497,8 @@ class MediaMonitorService:
         except Exception as e:
             logger.error(f"加载监控规则失败: {e}")
     
-    async def _start_download_workers(self, worker_count: int = 3):
-        """启动下载工作线程"""
+    async def _start_download_workers(self, worker_count: int = 5):
+        """启动下载工作线程（增加并发提升速度）"""
         for i in range(worker_count):
             worker = asyncio.create_task(self._download_worker(i))
             self.download_workers.append(worker)
@@ -419,7 +530,7 @@ class MediaMonitorService:
             except Exception as e:
                 logger.error(f"[Worker #{worker_id+1}] 下载任务失败: {e}")
     
-    async def process_message(self, client, message, rule_id: int):
+    async def process_message(self, client, message, rule_id: int, client_wrapper=None):
         """
         处理接收到的消息
         
@@ -427,10 +538,15 @@ class MediaMonitorService:
             client: Telegram 客户端
             message: 消息对象
             rule_id: 监控规则ID
+            client_wrapper: 客户端包装器（用于访问事件循环）
         """
         try:
+            logger.info(f"🔍 处理媒体消息: rule_id={rule_id}, message_id={message.id}")
+            logger.info(f"📊 当前活跃监控规则: {list(self.active_monitors.keys())}")
+            
             # 检查规则是否活跃
             if rule_id not in self.active_monitors:
+                logger.warning(f"⚠️ 规则 {rule_id} 不在活跃监控列表中，跳过处理")
                 return
             
             # 获取规则配置
@@ -441,18 +557,25 @@ class MediaMonitorService:
                 rule = result.scalar_one_or_none()
                 
                 if not rule or not rule.is_active:
+                    logger.warning(f"⚠️ 规则 {rule_id} 未找到或未激活")
                     return
                 
                 # 检查消息是否包含媒体
                 if not self._has_media(message):
+                    logger.info(f"⏭️ 消息 {message.id} 不包含媒体，跳过")
                     return
+                
+                logger.info(f"✅ 消息 {message.id} 包含媒体，应用过滤器")
                 
                 # 应用过滤器
                 if not await self._apply_filters(message, rule):
+                    logger.info(f"⏭️ 消息 {message.id} 未通过过滤器")
                     return
                 
-                # 创建下载任务
-                await self._create_download_task(db, message, rule, client)
+                logger.info(f"✅ 消息 {message.id} 通过所有过滤器，创建下载任务")
+                
+                # 创建下载任务（传递client_wrapper）
+                await self._create_download_task(db, message, rule, client, client_wrapper)
                 
                 break
                 
@@ -481,26 +604,44 @@ class MediaMonitorService:
         try:
             # 1. 文件类型过滤
             if rule.media_types:
-                allowed_types = json.loads(rule.media_types)
+                media_types_raw = rule.media_types
+                # 如果已经是列表，直接使用；否则解析JSON
+                if isinstance(media_types_raw, str):
+                    allowed_types = json.loads(media_types_raw)
+                    # 如果解析结果仍是字符串（双重编码），再解析一次
+                    if isinstance(allowed_types, str):
+                        allowed_types = json.loads(allowed_types)
+                else:
+                    allowed_types = media_types_raw
+                
                 if not MediaFilter.check_file_type(message, allowed_types):
-                    logger.debug(f"⏭️ 文件类型不匹配，跳过")
+                    logger.info(f"⏭️ 文件类型不匹配，跳过。允许的类型: {allowed_types}")
                     return False
             
             # 2. 文件大小过滤
             if not MediaFilter.check_file_size(message, rule.min_size_mb or 0, rule.max_size_mb or 2000):
-                logger.debug(f"⏭️ 文件大小不符合要求，跳过")
+                logger.info(f"⏭️ 文件大小不符合要求，跳过。范围: {rule.min_size_mb}-{rule.max_size_mb} MB")
                 return False
             
             # 3. 文件名过滤
             if not MediaFilter.check_filename(message, rule.filename_include, rule.filename_exclude):
-                logger.debug(f"⏭️ 文件名不匹配，跳过")
+                logger.info(f"⏭️ 文件名不匹配，跳过。包含: {rule.filename_include}, 排除: {rule.filename_exclude}")
                 return False
             
             # 4. 文件扩展名过滤
             if rule.file_extensions:
-                allowed_extensions = json.loads(rule.file_extensions)
-                if not MediaFilter.check_file_extension(message, allowed_extensions):
-                    logger.debug(f"⏭️ 文件扩展名不匹配，跳过")
+                extensions_raw = rule.file_extensions
+                # 如果已经是列表，直接使用；否则解析JSON
+                if isinstance(extensions_raw, str):
+                    allowed_extensions = json.loads(extensions_raw)
+                    # 如果解析结果仍是字符串（双重编码），再解析一次
+                    if isinstance(allowed_extensions, str):
+                        allowed_extensions = json.loads(allowed_extensions)
+                else:
+                    allowed_extensions = extensions_raw
+                
+                if allowed_extensions and not MediaFilter.check_file_extension(message, allowed_extensions):
+                    logger.info(f"⏭️ 文件扩展名不匹配，跳过。允许的扩展名: {allowed_extensions}")
                     return False
             
             # 5. 发送者过滤
@@ -515,13 +656,15 @@ class MediaMonitorService:
                 )
                 
                 if not is_allowed:
-                    logger.debug(f"⏭️ 发送者被过滤，跳过: {sender_info['username'] or sender_info['id']}")
+                    logger.info(f"⏭️ 发送者被过滤，跳过: {sender_info['username'] or sender_info['id']}")
                     return False
             
             return True
             
         except Exception as e:
             logger.error(f"应用过滤器失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     async def _create_download_task(
@@ -529,15 +672,65 @@ class MediaMonitorService:
         db: AsyncSession,
         message,
         rule: MediaMonitorRule,
-        client
+        client,
+        client_wrapper=None
     ):
         """创建下载任务"""
         try:
             # 获取媒体信息
             media_info = MediaFilter.get_media_info(message)
             
-            # 生成文件名
-            filename = media_info['filename'] or f"file_{message.id}{media_info['extension'] or ''}"
+            # 生成文件名（确保有扩展名）
+            if media_info['filename']:
+                filename = media_info['filename']
+            else:
+                # 根据媒体类型生成默认文件名
+                ext = media_info['extension'] or ''
+                if not ext and media_info['type']:
+                    # 如果没有扩展名，根据类型推断
+                    type_ext_map = {
+                        'photo': '.jpg',
+                        'video': '.mp4',
+                        'document': '.file',
+                        'audio': '.mp3',
+                        'voice': '.ogg',
+                        'sticker': '.webp'
+                    }
+                    ext = type_ext_map.get(media_info['type'], '.file')
+                filename = f"{media_info['type']}_{message.id}{ext}"
+            
+            # 提取文件元数据（用于重新下载）
+            file_unique_id = None
+            file_access_hash = None
+            media_json = None
+            
+            try:
+                import json
+                if hasattr(message, 'media') and message.media:
+                    # 获取文件的唯一ID和访问哈希
+                    if hasattr(message.media, 'document'):
+                        doc = message.media.document
+                        if hasattr(doc, 'id'):
+                            file_unique_id = str(doc.id)
+                        if hasattr(doc, 'access_hash'):
+                            file_access_hash = str(doc.access_hash)
+                    elif hasattr(message.media, 'photo'):
+                        photo = message.media.photo
+                        if hasattr(photo, 'id'):
+                            file_unique_id = str(photo.id)
+                        if hasattr(photo, 'access_hash'):
+                            file_access_hash = str(photo.access_hash)
+                    
+                    # 保存媒体信息JSON（用于恢复）
+                    media_dict = {
+                        'type': media_info['type'],
+                        'filename': filename,
+                        'size': media_info['size'],
+                        'mime_type': media_info.get('mime_type')
+                    }
+                    media_json = json.dumps(media_dict, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"提取文件元数据失败: {e}")
             
             # 创建下载任务记录
             task = DownloadTask(
@@ -547,10 +740,13 @@ class MediaMonitorService:
                 file_name=filename,
                 file_type=media_info['type'],
                 file_size_mb=media_info['size_mb'],
+                file_unique_id=file_unique_id,
+                file_access_hash=file_access_hash,
+                media_json=media_json,
                 status='pending',
                 priority=0,
                 total_bytes=media_info['size'],
-                max_retries=rule.max_retries or 3
+                max_retries=self._get_config_value('max_retries', 3)
             )
             
             db.add(task)
@@ -559,7 +755,7 @@ class MediaMonitorService:
             
             logger.info(f"📥 创建下载任务: {filename} (ID: {task.id})")
             
-            # 添加到下载队列
+            # 添加到下载队列（包含client_wrapper）
             await self.download_queue.put({
                 'task_id': task.id,
                 'rule_id': rule.id,
@@ -568,11 +764,14 @@ class MediaMonitorService:
                 'file_name': filename,
                 'file_type': media_info['type'],
                 'client': client,
-                'message': message
+                'message': message,
+                'client_wrapper': client_wrapper  # 传递客户端包装器
             })
             
         except Exception as e:
             logger.error(f"创建下载任务失败: {e}")
+            import traceback
+            traceback.print_exc()
             await db.rollback()
     
     async def _execute_download(self, task_data: Dict[str, Any]):
@@ -612,18 +811,110 @@ class MediaMonitorService:
                 # 下载文件
                 file_path = download_dir / task.file_name
                 
-                logger.info(f"⬇️ 开始下载: {task.file_name} -> {file_path}")
+                # 检查是否存在不完整的文件，如果存在则删除（Pyrogram不支持真正的断点续传）
+                skip_download = False
+                if file_path.exists():
+                    file_size = file_path.stat().st_size
+                    expected_size = task.total_bytes or 0
+                    if file_size < expected_size:
+                        logger.warning(f"🗑️ 发现不完整的文件 {task.file_name} ({file_size}/{expected_size} bytes)，删除重新下载")
+                        file_path.unlink()
+                    elif file_size == expected_size:
+                        logger.info(f"✅ 文件已存在且完整: {task.file_name}，跳过下载直接整理")
+                        skip_download = True
+                        # 更新下载进度
+                        task.downloaded_bytes = expected_size
+                        task.progress_percent = 100
+                        await db.commit()
                 
-                # 实际下载文件
-                client = task_data.get('client')
-                message = task_data.get('message')
-                
-                if not client or not message:
-                    raise Exception("缺少客户端或消息对象")
-                
-                # 使用 Telethon 下载媒体
-                await client.download_media(message, file=str(file_path))
-                logger.info(f"✅ 下载完成: {task.file_name}")
+                if not skip_download:
+                    logger.info(f"⬇️ 开始下载: {task.file_name} -> {file_path}")
+                    
+                    # 实际下载文件
+                    client = task_data.get('client')
+                    message = task_data.get('message')
+                    client_wrapper = task_data.get('client_wrapper')  # 获取客户端包装器
+                    
+                    if not client or not message:
+                        raise Exception("缺少客户端或消息对象")
+                    
+                    # 检查消息是否包含媒体
+                    logger.info(f"📋 消息信息: ID={message.id if hasattr(message, 'id') else 'N/A'}, "
+                               f"has_media={hasattr(message, 'media') and message.media is not None}, "
+                               f"media_type={type(message.media).__name__ if hasattr(message, 'media') and message.media else 'None'}")
+                    
+                    if not hasattr(message, 'media') or message.media is None:
+                        raise Exception(f"消息不包含媒体文件，可能已被删除。请删除此任务。")
+                    
+                    # 使用客户端包装器的事件循环下载（避免事件循环冲突）
+                    if client_wrapper and hasattr(client_wrapper, 'loop') and client_wrapper.loop:
+                        # 在客户端的事件循环中执行下载
+                        import asyncio
+                        from concurrent.futures import TimeoutError as FutureTimeoutError
+                        
+                        # 定义进度回调函数
+                        last_progress_log = [0]  # 使用列表以便在闭包中修改
+                        def progress_callback(current, total):
+                            percent = (current / total * 100) if total > 0 else 0
+                            # 每5%记录一次（大文件也能及时看到进度）
+                            progress_step = int(percent / 5)
+                            if progress_step > last_progress_log[0]:
+                                last_progress_log[0] = progress_step
+                                # 显示进度和速度（MB为单位更直观）
+                                current_mb = current / 1024 / 1024
+                                total_mb = total / 1024 / 1024
+                                logger.info(f"📥 下载进度: {task.file_name} - {percent:.1f}% ({current_mb:.1f}MB/{total_mb:.1f}MB)")
+                        
+                        # 下载重试逻辑（处理代理连接失败）
+                        download_max_retries = 3
+                        download_success = False
+                        
+                        for download_retry in range(download_max_retries):
+                            try:
+                                if download_retry > 0:
+                                    logger.warning(f"🔄 下载重试 {download_retry}/{download_max_retries-1}: {task.file_name}")
+                                    # 删除不完整的文件
+                                    if file_path.exists():
+                                        os.remove(file_path)
+                                    # 等待5秒让代理恢复（使用异步sleep）
+                                    await asyncio.sleep(5)
+                                
+                                # 使用异步Future，避免阻塞
+                                # Telethon API: download_media(message, file=path, progress_callback=callback)
+                                future = asyncio.run_coroutine_threadsafe(
+                                    client.download_media(
+                                        message, 
+                                        file=str(file_path),
+                                        progress_callback=progress_callback
+                                    ),
+                                    client_wrapper.loop
+                                )
+                                
+                                # 异步等待，不阻塞事件循环（超时2小时，适合GB级大视频）
+                                loop = asyncio.get_event_loop()
+                                result = await asyncio.wait_for(
+                                    asyncio.wrap_future(future),
+                                    timeout=7200
+                                )
+                                logger.info(f"📦 download_media 返回值: {result}, 类型: {type(result)}")
+                                download_success = True
+                                break
+                                
+                            except (asyncio.TimeoutError, Exception) as download_error:
+                                error_msg = str(download_error)
+                                if download_retry < download_max_retries - 1:
+                                    logger.warning(f"⚠️ 下载失败: {error_msg[:100]}, 准备重试...")
+                                else:
+                                    logger.error(f"❌ 下载失败（已重试{download_max_retries}次）: {error_msg[:200]}")
+                                    raise Exception(f"下载失败（已重试{download_max_retries}次）: {error_msg[:100]}")
+                        
+                        if not download_success:
+                            raise Exception("下载失败，所有重试均失败")
+                    else:
+                        # 降级方案：直接下载（可能失败）
+                        await client.download_media(message, file=str(file_path))
+                    
+                    logger.info(f"✅ 下载完成: {task.file_name}")
                 
                 # 验证文件是否成功下载
                 if not file_path.exists():
@@ -652,23 +943,29 @@ class MediaMonitorService:
                     
                     break
                 
-                # 提取元数据
+                # 提取元数据（使用全局配置）
                 metadata_dict = {}
-                if rule.extract_metadata and rule.metadata_mode != 'disabled':
+                extract_metadata = self._get_config_value('extract_metadata', True)
+                metadata_mode = self._get_config_value('metadata_mode', 'lightweight')
+                
+                if extract_metadata and metadata_mode != 'disabled':
                     try:
-                        if rule.async_metadata_extraction:
+                        async_extraction = self._get_config_value('async_metadata_extraction', True)
+                        timeout = self._get_config_value('metadata_timeout', 10)
+                        
+                        if async_extraction:
                             # 异步提取，不阻塞
                             metadata_dict = await MediaMetadataExtractor.extract_metadata_async(
                                 str(file_path),
-                                mode=rule.metadata_mode or 'lightweight',
-                                timeout=rule.metadata_timeout or 10
+                                mode=metadata_mode,
+                                timeout=timeout
                             )
                         else:
                             # 同步提取
                             metadata_dict = await MediaMetadataExtractor.extract_metadata_async(
                                 str(file_path),
-                                mode=rule.metadata_mode or 'lightweight',
-                                timeout=rule.metadata_timeout or 10
+                                mode=metadata_mode,
+                                timeout=timeout
                             )
                         
                         logger.info(f"📊 元数据提取完成: {metadata_dict.get('type', 'unknown')}")
@@ -679,63 +976,136 @@ class MediaMonitorService:
                 # 获取发送者和来源信息
                 sender_info = SenderFilter.get_sender_info(message)
                 
+                # 获取聊天名称（优先从message对象）
+                chat_name = 'unknown'
+                if hasattr(message, 'chat') and message.chat:
+                    chat = message.chat
+                    # 尝试获取聊天标题或用户名
+                    if hasattr(chat, 'title') and chat.title:
+                        chat_name = chat.title
+                    elif hasattr(chat, 'username') and chat.username:
+                        chat_name = chat.username
+                    elif hasattr(chat, 'first_name'):
+                        chat_name = chat.first_name
+                        if hasattr(chat, 'last_name') and chat.last_name:
+                            chat_name += f" {chat.last_name}"
+                
+                logger.info(f"📝 聊天名称: {chat_name}, 聊天ID: {task.chat_id}")
+                
                 # 准备归档元数据
+                # 构建发送者显示名称（优先级：username > 姓名 > ID）
+                sender_display = sender_info.get('username')
+                if not sender_display:
+                    # 构建全名（只包含非空部分）
+                    name_parts = []
+                    if sender_info.get('first_name'):
+                        name_parts.append(sender_info['first_name'])
+                    if sender_info.get('last_name'):
+                        name_parts.append(sender_info['last_name'])
+                    sender_display = ' '.join(name_parts) if name_parts else None
+                if not sender_display:
+                    sender_display = str(sender_info.get('id', 'unknown'))
+                
+                logger.info(f"👤 发送者显示名称: {sender_display}, 发送者ID: {sender_info.get('id')}")
+                
                 organize_metadata = {
                     'type': task.file_type,
                     'sender_id': sender_info['id'],
-                    'sender_username': sender_info['username'],
-                    'source_chat': str(task.chat_id) if task.chat_id else 'unknown'
+                    'sender_username': sender_info.get('username'),
+                    'sender_name': sender_display,  # 新增：发送者显示名称
+                    'source_chat': chat_name,
+                    'source_chat_id': str(task.chat_id) if task.chat_id else 'unknown'
                 }
                 
-                # 归档文件（如果启用）
+                # 初始化归档相关变量
                 final_path = None
-                if rule.organize_enabled:
-                    final_path = await FileOrganizer.organize_file(
-                        rule,
-                        str(file_path),
-                        organize_metadata
-                    )
-                    
-                    if final_path:
-                        logger.info(f"📦 文件已归档: {final_path}")
-                
-                # 上传到 CloudDrive（如果启用）
-                clouddrive_path = None
+                pan115_path = None
                 is_uploaded = False
+                organize_failed = False
+                organize_error = None
                 
-                if rule.clouddrive_enabled and rule.organize_target_type == 'clouddrive_api':
+                # 检查归档目标类型
+                should_upload_to_115 = rule.organize_enabled and rule.organize_target_type == 'pan115'
+                should_organize_local = rule.organize_enabled and rule.organize_target_type != 'pan115'
+                
+                # 本地归档（仅当目标不是115网盘时）
+                if should_organize_local:
                     try:
-                        # 创建 CloudDrive 客户端
-                        cloud_client = CloudDriveClient(
-                            rule.clouddrive_url,
-                            rule.clouddrive_username,
-                            rule.clouddrive_password
+                        final_path = await FileOrganizer.organize_file(
+                            rule,
+                            str(file_path),
+                            organize_metadata
                         )
                         
-                        # 生成远程路径
-                        remote_dir = FileOrganizer.generate_target_directory(rule, organize_metadata)
-                        remote_filename = FileOrganizer.generate_filename(rule, task.file_name, organize_metadata)
-                        clouddrive_path = os.path.join(
-                            rule.clouddrive_remote_path or '/Media',
-                            remote_dir,
-                            remote_filename
-                        )
+                        if final_path:
+                            logger.info(f"📦 文件已归档到本地: {final_path}")
+                    except Exception as e:
+                        logger.error(f"❌ 本地归档失败: {e}")
+                        organize_failed = True
+                        organize_error = f"本地归档失败: {str(e)}"
+                
+                # 上传到115网盘（作为归档方式）
+                elif should_upload_to_115:
+                    try:
+                        # 获取115网盘配置
+                        pan115_user_key = self._get_config_value('pan115_user_key')
+                        pan115_remote_base = rule.pan115_remote_path or self._get_config_value('pan115_remote_path', '/Telegram媒体')
                         
-                        # 上传文件（使用归档后的文件或临时文件）
-                        upload_file = final_path if final_path else str(file_path)
-                        upload_result = await cloud_client.upload_file(
-                            upload_file,
-                            clouddrive_path
-                        )
-                        
-                        if upload_result['success']:
-                            is_uploaded = True
-                            logger.info(f"☁️ 文件已上传到 CloudDrive: {clouddrive_path}")
+                        if not pan115_user_key:
+                            error_msg = "115网盘未配置，请先在设置页面扫码登录115网盘"
+                            logger.warning(f"⚠️ {error_msg}")
+                            organize_failed = True
+                            organize_error = error_msg
                         else:
-                            logger.warning(f"CloudDrive 上传失败: {upload_result['message']}")
+                            logger.info(f"📤 115网盘归档模式")
+                            
+                            # 生成远程路径
+                            remote_dir = FileOrganizer.generate_target_directory(rule, organize_metadata)
+                            remote_filename = FileOrganizer.generate_filename(rule, task.file_name, organize_metadata)
+                            
+                            # 完整的115网盘目标路径
+                            remote_target_dir = os.path.join(pan115_remote_base, remote_dir).replace('\\', '/')
+                            pan115_path = os.path.join(remote_target_dir, remote_filename).replace('\\', '/')
+                            
+                            # 源文件（直接使用临时下载文件）
+                            source_file = str(file_path)
+                            
+                            logger.info(f"📤 准备上传到115网盘: {remote_filename}")
+                            logger.info(f"   本地文件: {source_file}")
+                            logger.info(f"   目标路径: {pan115_path}")
+                            
+                            # 使用P115Service上传
+                            from services.p115_service import P115Service
+                            p115 = P115Service()
+                            
+                            upload_result = await p115.upload_file(
+                                cookies=pan115_user_key,
+                                file_path=source_file,
+                                target_dir=remote_target_dir,
+                                file_name=remote_filename
+                            )
+                            
+                            if upload_result.get('success'):
+                                is_uploaded = True
+                                pan115_path = pan115_path  # 记录115网盘路径
+                                logger.info(f"✅ 文件已上传到115网盘: {pan115_path}")
+                                if upload_result.get('pickcode'):
+                                    logger.info(f"📝 文件ID: {upload_result['pickcode']}")
+                                if upload_result.get('is_quick'):
+                                    logger.info("⚡ 秒传成功（文件已存在）")
+                            else:
+                                error_msg = upload_result.get('message', '未知错误')
+                                logger.warning(f"⚠️ 115网盘上传失败: {error_msg}")
+                                organize_failed = True
+                                organize_error = f"115网盘上传失败: {error_msg}"
                     
-                    except Exception as cloud_error:
-                        logger.error(f"CloudDrive 上传异常: {cloud_error}")
+                    except Exception as pan115_error:
+                        error_msg = str(pan115_error)
+                        logger.error(f"❌ 115网盘上传异常: {error_msg}")
+                        organize_failed = True
+                        organize_error = f"115网盘上传异常: {error_msg}"
+                        import traceback
+                        traceback.print_exc()
                 
                 # 创建媒体文件记录
                 media_file = MediaFile(
@@ -744,7 +1114,7 @@ class MediaMonitorService:
                     message_id=message.id,
                     temp_path=str(file_path) if not final_path else None,
                     final_path=final_path,
-                    clouddrive_path=clouddrive_path,
+                    clouddrive_path=pan115_path,  # 复用字段存储115网盘路径
                     file_hash=file_hash,
                     file_name=task.file_name,
                     file_type=task.file_type,
@@ -758,18 +1128,21 @@ class MediaMonitorService:
                     resolution=metadata_dict.get('resolution'),
                     codec=metadata_dict.get('codec'),
                     bitrate_kbps=metadata_dict.get('bitrate_kbps'),
-                    source_chat=str(task.chat_id) if task.chat_id else None,
-                    sender_id=sender_info['id'],
-                    sender_username=sender_info['username'],
-                    is_organized=bool(final_path),
+                    source_chat=chat_name,  # 使用聊天名称而不是ID
+                    sender_id=str(sender_info['id']),
+                    sender_username=sender_display,  # 使用显示名称（username或姓名）
+                    is_organized=(bool(final_path) or is_uploaded) and not organize_failed,  # 归档成功且未失败
                     is_uploaded_to_cloud=is_uploaded,
-                    organized_at=datetime.now() if final_path else None,
+                    organize_failed=organize_failed,
+                    organize_error=organize_error,
+                    organized_at=datetime.now() if (final_path or is_uploaded) and not organize_failed else None,
                     uploaded_at=datetime.now() if is_uploaded else None
                 )
                 
                 db.add(media_file)
                 
                 # 更新任务状态
+                # 下载成功就标记为success，归档失败只影响媒体文件记录，不影响下载任务状态
                 task.status = 'success'
                 task.completed_at = datetime.now()
                 task.progress_percent = 100
@@ -779,9 +1152,12 @@ class MediaMonitorService:
                 rule.total_size_mb = (rule.total_size_mb or 0) + task.file_size_mb
                 rule.last_download_at = datetime.now()
                 
-                await db.commit()
+                if organize_failed:
+                    logger.warning(f"⚠️ 下载成功但归档失败: {task.file_name} - {organize_error}")
+                else:
+                    logger.info(f"🎉 下载任务完成: {task.file_name}")
                 
-                logger.info(f"🎉 下载任务完成: {task.file_name}")
+                await db.commit()
                 
                 break
                 

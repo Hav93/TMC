@@ -19,22 +19,37 @@ import os
 from pathlib import Path
 
 DB_PATH = "data/bot.db"
-LATEST_REVISION = "20250108_add_media_settings"  # 最新的迁移版本
+LATEST_REVISION = "add_media_settings_20250108"  # 最新的迁移版本
 
-# 版本检测规则（按时间倒序）
+# 旧版本到新版本的映射
+VERSION_MAP = {
+    '001': 'initial_schema_001',
+    '20251006_add_users': 'add_users_20251006',
+    '20251006_add_avatar': 'add_avatar_20251006',
+    '20251007_add_missing_fields': 'add_missing_fields_20251007',
+    '20251008_140419': 'add_dedup_and_sender_filter_20251008',
+    '20250108_add_media_management': 'add_media_management_20250108',
+    '20250108_add_last_connected': 'add_last_connected_20250108',
+    '20250108_add_media_settings': 'add_media_settings_20250108',
+    '20251009_fix_keywords_replace_schema': 'fix_keywords_replace_schema_20251009',
+    '20251009_add_bot_settings_user_sessions': 'add_bot_settings_user_sessions_20251009',
+    '20250110_add_pan115_fields': 'add_pan115_fields_20250110',
+}
+
+# 版本检测规则（按时间倒序，使用新版本号）
 VERSION_RULES = [
     {
-        "version": "20250108_add_media_settings",
+        "version": "add_media_settings_20250108",
         "check": lambda c: check_table_exists(c, "media_settings"),
         "desc": "媒体管理全局配置"
     },
     {
-        "version": "20250108_add_last_connected",
+        "version": "add_last_connected_20250108",
         "check": lambda c: check_column_exists(c, "telegram_clients", "last_connected"),
         "desc": "客户端最后连接时间"
     },
     {
-        "version": "20250108_add_media_management",
+        "version": "add_media_management_20250108",
         "check": lambda c: (
             check_table_exists(c, "media_monitor_rules") and
             check_table_exists(c, "download_tasks") and
@@ -43,7 +58,7 @@ VERSION_RULES = [
         "desc": "媒体文件管理"
     },
     {
-        "version": "20251008_140419",
+        "version": "add_dedup_and_sender_filter_20251008",
         "check": lambda c: (
             check_column_exists(c, "forward_rules", "enable_deduplication") and
             check_column_exists(c, "message_logs", "content_hash")
@@ -51,22 +66,22 @@ VERSION_RULES = [
         "desc": "消息去重和发送者过滤"
     },
     {
-        "version": "20251007_add_missing_fields",
+        "version": "add_missing_fields_20251007",
         "check": lambda c: check_column_exists(c, "forward_rules", "enable_text"),
         "desc": "转发规则字段补全"
     },
     {
-        "version": "20251006_add_avatar",
+        "version": "add_avatar_20251006",
         "check": lambda c: check_column_exists(c, "users", "avatar"),
         "desc": "用户头像字段"
     },
     {
-        "version": "20251006_add_users",
+        "version": "add_users_20251006",
         "check": lambda c: check_table_exists(c, "users"),
         "desc": "用户表"
     },
     {
-        "version": "001",
+        "version": "initial_schema_001",
         "check": lambda c: check_table_exists(c, "forward_rules"),
         "desc": "基础表结构"
     },
@@ -115,39 +130,45 @@ def main():
     cursor = conn.cursor()
 
     try:
-        # 检测当前数据库版本
-        detected_version, desc = detect_database_version(cursor)
-        
-        if detected_version is None:
-            print("⚠️  数据库为空或缺少关键表")
-            print("   Alembic 将创建所有表")
-            # 不设置版本，让 Alembic 从头开始
-            return
-        
-        print(f"📊 检测到数据库版本: {detected_version} ({desc})")
-        
-        # 创建 alembic_version 表
+        # 创建 alembic_version 表（如果不存在）
         cursor.execute(
             "CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL, PRIMARY KEY (version_num))"
         )
         
-        # 检查当前记录的版本
+        # 首先检查当前记录的版本
         cursor.execute("SELECT version_num FROM alembic_version LIMIT 1")
         current_record = cursor.fetchone()
         
         if current_record:
             current_version = current_record[0]
-            if current_version == detected_version:
-                print(f"✅ Alembic 版本记录正确: {current_version}")
+            print(f"📊 当前记录版本: {current_version}")
+            
+            # 检查是否是旧版本，需要映射到新版本
+            if current_version in VERSION_MAP:
+                new_version = VERSION_MAP[current_version]
+                print(f"🔄 发现旧版本号: {current_version}")
+                print(f"   映射到新版本: {new_version}")
+                
+                # 更新版本记录
+                cursor.execute("UPDATE alembic_version SET version_num = ?", (new_version,))
+                conn.commit()
+                print(f"✅ 版本已更新为: {new_version}")
                 return
             else:
-                print(f"⚠️  版本不一致！")
-                print(f"   记录版本: {current_version}")
-                print(f"   实际版本: {detected_version}")
-                print(f"   正在修正...")
+                print(f"✅ 版本号格式正确")
+                return
         
-        # 更新版本记录
-        cursor.execute("DELETE FROM alembic_version")
+        # 如果没有版本记录，检测数据库实际版本
+        detected_version, desc = detect_database_version(cursor)
+        
+        if detected_version is None:
+            print("⚠️  数据库为空或缺少关键表")
+            print("   Alembic 将创建所有表")
+            return
+        
+        print(f"📊 检测到数据库版本: {detected_version} ({desc})")
+        
+        # 插入版本记录
         cursor.execute("INSERT INTO alembic_version (version_num) VALUES (?)", (detected_version,))
         conn.commit()
         

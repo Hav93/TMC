@@ -314,12 +314,12 @@ class TelegramClientManager:
             try:
                 if self.client.is_connected:
                     future = asyncio.run_coroutine_threadsafe(
-                        self.client.stop(), 
+                        self.client.disconnect(), 
                         self.loop
                     )
                     future.result(timeout=5)  # 等待最多5秒
             except Exception as e:
-                logger.warning(f"停止客户端时出错: {e}")
+                self.logger.warning(f"停止客户端时出错: {e}")
         
         if self.thread:
             self.thread.join(timeout=10)

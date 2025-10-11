@@ -1,7 +1,7 @@
 """add users table for authentication
 
-Revision ID: 20251006_add_users
-Revises: 001
+Revision ID: add_users_20251006
+Revises: initial_schema_001
 Create Date: 2025-10-06 19:00:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from datetime import datetime
 
 # revision identifiers, used by Alembic.
-revision = '20251006_add_users'
-down_revision = '001'
+revision = 'add_users_20251006'
+down_revision = 'initial_schema_001'
 branch_labels = None
 depends_on = None
 

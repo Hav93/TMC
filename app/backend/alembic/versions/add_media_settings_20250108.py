@@ -1,7 +1,7 @@
 """Add media_settings table for global configuration
 
-Revision ID: 20250108_add_media_settings
-Revises: 20250108_add_last_connected
+Revision ID: add_media_settings_20250108
+Revises: add_last_connected_20250108
 Create Date: 2025-10-08 19:40:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '20250108_add_media_settings'
-down_revision = '20250108_add_last_connected'
+revision = 'add_media_settings_20250108'
+down_revision = 'add_last_connected_20250108'
 branch_labels = None
 depends_on = None
 

@@ -1,7 +1,7 @@
 """添加 bot_settings 和 user_sessions 表
 
-Revision ID: 20251009_add_bot_settings_user_sessions
-Revises: 20251009_fix_keywords_replace_schema
+Revision ID: add_bot_settings_user_sessions_20251009
+Revises: fix_keywords_replace_schema_20251009
 Create Date: 2025-10-09 22:30:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from sqlalchemy.engine.reflection import Inspector
 
 # revision identifiers, used by Alembic.
-revision = '20251009_add_bot_settings_user_sessions'
-down_revision = '20251009_fix_keywords_replace_schema'
+revision = 'add_bot_settings_user_sessions_20251009'
+down_revision = 'fix_keywords_replace_schema_20251009'
 branch_labels = None
 depends_on = None
 

@@ -40,18 +40,10 @@ export interface MediaMonitorRule {
   
   // 归档配置
   organize_enabled?: boolean;
-  organize_target_type?: 'local' | 'clouddrive_mount' | 'clouddrive_api';
+  organize_target_type?: 'local';
   organize_local_path?: string;
-  organize_clouddrive_mount?: string;
   organize_mode?: 'copy' | 'move';
   keep_temp_file?: boolean;
-  
-  // CloudDrive API
-  clouddrive_enabled?: boolean;
-  clouddrive_url?: string;
-  clouddrive_username?: string;
-  clouddrive_password?: string;
-  clouddrive_remote_path?: string;
   
   // 文件夹结构
   folder_structure?: 'flat' | 'date' | 'type' | 'source' | 'sender' | 'custom';

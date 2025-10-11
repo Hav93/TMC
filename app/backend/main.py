@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 # 导入API路由
-from api.routes import system, rules, logs, chats, clients, settings, dashboard, auth, users, media_monitor, media_files, media_settings
+from api.routes import system, rules, logs, chats, clients, settings, dashboard, auth, users, media_monitor, media_files, media_settings, pan115
 
 # 导入核心业务逻辑
 from enhanced_bot import EnhancedTelegramBot
@@ -79,7 +79,12 @@ app = FastAPI(
 # CORS配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 生产环境应该限制具体域名
+    allow_origins=[
+        "http://localhost:3000",  # Vite开发服务器
+        "http://localhost:9393",  # 生产环境
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:9393",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -101,6 +106,7 @@ app.include_router(dashboard.router, prefix="/api/dashboard", tags=["仪表板"]
 app.include_router(media_monitor.router, prefix="/api/media/monitor", tags=["媒体监控"])
 app.include_router(media_files.router, prefix="/api/media", tags=["媒体文件"])
 app.include_router(media_settings.router, prefix="/api/settings/media", tags=["媒体配置"])
+app.include_router(pan115.router, prefix="/api/pan115", tags=["115网盘"])
 
 
 @app.get("/health")

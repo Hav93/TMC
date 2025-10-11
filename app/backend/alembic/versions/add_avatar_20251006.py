@@ -1,7 +1,7 @@
 """add avatar to users
 
-Revision ID: 20251006_add_avatar
-Revises: 20251006_add_users
+Revision ID: add_avatar_20251006
+Revises: add_users_20251006
 Create Date: 2025-10-06 19:30:00.000000
 
 """
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = '20251006_add_avatar'
-down_revision = '20251006_add_users'
+revision = 'add_avatar_20251006'
+down_revision = 'add_users_20251006'
 branch_labels = None
 depends_on = None
 

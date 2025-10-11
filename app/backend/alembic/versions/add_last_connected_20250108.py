@@ -1,7 +1,7 @@
 """Add last_connected to telegram_clients
 
-Revision ID: 20250108_add_last_connected
-Revises: 20250108_add_media_management
+Revision ID: add_last_connected_20250108
+Revises: add_media_management_20250108
 Create Date: 2025-10-08 19:35:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '20250108_add_last_connected'
-down_revision = '20250108_add_media_management'
+revision = 'add_last_connected_20250108'
+down_revision = 'add_media_management_20250108'
 branch_labels = None
 depends_on = None
 

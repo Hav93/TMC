@@ -1,7 +1,7 @@
 """add dedup and sender filter
 
-Revision ID: 20251008_140419
-Revises: 20251007_add_missing_fields
+Revision ID: add_dedup_and_sender_filter_20251008
+Revises: add_missing_fields_20251007
 Create Date: 2025-10-08 14:04:19
 
 """
@@ -9,8 +9,8 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = '20251008_140419'
-down_revision = '20251007_add_missing_fields'
+revision = 'add_dedup_and_sender_filter_20251008'
+down_revision = 'add_missing_fields_20251007'
 branch_labels = None
 depends_on = None
 

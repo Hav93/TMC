@@ -48,7 +48,6 @@ const MonitorRuleForm: React.FC = () => {
   
   // 目录浏览器状态
   const [localArchiveBrowserVisible, setLocalArchiveBrowserVisible] = useState(false);
-  const [cloudDriveMountBrowserVisible, setCloudDriveMountBrowserVisible] = useState(false);
 
   // 获取客户端列表
   const { data: clientsData } = useQuery({
@@ -69,12 +68,6 @@ const MonitorRuleForm: React.FC = () => {
   });
 
   const chats = chatsData?.chats || [];
-
-  // 获取媒体设置（用于 CloudDrive 配置）
-  const { data: mediaSettings } = useQuery({
-    queryKey: ['media-settings'],
-    queryFn: mediaSettingsApi.getSettings,
-  });
 
   // 获取规则详情（编辑模式）
   const { data: ruleResponse } = useQuery({
@@ -573,9 +566,9 @@ const MonitorRuleForm: React.FC = () => {
           message="全局配置说明"
           description={
             <span>
-              CloudDrive、下载设置、元数据提取、存储清理等全局配置已移至{' '}
+              下载设置、元数据提取、存储清理等全局配置已移至{' '}
               <a href="/settings" style={{ color: colors.primary, fontWeight: 'bold' }}>
-                系统设置 → 媒体管理
+                系统设置
               </a>
               {' '}页面统一管理。
             </span>
@@ -605,21 +598,6 @@ const MonitorRuleForm: React.FC = () => {
         }}
         type="local"
         initialPath={form.getFieldValue('organize_local_path') || '/app/media/archive'}
-      />
-
-      {/* CloudDrive 远程路径浏览器 */}
-      <DirectoryBrowser
-        visible={cloudDriveMountBrowserVisible}
-        onCancel={() => setCloudDriveMountBrowserVisible(false)}
-        onSelect={(path) => {
-          form.setFieldValue('organize_clouddrive_mount', path);
-          message.success(`已选择 CloudDrive 目录: ${path}`);
-        }}
-        type="clouddrive"
-        clouddriveUrl={mediaSettings?.clouddrive_url}
-        clouddriveUsername={mediaSettings?.clouddrive_username}
-        clouddrivePassword={mediaSettings?.clouddrive_password}
-        initialPath={form.getFieldValue('organize_clouddrive_mount') || '/'}
       />
     </div>
   );

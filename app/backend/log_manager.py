@@ -127,7 +127,7 @@ class LogManager:
                 file_handler.setFormatter(formatter)
                 logger.addHandler(file_handler)
                 
-                print(f"📄 日志文件配置: {log_path} (最大: {max_bytes//1024//1024}MB, 备份: {backup_count}个)")
+                print(f"[LOG] 日志文件配置: {log_path} (最大: {max_bytes//1024//1024}MB, 备份: {backup_count}个)")
                 
             except (PermissionError, OSError) as e:
                 print(f"⚠️ 无法创建日志文件 {log_path}: {e}")

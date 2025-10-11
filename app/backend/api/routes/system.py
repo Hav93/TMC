@@ -172,7 +172,7 @@ async def stream_container_logs(
     支持结构化日志解析，提取操作类型、实体信息等
     """
     from fastapi.responses import StreamingResponse
-    from utils import LogParser
+    from utils.log_parser import LogParser
 
     # 解析过滤条件
     source_filters: Optional[Set[str]] = (

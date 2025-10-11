@@ -690,7 +690,7 @@ class HistoryMessageService:
                 }
             
             # 确定时间范围（最近24小时）
-            from utils import get_local_now
+            from models import get_local_now
             now = get_local_now()
             time_filter = {
                 'offset_date': now,

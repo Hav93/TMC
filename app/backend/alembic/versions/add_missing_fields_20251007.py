@@ -1,7 +1,7 @@
 """Add missing fields to telegram_clients and forward_rules
 
-Revision ID: 20251007_add_missing_fields
-Revises: 20251006_add_users
+Revision ID: add_missing_fields_20251007
+Revises: add_avatar_20251006
 Create Date: 2025-10-07 00:30:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '20251007_add_missing_fields'
-down_revision = '20251006_add_avatar'
+revision = 'add_missing_fields_20251007'
+down_revision = 'add_avatar_20251006'
 branch_labels = None
 depends_on = None
 

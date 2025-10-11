@@ -208,11 +208,6 @@ const MonitorRulesList: React.FC = () => {
               归档
             </Tag>
           )}
-          {record.clouddrive_enabled && (
-            <Tag icon={<CloudUploadOutlined />} color="cyan">
-              云盘
-            </Tag>
-          )}
         </Space>
       ),
     },

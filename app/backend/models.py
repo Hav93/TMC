@@ -387,18 +387,10 @@ class MediaMonitorRule(Base):
     
     # 归档配置
     organize_enabled = Column(Boolean, default=False, comment='是否启用文件归档')
-    organize_target_type = Column(String(20), default='local', comment='归档目标：local/clouddrive_mount/clouddrive_api')
+    organize_target_type = Column(String(20), default='local', comment='归档目标：local')
     organize_local_path = Column(String(255), comment='本地归档路径')
-    organize_clouddrive_mount = Column(String(255), comment='CloudDrive挂载路径')
     organize_mode = Column(String(20), default='copy', comment='归档方式：copy/move')
     keep_temp_file = Column(Boolean, default=False, comment='归档后是否保留临时文件')
-    
-    # CloudDrive API配置
-    clouddrive_enabled = Column(Boolean, default=False, comment='是否启用CloudDrive API上传')
-    clouddrive_url = Column(String(255), comment='CloudDrive服务地址')
-    clouddrive_username = Column(String(100), comment='CloudDrive用户名')
-    clouddrive_password = Column(String(255), comment='CloudDrive密码（加密存储）')
-    clouddrive_remote_path = Column(String(255), comment='CloudDrive远程路径')
     
     # 115网盘配置
     pan115_remote_path = Column(String(255), comment='115网盘远程路径（如 /Telegram媒体）')
@@ -448,6 +440,9 @@ class DownloadTask(Base):
     file_name = Column(String(255), comment='文件名')
     file_type = Column(String(50), comment='文件类型：photo/video/audio/document')
     file_size_mb = Column(Integer, comment='文件大小(MB)')
+    file_unique_id = Column(String(255), comment='文件唯一ID（用于重新下载）')
+    file_access_hash = Column(String(255), comment='文件访问哈希')
+    media_json = Column(Text, comment='媒体信息JSON（用于恢复下载）')
     
     # 任务状态
     status = Column(String(20), default='pending', comment='任务状态：pending/downloading/success/failed/retrying/paused')
@@ -484,13 +479,6 @@ class MediaSettings(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     
-    # CloudDrive 配置
-    clouddrive_enabled = Column(Boolean, default=False, comment='启用CloudDrive')
-    clouddrive_url = Column(String(200), comment='CloudDrive服务地址')
-    clouddrive_username = Column(String(100), comment='CloudDrive用户名')
-    clouddrive_password = Column(String(200), comment='CloudDrive密码(加密存储)')
-    clouddrive_remote_path = Column(String(500), default='/Media', comment='CloudDrive远程路径')
-    
     # 115网盘配置
     pan115_app_id = Column(String(50), comment='115开放平台AppID')
     pan115_user_id = Column(String(100), comment='115用户ID')
@@ -520,7 +508,7 @@ class MediaSettings(Base):
     updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
     
     def __repr__(self):
-        return f"<MediaSettings(id={self.id}, clouddrive={self.clouddrive_enabled})>"
+        return f"<MediaSettings(id={self.id})>"
 
 
 class MediaFile(Base):
@@ -535,7 +523,7 @@ class MediaFile(Base):
     # 文件路径
     temp_path = Column(String(500), comment='临时文件路径')
     final_path = Column(String(500), comment='最终归档路径')
-    clouddrive_path = Column(String(500), comment='CloudDrive远程路径')
+    clouddrive_path = Column(String(500), comment='115网盘远程路径')  # 重命名字段需要数据库迁移
     file_hash = Column(String(64), unique=True, comment='文件哈希(SHA-256)，用于去重')
     
     # 基础信息

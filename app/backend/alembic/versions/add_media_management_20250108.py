@@ -1,7 +1,7 @@
 """add media management tables
 
-Revision ID: 20250108_add_media_management
-Revises: 20251008_140419
+Revision ID: add_media_management_20250108
+Revises: add_dedup_and_sender_filter_20251008
 Create Date: 2025-01-08 16:00:00.000000
 
 """
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '20250108_add_media_management'
-down_revision = '20251008_140419'
+revision = 'add_media_management_20250108'
+down_revision = 'add_dedup_and_sender_filter_20251008'
 branch_labels = None
 depends_on = None
 
