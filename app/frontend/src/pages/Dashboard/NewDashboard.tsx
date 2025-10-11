@@ -371,10 +371,15 @@ const NewDashboard: React.FC = () => {
                       backgroundColor: isDark ? colors.cardBg : '#fff',
                       border: `1px solid ${isDark ? colors.border : '#d9d9d9'}`,
                       borderRadius: '4px',
-                      color: isDark ? colors.text : '#000'
+                      color: isDark ? colors.text : '#000',
+                      boxShadow: isDark 
+                        ? '0 2px 8px rgba(0, 0, 0, 0.45)' 
+                        : '0 2px 8px rgba(0, 0, 0, 0.15)'
                     }}
                     labelStyle={{ color: isDark ? colors.text : '#000', fontWeight: 'bold' }}
                     formatter={(value: any) => [`${value}条消息`, '转发数量']}
+                    cursor={{ fill: 'transparent' }}
+                    wrapperStyle={{ outline: 'none' }}
                   />
                   <Bar dataKey="count" fill={COLORS.primary} radius={[8, 8, 0, 0]} />
                 </BarChart>
