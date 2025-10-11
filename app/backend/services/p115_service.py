@@ -303,11 +303,17 @@ class P115Service:
                             space_info = client.fs_space_info()
                             if space_info and space_info.get('state'):
                                 space_data = space_info.get('data', {})
+                                total = space_data.get('all_total', {}).get('size', 0)
+                                used = space_data.get('all_use', {}).get('size', 0)
+                                # 计算剩余空间：总空间 - 已用空间
+                                remain = max(0, total - used)
+                                
                                 user_info['space'] = {
-                                    'total': space_data.get('all_total', {}).get('size', 0),
-                                    'used': space_data.get('all_use', {}).get('size', 0),
-                                    'remain': space_data.get('remain', 0),
+                                    'total': total,
+                                    'used': used,
+                                    'remain': remain,
                                 }
+                                logger.info(f"📊 空间信息 - 总: {total/1024/1024/1024:.2f}GB, 已用: {used/1024/1024/1024:.2f}GB, 剩余: {remain/1024/1024/1024:.2f}GB")
                         except Exception as e:
                             logger.warning(f"⚠️ 获取空间信息失败: {e}")
                         
