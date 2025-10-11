@@ -1,7 +1,7 @@
 /**
  * 资源监控API服务
  */
-import request from './request';
+import { apiClient } from './api';
 
 export interface ResourceMonitorRule {
   id: number;
@@ -57,7 +57,7 @@ export const resourceMonitorApi = {
    * 获取所有监控规则
    */
   getRules: () => {
-    return request.get<{ success: boolean; rules: ResourceMonitorRule[] }>('/api/resources/rules');
+    return apiClient.get<{ success: boolean; rules: ResourceMonitorRule[] }>('/api/resources/rules');
   },
 
   /**
@@ -74,21 +74,21 @@ export const resourceMonitorApi = {
     target_path: string;
     auto_save?: boolean;
   }) => {
-    return request.post<{ success: boolean; message: string; rule_id: number }>('/api/resources/rules', data);
+    return apiClient.post<{ success: boolean; message: string; rule_id: number }>('/api/resources/rules', data);
   },
 
   /**
    * 更新监控规则
    */
   updateRule: (ruleId: number, data: Partial<ResourceMonitorRule>) => {
-    return request.put<{ success: boolean; message: string }>(`/api/resources/rules/${ruleId}`, data);
+    return apiClient.put<{ success: boolean; message: string }>(`/api/resources/rules/${ruleId}`, data);
   },
 
   /**
    * 删除监控规则
    */
   deleteRule: (ruleId: number) => {
-    return request.delete<{ success: boolean; message: string }>(`/api/resources/rules/${ruleId}`);
+    return apiClient.delete<{ success: boolean; message: string }>(`/api/resources/rules/${ruleId}`);
   },
 
   // ==================== 资源记录管理 ====================
@@ -104,14 +104,14 @@ export const resourceMonitorApi = {
     page?: number;
     page_size?: number;
   }) => {
-    return request.get<ResourceRecordListResponse>('/api/resources/records', { params });
+    return apiClient.get<ResourceRecordListResponse>('/api/resources/records', { params });
   },
 
   /**
    * 获取资源记录详情
    */
   getRecordDetail: (recordId: number) => {
-    return request.get<{ success: boolean; record: ResourceRecord }>(`/api/resources/records/${recordId}`);
+    return apiClient.get<{ success: boolean; record: ResourceRecord }>(`/api/resources/records/${recordId}`);
   },
 
   // ==================== 标签管理 ====================
@@ -120,7 +120,7 @@ export const resourceMonitorApi = {
    * 添加标签
    */
   addTag: (recordId: number, tag: string) => {
-    return request.post<{ success: boolean; message: string; tags: string[] }>(
+    return apiClient.post<{ success: boolean; message: string; tags: string[] }>(
       `/api/resources/records/${recordId}/tags`,
       { tag }
     );
@@ -130,7 +130,7 @@ export const resourceMonitorApi = {
    * 删除标签
    */
   removeTag: (recordId: number, tag: string) => {
-    return request.delete<{ success: boolean; message: string; tags: string[] }>(
+    return apiClient.delete<{ success: boolean; message: string; tags: string[] }>(
       `/api/resources/records/${recordId}/tags/${tag}`
     );
   },
@@ -144,7 +144,7 @@ export const resourceMonitorApi = {
     record_ids: number[];
     action: 'save' | 'delete' | 'ignore';
   }) => {
-    return request.post<{ success: boolean; message: string }>('/api/resources/records/batch', data);
+    return apiClient.post<{ success: boolean; message: string }>('/api/resources/records/batch', data);
   },
 };
 
