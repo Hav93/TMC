@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from log_manager import get_logger
 from api.dependencies import get_enhanced_bot
 from datetime import datetime, timedelta
+from sqlalchemy import and_
 
 logger = get_logger('api.dashboard', 'api.log')
 
@@ -200,7 +201,7 @@ async def get_dashboard_overview():
             
             forward_trend_result = await db.execute(forward_trend_query)
             forward_trend = [
-                {"date": row[0].isoformat() if row[0] else None, "count": row[1]}
+                {"date": str(row[0]) if row[0] else None, "count": row[1]}
                 for row in forward_trend_result.fetchall()
             ]
             
@@ -252,7 +253,7 @@ async def get_dashboard_overview():
             
             download_trend_result = await db.execute(download_trend_query)
             download_trend = [
-                {"date": row[0].isoformat() if row[0] else None, "count": row[1]}
+                {"date": str(row[0]) if row[0] else None, "count": row[1]}
                 for row in download_trend_result.fetchall()
             ]
             
