@@ -24,6 +24,7 @@ class Pan115ConfigUpdate(BaseModel):
     pan115_user_id: Optional[str] = None  # 手动输入的user_id
     pan115_user_key: Optional[str] = None  # 手动输入的user_key
     pan115_request_interval: Optional[float] = 1.0  # API请求间隔（秒）
+    pan115_device_type: Optional[str] = None  # 登录设备类型
 
 
 class Pan115QRCodeRequest(BaseModel):
@@ -66,6 +67,7 @@ async def get_pan115_config(
             "pan115_user_id": getattr(settings, 'pan115_user_id', None),
             "pan115_user_key": user_key_masked,
             "pan115_request_interval": getattr(settings, 'pan115_request_interval', 1.0),
+            "pan115_device_type": getattr(settings, 'pan115_device_type', 'qandroid'),
             "is_configured": is_configured
         }
         
@@ -117,6 +119,9 @@ async def update_pan115_config(
         
         if config.pan115_request_interval is not None:
             setattr(settings, 'pan115_request_interval', config.pan115_request_interval)
+        
+        if config.pan115_device_type is not None:
+            setattr(settings, 'pan115_device_type', config.pan115_device_type)
         
         await db.commit()
         
@@ -414,9 +419,10 @@ async def check_regular_qrcode_status(
                     settings = MediaSettings()
                     db.add(settings)
                 
-                # 存储完整的cookies字符串和用户信息
+                # 存储完整的cookies字符串、用户信息和设备类型
                 setattr(settings, 'pan115_user_id', user_id)
                 setattr(settings, 'pan115_user_key', cookies)
+                setattr(settings, 'pan115_device_type', device_type)
                 await db.commit()
                 
                 logger.info(f"✅ 115登录成功并已保存: UID={user_id}, 用户名={user_info.get('user_name', 'N/A')}")

@@ -49,6 +49,13 @@ const Pan115Settings: React.FC = () => {
     queryFn: pan115Api.getConfig,
   });
 
+  // 当配置加载完成后，更新设备类型
+  useEffect(() => {
+    if (config?.pan115_device_type) {
+      setDeviceType(config.pan115_device_type);
+    }
+  }, [config]);
+
   // 更新配置
   const updateConfigMutation = useMutation({
     mutationFn: pan115Api.updateConfig,
