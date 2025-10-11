@@ -223,6 +223,13 @@ async def create_monitor_rule(
         # 通知客户端重新加载监听列表
         if rule.is_active:
             await notify_client_reload_chats(rule.client_id)
+            
+            # 通知媒体监控服务重新加载规则
+            from services.media_monitor_service import get_media_monitor_service
+            monitor_service = get_media_monitor_service()
+            if monitor_service:
+                await monitor_service.reload_rule(rule.id)
+                logger.info(f"✅ 已通知媒体监控服务加载规则: {rule.name} (ID: {rule.id})")
         
         return {
             "success": True,
@@ -280,6 +287,13 @@ async def update_monitor_rule(
         
         # 通知客户端重新加载监听列表
         await notify_client_reload_chats(rule.client_id)
+        
+        # 通知媒体监控服务重新加载规则
+        from services.media_monitor_service import get_media_monitor_service
+        monitor_service = get_media_monitor_service()
+        if monitor_service:
+            await monitor_service.reload_rule(rule.id)
+            logger.info(f"✅ 已通知媒体监控服务重新加载规则: {rule.name} (ID: {rule.id})")
         
         return {
             "success": True,
