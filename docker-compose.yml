@@ -31,16 +31,10 @@ services:
       - PHONE_NUMBER=${PHONE_NUMBER:-}
       
       # 代理配置（可选，外网环境通常不需要）
-      # 方式1：使用标准代理环境变量（推荐，自动解析）
-      - HTTP_PROXY=${HTTP_PROXY:-}
-      - HTTPS_PROXY=${HTTPS_PROXY:-}
-      # 方式2：使用详细配置（如果方式1不适用）
       - ENABLE_PROXY=${ENABLE_PROXY:-false}
       - PROXY_TYPE=${PROXY_TYPE:-http}
       - PROXY_HOST=${PROXY_HOST:-127.0.0.1}
       - PROXY_PORT=${PROXY_PORT:-7890}
-      - PROXY_USERNAME=${PROXY_USERNAME:-}
-      - PROXY_PASSWORD=${PROXY_PASSWORD:-}
       
       # 权限配置（NAS推荐，避免权限问题）
       # 如需自定义用户ID，请修改以下值或在 .env 中设置 PUID 和 PGID
