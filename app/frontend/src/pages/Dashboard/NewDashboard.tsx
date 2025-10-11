@@ -170,7 +170,7 @@ const NewDashboard: React.FC = () => {
         border: `1px solid ${isDark ? colors.border : '#d9d9d9'}`,
         borderRadius: '4px',
         padding: '12px',
-        color: isDark ? colors.text : '#000',
+        color: isDark ? colors.textPrimaryPrimary : '#000',
         boxShadow: isDark 
           ? '0 2px 8px rgba(0, 0, 0, 0.45)' 
           : '0 2px 8px rgba(0, 0, 0, 0.15)'
@@ -363,20 +363,20 @@ const NewDashboard: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke={isDark ? colors.border : '#f0f0f0'} />
                   <XAxis 
                     dataKey="date" 
-                    stroke={isDark ? colors.text : '#666'}
+                    stroke={isDark ? colors.textPrimary : '#666'}
                   />
-                  <YAxis stroke={isDark ? colors.text : '#666'} />
+                  <YAxis stroke={isDark ? colors.textPrimary : '#666'} />
                   <Tooltip 
                     contentStyle={{ 
                       backgroundColor: isDark ? colors.cardBg : '#fff',
                       border: `1px solid ${isDark ? colors.border : '#d9d9d9'}`,
                       borderRadius: '4px',
-                      color: isDark ? colors.text : '#000',
+                      color: isDark ? colors.textPrimary : '#000',
                       boxShadow: isDark 
                         ? '0 2px 8px rgba(0, 0, 0, 0.45)' 
                         : '0 2px 8px rgba(0, 0, 0, 0.15)'
                     }}
-                    labelStyle={{ color: isDark ? colors.text : '#000', fontWeight: 'bold' }}
+                    labelStyle={{ color: isDark ? colors.textPrimary : '#000', fontWeight: 'bold' }}
                     formatter={(value: any) => [`${value}条消息`, '转发数量']}
                     cursor={{ fill: 'transparent' }}
                     wrapperStyle={{ outline: 'none' }}
@@ -402,9 +402,9 @@ const NewDashboard: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke={isDark ? colors.border : '#f0f0f0'} />
                   <XAxis 
                     dataKey="date" 
-                    stroke={isDark ? colors.text : '#666'}
+                    stroke={isDark ? colors.textPrimary : '#666'}
                   />
-                  <YAxis stroke={isDark ? colors.text : '#666'} />
+                  <YAxis stroke={isDark ? colors.textPrimary : '#666'} />
                   <Tooltip 
                     content={<CustomMediaTooltip />}
                     cursor={{ fill: 'transparent' }}
