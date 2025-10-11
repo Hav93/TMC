@@ -17,7 +17,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import PrivateRoute from './components/common/PrivateRoute';
 
 // Pages
-import Dashboard from './pages/Dashboard/index';
+import Dashboard from './pages/Dashboard/NewDashboard';
 import RulesPage from './pages/Rules/index';
 import LogsPage from './pages/SystemLogs/index';
 import SettingsPage from './pages/Settings/index';
