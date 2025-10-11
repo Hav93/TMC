@@ -5,12 +5,14 @@ on:
     branches:
       - main
       - master
+      - test  # 添加 test 分支支持
     tags:
       - 'v*'
   pull_request:
     branches:
       - main
       - master
+      - test
 
 env:
   DOCKER_IMAGE: hav93/tmc
@@ -42,6 +44,15 @@ jobs:
           VERSION=$(cat VERSION | tr -d '\n\r')
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "📦 Building version: $VERSION"
+          
+          # 确定分支标签
+          if [[ "${{ github.ref }}" == "refs/heads/test" ]]; then
+            echo "branch_tag=test" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]] || [[ "${{ github.ref }}" == "refs/heads/master" ]]; then
+            echo "branch_tag=latest" >> $GITHUB_OUTPUT
+          else
+            echo "branch_tag=dev" >> $GITHUB_OUTPUT
+          fi
 
       - name: Extract metadata
         id: meta
@@ -49,15 +60,18 @@ jobs:
         with:
           images: ${{ env.DOCKER_IMAGE }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' }}
+            type=raw,value=test,enable=${{ github.ref == 'refs/heads/test' }}
             type=raw,value=${{ steps.version.outputs.version }},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=sha,prefix={{branch}}-,enable=true
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./Dockerfile
           platforms: ${{ env.PLATFORMS }}
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}  # PR 不推送
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -65,7 +79,23 @@ jobs:
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
-            VERSION=${{ steps.meta.outputs.version }}
+            VERSION=${{ steps.version.outputs.version }}
+      
+      - name: Build summary
+        run: |
+          echo "## 🎉 构建完成" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 镜像信息" >> $GITHUB_STEP_SUMMARY
+          echo "- **仓库**: ${{ env.DOCKER_IMAGE }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **标签**: ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **版本**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **分支**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **提交**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 使用方法" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.branch_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: Update Docker Hub Description
         uses: peter-evans/dockerhub-description@v3
