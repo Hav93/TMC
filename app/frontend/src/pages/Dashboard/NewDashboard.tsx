@@ -20,6 +20,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import dayjs from 'dayjs';
 import { dashboardApi } from '../../services/dashboard';
 import type { DashboardOverview, DashboardInsights } from '../../services/dashboard';
+import { useThemeContext } from '../../theme';
 
 const { Title, Text } = Typography;
 
@@ -44,6 +45,8 @@ const COLORS = {
 
 const NewDashboard: React.FC = () => {
   const navigate = useNavigate();
+  const { themeType, colors } = useThemeContext();
+  const isDark = themeType === 'dark';
 
   // 获取仪表盘总览数据
   const { data: overview, isLoading: overviewLoading, refetch: refetchOverview } = useQuery<DashboardOverview>({
@@ -123,7 +126,7 @@ const NewDashboard: React.FC = () => {
   const mediaTrendData = prepareTrendData(overview.media_module.trend);
 
   return (
-    <div style={{ padding: '24px', background: '#f0f2f5', minHeight: '100vh' }}>
+    <div style={{ padding: '24px', minHeight: '100vh' }}>
       {/* 系统总览卡片 */}
       <Card 
         style={{ marginBottom: 16 }}
@@ -381,7 +384,7 @@ const NewDashboard: React.FC = () => {
         <Col xs={24} sm={24} lg={8}>
           <Card title="☁️ 存储分布" bodyStyle={{ padding: '20px' }}>
             {/* 云端占比 */}
-            <div style={{ textAlign: 'center', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #f0f0f0' }}>
+            <div style={{ textAlign: 'center', marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${isDark ? colors.border : '#f0f0f0'}` }}>
               <Text type="secondary">云端占比：</Text>
               <Progress
                 type="circle"
@@ -400,15 +403,15 @@ const NewDashboard: React.FC = () => {
             <Row gutter={12}>
               {/* 左栏：本地存储 */}
               <Col span={12}>
-                <div style={{ borderRight: '1px solid #f0f0f0', paddingRight: 8 }}>
+                <div style={{ borderRight: `1px solid ${isDark ? colors.border : '#f0f0f0'}`, paddingRight: 8 }}>
                   <div style={{ marginBottom: 12, textAlign: 'center' }}>
                     <Text strong style={{ fontSize: 14 }}>💾 本地存储</Text>
                   </div>
 
                   {/* 已归档文件 */}
                   <div style={{ 
-                    background: '#f6ffed', 
-                    border: '1px solid #b7eb8f',
+                    background: isDark ? 'rgba(82, 196, 26, 0.1)' : '#f6ffed', 
+                    border: `1px solid ${isDark ? 'rgba(82, 196, 26, 0.3)' : '#b7eb8f'}`,
                     borderRadius: 4, 
                     padding: '8px',
                     marginBottom: 8
@@ -426,8 +429,8 @@ const NewDashboard: React.FC = () => {
 
                   {/* 临时下载 */}
                   <div style={{ 
-                    background: '#fffbe6', 
-                    border: '1px solid #ffe58f',
+                    background: isDark ? 'rgba(250, 173, 20, 0.1)' : '#fffbe6', 
+                    border: `1px solid ${isDark ? 'rgba(250, 173, 20, 0.3)' : '#ffe58f'}`,
                     borderRadius: 4, 
                     padding: '8px',
                     marginBottom: 8
@@ -445,7 +448,7 @@ const NewDashboard: React.FC = () => {
 
                   {/* 本地小计 */}
                   <div style={{ 
-                    background: '#f5f5f5', 
+                    background: isDark ? colors.cardBg : '#f5f5f5', 
                     padding: '6px 8px', 
                     borderRadius: 4,
                     textAlign: 'center'
@@ -467,8 +470,8 @@ const NewDashboard: React.FC = () => {
 
                   {/* 已上传文件 */}
                   <div style={{ 
-                    background: '#e6f7ff', 
-                    border: '1px solid #91d5ff',
+                    background: isDark ? 'rgba(24, 144, 255, 0.1)' : '#e6f7ff', 
+                    border: `1px solid ${isDark ? 'rgba(24, 144, 255, 0.3)' : '#91d5ff'}`,
                     borderRadius: 4, 
                     padding: '8px',
                     marginBottom: 8
@@ -486,8 +489,8 @@ const NewDashboard: React.FC = () => {
 
                   {/* 网盘空间 */}
                   <div style={{ 
-                    background: '#f0f5ff', 
-                    border: '1px solid #adc6ff',
+                    background: isDark ? 'rgba(24, 144, 255, 0.05)' : '#f0f5ff', 
+                    border: `1px solid ${isDark ? 'rgba(24, 144, 255, 0.2)' : '#adc6ff'}`,
                     borderRadius: 4, 
                     padding: '8px',
                     marginBottom: 8
@@ -520,7 +523,7 @@ const NewDashboard: React.FC = () => {
 
                   {/* 云端使用率 */}
                   <div style={{ 
-                    background: '#f5f5f5', 
+                    background: isDark ? colors.cardBg : '#f5f5f5', 
                     padding: '6px 8px', 
                     borderRadius: 4,
                     textAlign: 'center'
