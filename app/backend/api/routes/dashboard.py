@@ -527,6 +527,10 @@ async def get_dashboard_insights():
                 most_active_count = most_active_row[1]
             
             # ==================== 存储预警 ====================
+            # 计算真实的本地存储使用情况
+            current_usage_mb = await db.scalar(select(func.sum(MediaFile.file_size_mb))) or 0
+            current_usage_gb = current_usage_mb / 1024
+            
             # 计算近7日平均增长
             seven_days_ago = datetime.now() - timedelta(days=7)
             recent_size_query = select(
@@ -537,23 +541,41 @@ async def get_dashboard_insights():
             recent_size_mb = await db.scalar(recent_size_query) or 0
             daily_growth_mb = recent_size_mb / 7 if recent_size_mb > 0 else 0
             
-            # 假设存储容量为 500GB（可以从配置读取）
-            total_capacity_gb = 500
-            current_usage_mb = await db.scalar(select(func.sum(MediaFile.file_size_mb))) or 0
-            current_usage_gb = current_usage_mb / 1024
-            
-            # 计算达到80%需要的天数
-            target_capacity_gb = total_capacity_gb * 0.8
-            remaining_gb = target_capacity_gb - current_usage_gb
-            days_until_80_percent = int(remaining_gb / (daily_growth_mb / 1024)) if daily_growth_mb > 0 else 999
-            
-            storage_warning = {
-                "should_warn": days_until_80_percent < 30,
-                "days_until_80_percent": days_until_80_percent if days_until_80_percent > 0 else 0,
-                "current_usage_gb": round(current_usage_gb, 2),
-                "total_capacity_gb": total_capacity_gb,
-                "usage_percentage": round((current_usage_gb / total_capacity_gb * 100), 2)
-            }
+            # 从系统获取实际磁盘容量
+            import shutil
+            try:
+                # 获取 media 目录所在磁盘的总容量和可用空间
+                stat = shutil.disk_usage('/app/media')
+                total_capacity_gb = stat.total / (1024**3)  # 转换为 GB
+                available_capacity_gb = stat.free / (1024**3)
+                used_capacity_gb = (stat.total - stat.free) / (1024**3)
+                
+                # 计算达到80%需要的天数
+                target_capacity_gb = total_capacity_gb * 0.8
+                remaining_gb = target_capacity_gb - used_capacity_gb
+                days_until_80_percent = int(remaining_gb / (daily_growth_mb / 1024)) if daily_growth_mb > 0 else 999
+                
+                storage_warning = {
+                    "should_warn": (used_capacity_gb / total_capacity_gb) > 0.8 or days_until_80_percent < 30,
+                    "days_until_80_percent": days_until_80_percent if days_until_80_percent > 0 else 0,
+                    "current_usage_gb": round(used_capacity_gb, 2),
+                    "total_capacity_gb": round(total_capacity_gb, 2),
+                    "usage_percentage": round((used_capacity_gb / total_capacity_gb * 100), 2),
+                    "media_files_gb": round(current_usage_gb, 2)  # 媒体文件占用
+                }
+                
+                logger.info(f"💾 存储状态 - 磁盘总容量: {total_capacity_gb:.2f}GB, 已用: {used_capacity_gb:.2f}GB ({storage_warning['usage_percentage']}%), 媒体文件: {current_usage_gb:.2f}GB")
+            except Exception as e:
+                logger.error(f"获取磁盘容量失败: {e}")
+                # 降级方案：仅显示媒体文件大小
+                storage_warning = {
+                    "should_warn": False,
+                    "days_until_80_percent": 999,
+                    "current_usage_gb": round(current_usage_gb, 2),
+                    "total_capacity_gb": round(current_usage_gb * 10, 2),  # 假设还有很多空间
+                    "usage_percentage": 10,
+                    "media_files_gb": round(current_usage_gb, 2)
+                }
             
             break
         
