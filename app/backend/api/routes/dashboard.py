@@ -273,13 +273,35 @@ async def get_dashboard_overview():
                 }
             
             # ==================== 存储分布 ====================
-            # 本地存储（已归档的文件）
-            local_count = await db.scalar(
+            # 本地存储 - 已归档的文件
+            local_organized_count = await db.scalar(
                 select(func.count(MediaFile.id)).where(MediaFile.is_organized == True)
             ) or 0
-            local_size_mb = await db.scalar(
+            local_organized_size_mb = await db.scalar(
                 select(func.sum(MediaFile.file_size_mb)).where(MediaFile.is_organized == True)
             ) or 0
+            
+            # 本地存储 - 临时文件（未归档的）
+            local_temp_count = await db.scalar(
+                select(func.count(MediaFile.id)).where(
+                    and_(
+                        MediaFile.is_organized == False,
+                        MediaFile.temp_path.isnot(None)
+                    )
+                )
+            ) or 0
+            local_temp_size_mb = await db.scalar(
+                select(func.sum(MediaFile.file_size_mb)).where(
+                    and_(
+                        MediaFile.is_organized == False,
+                        MediaFile.temp_path.isnot(None)
+                    )
+                )
+            ) or 0
+            
+            # 本地存储总计
+            local_count = local_organized_count + local_temp_count
+            local_size_mb = local_organized_size_mb + local_temp_size_mb
             
             # 云端存储（115网盘）
             cloud_count = await db.scalar(
@@ -288,6 +310,29 @@ async def get_dashboard_overview():
             cloud_size_mb = await db.scalar(
                 select(func.sum(MediaFile.file_size_mb)).where(MediaFile.is_uploaded_to_cloud == True)
             ) or 0
+            
+            # 115网盘空间信息（从设置中读取）
+            from models import MediaSettings
+            media_settings_result = await db.execute(select(MediaSettings).limit(1))
+            media_settings = media_settings_result.scalar_one_or_none()
+            
+            pan115_total_space_gb = 0
+            pan115_used_space_gb = 0
+            pan115_available_space_gb = 0
+            
+            if media_settings and media_settings.pan115_user_id:
+                # 如果有115配置，尝试获取空间信息
+                try:
+                    from services.p115_service import P115Service
+                    p115 = P115Service(cookies=media_settings.pan115_user_key)
+                    user_info = await p115.get_user_info(media_settings.pan115_user_key)
+                    if user_info:
+                        # 转换为GB
+                        pan115_total_space_gb = round(user_info.get('space_info', {}).get('all_total', {}).get('size', 0) / (1024**3), 2)
+                        pan115_used_space_gb = round((pan115_total_space_gb * user_info.get('space_info', {}).get('all_use', {}).get('size', 0) / 100), 2) if pan115_total_space_gb > 0 else 0
+                        pan115_available_space_gb = pan115_total_space_gb - pan115_used_space_gb
+                except Exception as e:
+                    logger.debug(f"获取115网盘空间信息失败: {e}")
             
             # 收藏文件数
             starred_count = await db.scalar(
@@ -346,12 +391,28 @@ async def get_dashboard_overview():
                 # 存储分布
                 "storage_distribution": {
                     "local": {
-                        "count": local_count,
-                        "size_gb": round(local_size_mb / 1024, 2)
+                        "organized": {
+                            "count": local_organized_count,
+                            "size_gb": round(local_organized_size_mb / 1024, 2)
+                        },
+                        "temp": {
+                            "count": local_temp_count,
+                            "size_gb": round(local_temp_size_mb / 1024, 2)
+                        },
+                        "total_count": local_count,
+                        "total_size_gb": round(local_size_mb / 1024, 2)
                     },
                     "cloud": {
-                        "count": cloud_count,
-                        "size_gb": round(cloud_size_mb / 1024, 2)
+                        "uploaded": {
+                            "count": cloud_count,
+                            "size_gb": round(cloud_size_mb / 1024, 2)
+                        },
+                        "pan115_space": {
+                            "total_gb": pan115_total_space_gb,
+                            "used_gb": pan115_used_space_gb,
+                            "available_gb": pan115_available_space_gb,
+                            "usage_percentage": round((pan115_used_space_gb / pan115_total_space_gb * 100), 2) if pan115_total_space_gb > 0 else 0
+                        }
                     },
                     "total_gb": total_storage_gb,
                     "cloud_percentage": round((cloud_size_mb / total_storage_mb * 100), 2) if total_storage_mb > 0 else 0

@@ -83,12 +83,28 @@ export interface DashboardOverview {
   };
   storage_distribution: {
     local: {
-      count: number;
-      size_gb: number;
+      organized: {
+        count: number;
+        size_gb: number;
+      };
+      temp: {
+        count: number;
+        size_gb: number;
+      };
+      total_count: number;
+      total_size_gb: number;
     };
     cloud: {
-      count: number;
-      size_gb: number;
+      uploaded: {
+        count: number;
+        size_gb: number;
+      };
+      pan115_space: {
+        total_gb: number;
+        used_gb: number;
+        available_gb: number;
+        usage_percentage: number;
+      };
     };
     total_gb: number;
     cloud_percentage: number;

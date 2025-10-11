@@ -377,10 +377,12 @@ const NewDashboard: React.FC = () => {
           </Card>
         </Col>
 
-        {/* 存储分布 */}
-        <Col xs={24} sm={12} lg={8}>
+        {/* 存储分布 - 双栏对比布局 */}
+        <Col xs={24} sm={24} lg={8}>
           <Card title="☁️ 存储分布" bodyStyle={{ padding: '20px' }}>
-            <div style={{ textAlign: 'center', marginBottom: 24 }}>
+            {/* 云端占比 */}
+            <div style={{ textAlign: 'center', marginBottom: 20, paddingBottom: 16, borderBottom: '1px solid #f0f0f0' }}>
+              <Text type="secondary">云端占比：</Text>
               <Progress
                 type="circle"
                 percent={Math.round(overview.storage_distribution.cloud_percentage)}
@@ -389,47 +391,151 @@ const NewDashboard: React.FC = () => {
                   '0%': COLORS.cyan,
                   '100%': COLORS.purple,
                 }}
-                width={120}
+                width={80}
+                style={{ marginLeft: 8 }}
               />
-              <div style={{ marginTop: 16 }}>
-                <Text type="secondary">云端占比</Text>
-              </div>
             </div>
-            <div>
-              <Row gutter={16} style={{ marginBottom: 12 }}>
-                <Col span={12}>
-                  <Space direction="vertical" size={0}>
-                    <Text type="secondary">本地存储</Text>
-                    <Text strong>{overview.storage_distribution.local.size_gb} GB</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {overview.storage_distribution.local.count} 个文件
+
+            {/* 双栏对比 */}
+            <Row gutter={12}>
+              {/* 左栏：本地存储 */}
+              <Col span={12}>
+                <div style={{ borderRight: '1px solid #f0f0f0', paddingRight: 8 }}>
+                  <div style={{ marginBottom: 12, textAlign: 'center' }}>
+                    <Text strong style={{ fontSize: 14 }}>💾 本地存储</Text>
+                  </div>
+
+                  {/* 已归档文件 */}
+                  <div style={{ 
+                    background: '#f6ffed', 
+                    border: '1px solid #b7eb8f',
+                    borderRadius: 4, 
+                    padding: '8px',
+                    marginBottom: 8
+                  }}>
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>📁 已归档文件</Text>
+                      <Text strong style={{ fontSize: 16 }}>
+                        {overview.storage_distribution.local.organized.size_gb} GB
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {overview.storage_distribution.local.organized.count} 个文件
+                      </Text>
+                    </Space>
+                  </div>
+
+                  {/* 临时下载 */}
+                  <div style={{ 
+                    background: '#fffbe6', 
+                    border: '1px solid #ffe58f',
+                    borderRadius: 4, 
+                    padding: '8px',
+                    marginBottom: 8
+                  }}>
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>⏳ 临时下载</Text>
+                      <Text strong style={{ fontSize: 16 }}>
+                        {overview.storage_distribution.local.temp.size_gb} GB
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {overview.storage_distribution.local.temp.count} 个文件
+                      </Text>
+                    </Space>
+                  </div>
+
+                  {/* 本地小计 */}
+                  <div style={{ 
+                    background: '#f5f5f5', 
+                    padding: '6px 8px', 
+                    borderRadius: 4,
+                    textAlign: 'center'
+                  }}>
+                    <Text type="secondary" style={{ fontSize: 11 }}>小计：</Text>
+                    <Text strong style={{ fontSize: 13 }}>
+                      {overview.storage_distribution.local.total_size_gb} GB
                     </Text>
-                  </Space>
-                </Col>
-                <Col span={12}>
-                  <Space direction="vertical" size={0}>
-                    <Text type="secondary">云端存储</Text>
-                    <Text strong>{overview.storage_distribution.cloud.size_gb} GB</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      {overview.storage_distribution.cloud.count} 个文件
+                  </div>
+                </div>
+              </Col>
+
+              {/* 右栏：115网盘 */}
+              <Col span={12}>
+                <div style={{ paddingLeft: 8 }}>
+                  <div style={{ marginBottom: 12, textAlign: 'center' }}>
+                    <Text strong style={{ fontSize: 14 }}>☁️ 115网盘</Text>
+                  </div>
+
+                  {/* 已上传文件 */}
+                  <div style={{ 
+                    background: '#e6f7ff', 
+                    border: '1px solid #91d5ff',
+                    borderRadius: 4, 
+                    padding: '8px',
+                    marginBottom: 8
+                  }}>
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>☁️ 已上传文件</Text>
+                      <Text strong style={{ fontSize: 16 }}>
+                        {overview.storage_distribution.cloud.uploaded.size_gb} GB
+                      </Text>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        {overview.storage_distribution.cloud.uploaded.count} 个文件
+                      </Text>
+                    </Space>
+                  </div>
+
+                  {/* 网盘空间 */}
+                  <div style={{ 
+                    background: '#f0f5ff', 
+                    border: '1px solid #adc6ff',
+                    borderRadius: 4, 
+                    padding: '8px',
+                    marginBottom: 8
+                  }}>
+                    <Space direction="vertical" size={2} style={{ width: '100%' }}>
+                      <Text type="secondary" style={{ fontSize: 12 }}>💾 网盘空间</Text>
+                      {overview.storage_distribution.cloud.pan115_space.total_gb > 0 ? (
+                        <>
+                          <Text strong style={{ fontSize: 16 }}>
+                            {overview.storage_distribution.cloud.pan115_space.total_gb} GB
+                          </Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>
+                            剩余 {overview.storage_distribution.cloud.pan115_space.available_gb.toFixed(2)} GB
+                          </Text>
+                          <Progress 
+                            percent={Math.round(overview.storage_distribution.cloud.pan115_space.usage_percentage)} 
+                            size="small"
+                            strokeColor={
+                              overview.storage_distribution.cloud.pan115_space.usage_percentage > 80 
+                                ? COLORS.error 
+                                : COLORS.success
+                            }
+                          />
+                        </>
+                      ) : (
+                        <Text type="secondary" style={{ fontSize: 11 }}>未配置</Text>
+                      )}
+                    </Space>
+                  </div>
+
+                  {/* 云端使用率 */}
+                  <div style={{ 
+                    background: '#f5f5f5', 
+                    padding: '6px 8px', 
+                    borderRadius: 4,
+                    textAlign: 'center'
+                  }}>
+                    <Text type="secondary" style={{ fontSize: 11 }}>使用率：</Text>
+                    <Text strong style={{ fontSize: 13 }}>
+                      {overview.storage_distribution.cloud.pan115_space.total_gb > 0 
+                        ? `${overview.storage_distribution.cloud.pan115_space.usage_percentage.toFixed(1)}%`
+                        : '未知'
+                      }
                     </Text>
-                  </Space>
-                </Col>
-              </Row>
-              <div style={{ 
-                background: '#f5f5f5', 
-                padding: '12px', 
-                borderRadius: 4,
-                marginTop: 16
-              }}>
-                <Space direction="vertical" size={0} style={{ width: '100%' }}>
-                  <Text type="secondary">总存储</Text>
-                  <Text strong style={{ fontSize: 18 }}>
-                    {overview.storage_distribution.total_gb} GB
-                  </Text>
-                </Space>
-              </div>
-            </div>
+                  </div>
+                </div>
+              </Col>
+            </Row>
           </Card>
         </Col>
 
