@@ -27,11 +27,29 @@ class UserRegister(BaseModel):
     password: str = Field(..., min_length=6, description="密码")
     email: Optional[EmailStr] = Field(None, description="邮箱")
     full_name: Optional[str] = Field(None, max_length=100, description="全名")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "username": "admin",
+                "password": "admin123",
+                "email": "admin@example.com",
+                "full_name": "系统管理员"
+            }
+        }
 
 
 class UserLogin(BaseModel):
-    username: str
-    password: str
+    username: str = Field(..., description="用户名")
+    password: str = Field(..., description="密码")
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "username": "admin",
+                "password": "admin123"
+            }
+        }
 
 
 class Token(BaseModel):
@@ -62,17 +80,51 @@ class ChangePassword(BaseModel):
     new_password: str = Field(..., min_length=6, description="新密码")
 
 
-@router.post("/register", response_model=UserInfo, summary="创建新用户")
+@router.post("/register", 
+    response_model=UserInfo, 
+    summary="创建新用户",
+    description="""
+    创建新用户账号
+    
+    **权限说明**:
+    - 如果系统中没有任何用户，可以直接注册（第一个用户自动成为管理员）
+    - 如果已有用户，则需要管理员权限才能创建新用户
+    
+    **请求参数**:
+    - username: 用户名（3-50字符）
+    - password: 密码（至少6字符）
+    - email: 邮箱（可选）
+    - full_name: 全名（可选）
+    
+    **响应**:
+    返回新创建的用户信息
+    """,
+    responses={
+        200: {
+            "description": "注册成功",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "id": 1,
+                        "username": "admin",
+                        "email": "admin@example.com",
+                        "full_name": "系统管理员",
+                        "is_active": True,
+                        "is_admin": True,
+                        "created_at": "2025-01-11T12:00:00"
+                    }
+                }
+            }
+        },
+        400: {"description": "用户名或邮箱已存在"},
+        401: {"description": "注册已关闭，需要管理员权限"}
+    }
+)
 async def register(
     user_data: UserRegister, 
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    创建新用户
-    
-    - 如果系统中没有任何用户，可以直接注册（第一个用户自动成为管理员）
-    - 如果已有用户，则需要管理员权限才能创建新用户
-    """
+    """创建新用户"""
     # 检查是否有现有用户
     result = await db.execute(select(User))
     existing_users = result.scalars().all()
@@ -120,7 +172,47 @@ async def register(
     return new_user
 
 
-@router.post("/login", response_model=Token, summary="用户登录")
+@router.post("/login", 
+    response_model=Token, 
+    summary="用户登录",
+    description="""
+    用户登录获取访问令牌
+    
+    **请求参数**:
+    - username: 用户名
+    - password: 密码
+    
+    **响应**:
+    返回JWT访问令牌和令牌类型
+    
+    **使用方法**:
+    1. 使用用户名和密码登录
+    2. 获取返回的access_token
+    3. 在后续请求中添加Header: `Authorization: Bearer <access_token>`
+    
+    **示例**:
+    ```bash
+    curl -X POST "http://localhost:9393/api/auth/login" \\
+      -H "Content-Type: application/json" \\
+      -d '{"username":"admin","password":"admin123"}'
+    ```
+    """,
+    responses={
+        200: {
+            "description": "登录成功",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+                        "token_type": "bearer"
+                    }
+                }
+            }
+        },
+        401: {"description": "用户名或密码错误"},
+        403: {"description": "用户已被禁用"}
+    }
+)
 async def login(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     """用户登录"""
     # 查找用户
