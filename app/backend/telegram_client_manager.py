@@ -788,6 +788,9 @@ class TelegramClientManager:
             
             # 2. 处理媒体监控规则
             await self._process_media_monitor(chat_id, message)
+            
+            # 3. 处理资源监控规则
+            await self._process_resource_monitor(message)
                 
             # 性能监控
             processing_time = (time.time() - start_time) * 1000
@@ -833,6 +836,27 @@ class TelegramClientManager:
                 
         except Exception as e:
             self.logger.error(f"媒体监控处理失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    async def _process_resource_monitor(self, message):
+        """处理资源监控"""
+        try:
+            # 导入资源监控服务
+            from services.resource_monitor_service import ResourceMonitorService
+            from database import get_db
+            
+            # 为每个消息创建独立的数据库会话
+            async for db in get_db():
+                resource_monitor = ResourceMonitorService(db)
+                
+                # 调用资源监控服务处理消息
+                await resource_monitor.handle_new_message(message)
+                
+                break
+                
+        except Exception as e:
+            self.logger.error(f"资源监控处理失败: {e}")
             import traceback
             traceback.print_exc()
     

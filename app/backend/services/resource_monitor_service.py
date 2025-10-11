@@ -363,25 +363,32 @@ class ResourceMonitorService:
                 # 处理115分享链接
                 for link in pan115_links:
                     try:
-                        # TODO: 实现115分享转存
-                        # await p115_service.save_share(link, record.target_path)
-                        success_count += 1
-                        logger.info(f"✅ 115分享转存成功: {link[:50]}...")
+                        result = await p115_service.save_share(link, record.target_path or "/")
+                        if result['success']:
+                            success_count += 1
+                            logger.info(f"✅ 115分享转存成功: {link[:50]}... - {result['message']}")
+                        else:
+                            errors.append(f"115分享转存失败: {result['message']}")
+                            logger.error(f"115分享转存失败: {result['message']}")
                     except Exception as e:
-                        errors.append(f"115分享转存失败: {str(e)}")
-                        logger.error(f"115分享转存失败: {e}")
+                        errors.append(f"115分享转存异常: {str(e)}")
+                        logger.error(f"115分享转存异常: {e}")
                 
                 # 处理磁力/ed2k链接（离线下载）
                 for link in magnet_links + ed2k_links:
                     try:
-                        # TODO: 实现115离线下载
-                        # task_id = await p115_service.offline_download(link, record.target_path)
-                        # record.pan115_task_id = task_id
-                        success_count += 1
-                        logger.info(f"✅ 离线下载任务创建成功: {link[:50]}...")
+                        result = await p115_service.offline_download(link, record.target_path or "/")
+                        if result['success']:
+                            success_count += 1
+                            if result['task_id']:
+                                record.pan115_task_id = result['task_id']
+                            logger.info(f"✅ 离线下载任务创建成功: {link[:50]}... - {result['message']}")
+                        else:
+                            errors.append(f"离线下载失败: {result['message']}")
+                            logger.error(f"离线下载失败: {result['message']}")
                     except Exception as e:
-                        errors.append(f"离线下载失败: {str(e)}")
-                        logger.error(f"离线下载失败: {e}")
+                        errors.append(f"离线下载异常: {str(e)}")
+                        logger.error(f"离线下载异常: {e}")
                 
                 # 更新记录状态
                 if success_count > 0:

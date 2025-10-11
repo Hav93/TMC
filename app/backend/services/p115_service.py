@@ -598,6 +598,157 @@ class P115Service:
     def is_logged_in(self) -> bool:
         """检查是否已登录"""
         return self.client is not None and hasattr(self.client, 'cookies')
+    
+    async def save_share(self, share_code: str, target_path: str = "/") -> Dict[str, Any]:
+        """
+        转存115分享链接到指定目录
+        
+        Args:
+            share_code: 分享码（从链接中提取，如 https://115.com/s/abc123 -> abc123）
+            target_path: 目标目录路径
+            
+        Returns:
+            {
+                "success": bool,
+                "message": str,
+                "file_count": int  # 转存的文件数量
+            }
+        """
+        try:
+            if not self.client:
+                return {"success": False, "message": "115客户端未初始化"}
+            
+            loop = asyncio.get_event_loop()
+            
+            def _save():
+                # 确保目标目录存在
+                parent_id = self._ensure_remote_path_static(self.client, target_path)
+                
+                # 使用p115client的receive_share方法转存分享
+                # 注意：p115client的API可能需要完整的分享链接或分享码
+                try:
+                    # 如果是完整链接，提取分享码
+                    if 'https://115.com/s/' in share_code or 'http://115.com/s/' in share_code:
+                        share_code_clean = share_code.split('/s/')[-1].split('?')[0]
+                    else:
+                        share_code_clean = share_code
+                    
+                    logger.info(f"📥 转存115分享: code={share_code_clean}, target={target_path}, pid={parent_id}")
+                    
+                    # 调用p115client的转存方法
+                    # 注意：实际API可能需要调整
+                    result = self.client.receive_share(
+                        share_code=share_code_clean,
+                        cid=parent_id
+                    )
+                    
+                    if result.get('state', False):
+                        file_count = result.get('count', 1)
+                        logger.info(f"✅ 115分享转存成功: {file_count}个文件")
+                        return {
+                            "success": True,
+                            "message": f"成功转存{file_count}个文件",
+                            "file_count": file_count
+                        }
+                    else:
+                        error_msg = result.get('message', '转存失败')
+                        logger.error(f"❌ 115分享转存失败: {error_msg}")
+                        return {
+                            "success": False,
+                            "message": error_msg,
+                            "file_count": 0
+                        }
+                
+                except AttributeError:
+                    # 如果p115client没有receive_share方法，返回提示
+                    logger.warning("⚠️ p115client不支持receive_share方法，功能待实现")
+                    return {
+                        "success": False,
+                        "message": "115分享转存功能待实现（p115client API限制）",
+                        "file_count": 0
+                    }
+            
+            return await loop.run_in_executor(None, _save)
+        
+        except Exception as e:
+            logger.error(f"❌ 115分享转存异常: {e}")
+            return {
+                "success": False,
+                "message": f"转存异常: {str(e)}",
+                "file_count": 0
+            }
+    
+    async def offline_download(self, url: str, target_path: str = "/") -> Dict[str, Any]:
+        """
+        添加离线下载任务（磁力链接或ed2k）
+        
+        Args:
+            url: 磁力链接或ed2k链接
+            target_path: 目标目录路径
+            
+        Returns:
+            {
+                "success": bool,
+                "message": str,
+                "task_id": str  # 离线任务ID
+            }
+        """
+        try:
+            if not self.client:
+                return {"success": False, "message": "115客户端未初始化", "task_id": ""}
+            
+            loop = asyncio.get_event_loop()
+            
+            def _offline():
+                # 确保目标目录存在
+                parent_id = self._ensure_remote_path_static(self.client, target_path)
+                
+                logger.info(f"📥 添加离线下载: url={url[:50]}..., target={target_path}, pid={parent_id}")
+                
+                try:
+                    # 调用p115client的离线下载方法
+                    # 注意：实际API可能需要调整
+                    result = self.client.offline_add_url(
+                        url=url,
+                        pid=parent_id
+                    )
+                    
+                    if result.get('state', False):
+                        task_id = result.get('info_hash', '') or result.get('task_id', '')
+                        logger.info(f"✅ 离线下载任务创建成功: task_id={task_id}")
+                        return {
+                            "success": True,
+                            "message": "离线下载任务创建成功",
+                            "task_id": task_id
+                        }
+                    else:
+                        error_msg = result.get('message', '添加失败')
+                        error_code = result.get('errcode', 'unknown')
+                        logger.error(f"❌ 离线下载任务创建失败: {error_msg}, code={error_code}")
+                        return {
+                            "success": False,
+                            "message": error_msg,
+                            "task_id": ""
+                        }
+                
+                except AttributeError:
+                    # 如果p115client没有offline_add_url方法，返回提示
+                    logger.warning("⚠️ p115client不支持offline_add_url方法，功能待实现")
+                    return {
+                        "success": False,
+                        "message": "115离线下载功能待实现（p115client API限制）",
+                        "task_id": ""
+                    }
+            
+            return await loop.run_in_executor(None, _offline)
+        
+        except Exception as e:
+            logger.error(f"❌ 离线下载异常: {e}")
+            return {
+                "success": False,
+                "message": f"离线下载异常: {str(e)}",
+                "task_id": ""
+            }
 
 
 # 全局单例（可选）
