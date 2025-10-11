@@ -289,10 +289,22 @@ const NewDashboard: React.FC = () => {
             {forwardTrendData.length > 0 ? (
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={forwardTrendData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
+                  <CartesianGrid strokeDasharray="3 3" stroke={isDark ? colors.border : '#f0f0f0'} />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke={isDark ? colors.text : '#666'}
+                  />
+                  <YAxis stroke={isDark ? colors.text : '#666'} />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: isDark ? colors.cardBg : '#fff',
+                      border: `1px solid ${isDark ? colors.border : '#d9d9d9'}`,
+                      borderRadius: '4px',
+                      color: isDark ? colors.text : '#000'
+                    }}
+                    labelStyle={{ color: isDark ? colors.text : '#000', fontWeight: 'bold' }}
+                    formatter={(value: any) => [`${value}条消息`, '转发数量']}
+                  />
                   <Bar dataKey="count" fill={COLORS.primary} radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -311,10 +323,22 @@ const NewDashboard: React.FC = () => {
             {mediaTrendData.length > 0 ? (
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={mediaTrendData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
+                  <CartesianGrid strokeDasharray="3 3" stroke={isDark ? colors.border : '#f0f0f0'} />
+                  <XAxis 
+                    dataKey="date" 
+                    stroke={isDark ? colors.text : '#666'}
+                  />
+                  <YAxis stroke={isDark ? colors.text : '#666'} />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: isDark ? colors.cardBg : '#fff',
+                      border: `1px solid ${isDark ? colors.border : '#d9d9d9'}`,
+                      borderRadius: '4px',
+                      color: isDark ? colors.text : '#000'
+                    }}
+                    labelStyle={{ color: isDark ? colors.text : '#000', fontWeight: 'bold' }}
+                    formatter={(value: any) => [`${value}个下载`, '下载数量']}
+                  />
                   <Bar dataKey="count" fill={COLORS.purple} radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>

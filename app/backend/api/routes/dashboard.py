@@ -326,13 +326,15 @@ async def get_dashboard_overview():
                     from services.p115_service import P115Service
                     p115 = P115Service(cookies=media_settings.pan115_user_key)
                     user_info = await p115.get_user_info(media_settings.pan115_user_key)
-                    if user_info:
-                        # 转换为GB
-                        pan115_total_space_gb = round(user_info.get('space_info', {}).get('all_total', {}).get('size', 0) / (1024**3), 2)
-                        pan115_used_space_gb = round((pan115_total_space_gb * user_info.get('space_info', {}).get('all_use', {}).get('size', 0) / 100), 2) if pan115_total_space_gb > 0 else 0
-                        pan115_available_space_gb = pan115_total_space_gb - pan115_used_space_gb
+                    if user_info and 'space' in user_info:
+                        # 空间信息单位是字节，转换为GB
+                        space_info = user_info['space']
+                        pan115_total_space_gb = round(space_info.get('total', 0) / (1024**3), 2)
+                        pan115_used_space_gb = round(space_info.get('used', 0) / (1024**3), 2)
+                        pan115_available_space_gb = round(space_info.get('remain', 0) / (1024**3), 2)
+                        logger.info(f"✅ 115空间信息 - 总: {pan115_total_space_gb}GB, 已用: {pan115_used_space_gb}GB, 剩余: {pan115_available_space_gb}GB")
                 except Exception as e:
-                    logger.debug(f"获取115网盘空间信息失败: {e}")
+                    logger.error(f"获取115网盘空间信息失败: {e}")
             
             # 收藏文件数
             starred_count = await db.scalar(
