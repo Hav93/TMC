@@ -64,7 +64,8 @@ class FileOrganizer:
             return FileOrganizer._sanitize_path(source)
         
         elif rule.folder_structure == 'sender':
-            sender = metadata.get('sender_username') or metadata.get('sender_id', 'unknown')
+            # 优先使用 sender_name（包含用户名或真实姓名），fallback 到 sender_username，最后是 sender_id
+            sender = metadata.get('sender_name') or metadata.get('sender_username') or str(metadata.get('sender_id', 'unknown'))
             return FileOrganizer._sanitize_path(sender)
         
         elif rule.folder_structure == 'custom':
@@ -870,16 +871,26 @@ class MediaMonitorService:
                         
                         # 定义进度回调函数
                         last_progress_log = [0]  # 使用列表以便在闭包中修改
+                        last_db_update = [0]  # 上次更新数据库的时间
+                        
                         def progress_callback(current, total):
                             percent = (current / total * 100) if total > 0 else 0
-                            # 每5%记录一次（大文件也能及时看到进度）
+                            current_mb = current / 1024 / 1024
+                            total_mb = total / 1024 / 1024
+                            
+                            # 每5%记录一次日志（大文件也能及时看到进度）
                             progress_step = int(percent / 5)
                             if progress_step > last_progress_log[0]:
                                 last_progress_log[0] = progress_step
-                                # 显示进度和速度（MB为单位更直观）
-                                current_mb = current / 1024 / 1024
-                                total_mb = total / 1024 / 1024
                                 logger.info(f"📥 下载进度: {task.file_name} - {percent:.1f}% ({current_mb:.1f}MB/{total_mb:.1f}MB)")
+                            
+                            # 每2秒更新一次数据库（给前端实时进度）
+                            import time
+                            current_time = time.time()
+                            if current_time - last_db_update[0] >= 2.0:
+                                last_db_update[0] = current_time
+                                # 异步更新数据库
+                                asyncio.create_task(self._update_task_progress(task.id, percent, current, total))
                         
                         # 下载重试逻辑（处理代理连接失败）
                         download_max_retries = 3
@@ -1229,6 +1240,26 @@ class MediaMonitorService:
         except Exception as e:
             logger.error(f"计算文件哈希失败: {e}")
             return ""
+    
+    async def _update_task_progress(self, task_id: int, percent: float, current_bytes: int, total_bytes: int):
+        """更新任务下载进度到数据库（给前端实时显示）"""
+        try:
+            async for db in get_db():
+                result = await db.execute(
+                    select(DownloadTask).where(DownloadTask.id == task_id)
+                )
+                task = result.scalar_one_or_none()
+                
+                if task:
+                    task.progress_percent = int(percent)
+                    task.downloaded_bytes = current_bytes
+                    task.total_bytes = total_bytes
+                    await db.commit()
+                
+                break
+        except Exception as e:
+            # 进度更新失败不影响下载，只记录警告
+            logger.debug(f"更新任务进度失败: {e}")
     
     async def reload_rule(self, rule_id: int):
         """重新加载单个监控规则"""
