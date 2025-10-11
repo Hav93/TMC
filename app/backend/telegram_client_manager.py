@@ -391,39 +391,72 @@ class TelegramClientManager:
                     # 尝试自动修复：清理锁定的 session 文件
                     try:
                         import sqlite3
+                        import time
                         session_path = Path(Config.SESSIONS_DIR) / f"{self.client_type}_{self.client_id}.session"
                         
                         if session_path.exists():
-                            # 尝试连接并立即关闭，清除可能的锁定
-                            try:
-                                conn = sqlite3.connect(str(session_path), timeout=1.0, check_same_thread=False)
-                                conn.close()
-                                self.logger.info("   ├─ ✅ Session 文件锁定已清除")
-                            except:
-                                # 如果无法清除锁，删除 -wal 和 -shm 文件
-                                wal_file = session_path.with_suffix('.session-wal')
-                                shm_file = session_path.with_suffix('.session-shm')
-                                
-                                if wal_file.exists():
+                            # 强制删除 WAL 和 SHM 文件（这些是导致锁定的主要原因）
+                            wal_file = session_path.with_suffix('.session-wal')
+                            shm_file = session_path.with_suffix('.session-shm')
+                            
+                            if wal_file.exists():
+                                try:
                                     wal_file.unlink()
                                     self.logger.info("   ├─ 🗑️ 删除 WAL 文件")
-                                if shm_file.exists():
+                                except:
+                                    pass
+                            
+                            if shm_file.exists():
+                                try:
                                     shm_file.unlink()
                                     self.logger.info("   ├─ 🗑️ 删除 SHM 文件")
+                                except:
+                                    pass
                             
-                            # 等待一下，让文件系统同步
-                            await asyncio.sleep(0.5)
+                            # 尝试打开数据库并执行 checkpoint 来清理 WAL 模式
+                            try:
+                                conn = sqlite3.connect(str(session_path), timeout=5.0, check_same_thread=False)
+                                # 切换到 DELETE 模式（而不是 WAL 模式）来避免锁定
+                                conn.execute("PRAGMA journal_mode=DELETE")
+                                conn.commit()
+                                conn.close()
+                                self.logger.info("   ├─ ✅ Session 文件锁定已清除")
+                            except Exception as db_error:
+                                self.logger.warning(f"   ├─ ⚠️ 无法清除数据库锁: {db_error}")
+                            
+                            # 等待文件系统同步
+                            await asyncio.sleep(1.0)
+                            
+                            # 断开当前连接（如果有）
+                            if hasattr(self, 'client') and self.client:
+                                try:
+                                    await self.client.disconnect()
+                                    self.logger.info("   ├─ 🔌 已断开旧连接")
+                                except:
+                                    pass
+                            
+                            # 重新创建客户端
+                            self.logger.info("   ├─ 🔄 重新创建客户端...")
+                            await self._create_client()
                             
                             # 重试启动
                             self.logger.info("   └─ 🔄 重试启动客户端...")
                             await self.client.start()
                             self.logger.info("   └─ ✅ 客户端启动成功（锁定已修复）")
                     except Exception as fix_error:
+                        fix_error_msg = str(fix_error)
                         self.logger.error(f"❌ 自动修复失败: {fix_error}")
-                        self.logger.error("💡 建议手动解决方案:")
-                        self.logger.error("   1. 重启 Docker 容器")
-                        self.logger.error("   2. 如果问题持续，删除并重新登录此客户端")
-                        raise Exception(f"Session 文件被锁定且无法自动修复: {error_msg}")
+                        
+                        # 如果还是锁定错误，说明无法自动修复
+                        if "database is locked" in fix_error_msg:
+                            self.logger.error("💡 Session 文件持续被锁定，建议手动解决:")
+                            self.logger.error("   1. 停止所有使用此 session 的进程")
+                            self.logger.error("   2. 重启 Docker 容器")
+                            self.logger.error("   3. 如果问题持续，删除 session 文件并重新登录")
+                            # 不抛出异常，让客户端保持"已停止"状态，用户可以手动重试
+                            return
+                        else:
+                            raise Exception(f"Session 文件被锁定且无法自动修复: {error_msg}")
                 elif "Server closed the connection" in error_msg or "0 bytes read" in error_msg:
                     self.logger.error(f"❌ Telegram 服务器连接失败: {error_msg}")
                     self.logger.error("💡 可能的解决方案:")
