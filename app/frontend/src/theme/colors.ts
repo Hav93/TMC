@@ -23,11 +23,13 @@ export interface ThemeColors {
   bgContainer: string;
   bgElevated: string;
   bgLayout: string;
+  cardBg: string;  // 卡片背景色
   
   // 边框颜色
   borderBase: string;
   borderLight: string;
   borderStrong: string;
+  border: string;  // 通用边框色
   
   // 功能颜色
   link: string;
@@ -59,11 +61,13 @@ export const lightTheme: ThemeColors = {
   bgContainer: '#ffffff',
   bgElevated: '#ffffff',
   bgLayout: '#f5f5f5',
+  cardBg: '#ffffff',
   
   // 边框颜色
   borderBase: '#d9d9d9',
   borderLight: '#f0f0f0',
   borderStrong: '#8c8c8c',
+  border: '#d9d9d9',
   
   // 功能颜色
   link: '#1890ff',
@@ -95,11 +99,13 @@ export const darkTheme: ThemeColors = {
   bgContainer: '#1a1d2e',
   bgElevated: '#1a1d2e',
   bgLayout: '#0a0e27',
+  cardBg: '#1a1d2e',
   
   // 边框颜色
   borderBase: '#2a2f45',
   borderLight: '#1f2437',
   borderStrong: '#3d4463',
+  border: '#2a2f45',
   
   // 功能颜色
   link: '#1890ff',

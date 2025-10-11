@@ -47,6 +47,7 @@ const DownloadTasksPage: React.FC = () => {
   const { colors } = useThemeContext();
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [ruleFilter, setRuleFilter] = useState<string>('all');
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
   // 获取下载任务列表
   const { data: tasksData, isLoading, refetch } = useQuery({
@@ -76,12 +77,12 @@ const DownloadTasksPage: React.FC = () => {
     refetchInterval: 5000,
   });
 
-  const stats = statsData || {
-    total: 0,
-    pending: 0,
-    downloading: 0,
-    success: 0,
-    failed: 0,
+  const stats = statsData?.stats || {
+    total_count: 0,
+    pending_count: 0,
+    downloading_count: 0,
+    success_count: 0,
+    failed_count: 0,
   };
 
   // 重试任务
@@ -110,6 +111,20 @@ const DownloadTasksPage: React.FC = () => {
     },
   });
 
+  // 批量删除任务
+  const batchDeleteMutation = useMutation({
+    mutationFn: (taskIds: number[]) => mediaFilesApi.batchDeleteTasks(taskIds),
+    onSuccess: (data) => {
+      message.success(data.message || '批量删除成功');
+      setSelectedRowKeys([]);
+      queryClient.invalidateQueries({ queryKey: ['download-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['download-tasks-stats'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '批量删除失败');
+    },
+  });
+
   // 更新优先级
   const priorityMutation = useMutation({
     mutationFn: ({ taskId, priority }: { taskId: number; priority: number }) =>
@@ -133,6 +148,24 @@ const DownloadTasksPage: React.FC = () => {
       okType: 'danger',
       cancelText: '取消',
       onOk: () => deleteMutation.mutate(task.id),
+    });
+  };
+
+  // 批量删除
+  const handleBatchDelete = () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择要删除的任务');
+      return;
+    }
+    
+    confirm({
+      title: '确认批量删除',
+      icon: <ExclamationCircleOutlined />,
+      content: `确定要删除选中的 ${selectedRowKeys.length} 个任务吗？`,
+      okText: '确认',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => batchDeleteMutation.mutate(selectedRowKeys as number[]),
     });
   };
 
@@ -315,17 +348,18 @@ const DownloadTasksPage: React.FC = () => {
     {
       title: '操作',
       key: 'actions',
-      width: 120,
+      width: 150,
       fixed: 'right' as const,
       render: (_: any, record: DownloadTask) => (
         <Space size="small">
-          {record.status === 'failed' && (
-            <Tooltip title="重试">
+          {(record.status === 'failed' || record.status === 'success') && (
+            <Tooltip title={record.status === 'failed' ? '重试失败任务' : '重新下载'}>
               <Button
                 type="link"
                 size="small"
                 icon={<RedoOutlined />}
                 onClick={() => retryMutation.mutate(record.id)}
+                danger={record.status === 'failed'}
               />
             </Tooltip>
           )}
@@ -346,60 +380,90 @@ const DownloadTasksPage: React.FC = () => {
   return (
     <div style={{ padding: '24px' }}>
       {/* 统计卡片 */}
-      <Card style={{ marginBottom: 24, background: colors.cardBg }}>
+      <Card 
+        title="📊 下载统计" 
+        style={{ marginBottom: 24, background: colors.cardBg }}
+        extra={
+          <Button
+            type="primary"
+            danger
+            icon={<RedoOutlined />}
+            onClick={handleRetryAllFailed}
+            disabled={(stats.failed_count || 0) === 0}
+          >
+            重试失败
+          </Button>
+        }
+      >
+        {/* 历史累计统计 */}
+        <Row gutter={16} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: `1px solid ${colors.border}` }}>
+          <Col span={8}>
+            <Statistic
+              title="📈 累计下载"
+              value={stats.total_downloaded_ever || 0}
+              suffix="个"
+              valueStyle={{ color: colors.success }}
+            />
+          </Col>
+          <Col span={8}>
+            <Statistic
+              title="💾 累计大小"
+              value={stats.total_size_ever_mb ? (stats.total_size_ever_mb / 1024).toFixed(2) : 0}
+              suffix="GB"
+              valueStyle={{ color: colors.info }}
+            />
+          </Col>
+          <Col span={8}>
+            <Statistic
+              title="❌ 累计失败"
+              value={stats.total_failed_ever || 0}
+              suffix="个"
+              valueStyle={{ color: colors.error }}
+            />
+          </Col>
+        </Row>
+
+        {/* 当前任务统计 */}
         <Row gutter={16}>
           <Col span={4}>
             <Statistic
               title="全部任务"
-              value={stats.total}
+              value={stats.total_count || 0}
               prefix={<DownloadOutlined />}
               valueStyle={{ color: colors.primary }}
             />
           </Col>
-          <Col span={4}>
+          <Col span={5}>
             <Statistic
               title="等待中"
-              value={stats.pending}
+              value={stats.pending_count || 0}
               prefix={<ClockCircleOutlined />}
               valueStyle={{ color: colors.textSecondary }}
             />
           </Col>
-          <Col span={4}>
+          <Col span={5}>
             <Statistic
               title="下载中"
-              value={stats.downloading}
-              prefix={<SyncOutlined spin={stats.downloading > 0} />}
+              value={stats.downloading_count || 0}
+              prefix={<SyncOutlined spin={(stats.downloading_count || 0) > 0} />}
               valueStyle={{ color: colors.info }}
             />
           </Col>
-          <Col span={4}>
+          <Col span={5}>
             <Statistic
               title="已完成"
-              value={stats.success}
+              value={stats.success_count || 0}
               prefix={<CheckCircleOutlined />}
               valueStyle={{ color: colors.success }}
             />
           </Col>
-          <Col span={4}>
+          <Col span={5}>
             <Statistic
               title="失败"
-              value={stats.failed}
+              value={stats.failed_count || 0}
               prefix={<CloseCircleOutlined />}
               valueStyle={{ color: colors.error }}
             />
-          </Col>
-          <Col span={4}>
-            <div style={{ textAlign: 'center', marginTop: 8 }}>
-              <Button
-                type="primary"
-                danger
-                icon={<RedoOutlined />}
-                onClick={handleRetryAllFailed}
-                disabled={stats.failed === 0}
-              >
-                重试全部失败
-              </Button>
-            </div>
           </Col>
         </Row>
       </Card>
@@ -444,6 +508,15 @@ const DownloadTasksPage: React.FC = () => {
                 </Option>
               ))}
             </Select>
+            {selectedRowKeys.length > 0 && (
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                onClick={handleBatchDelete}
+              >
+                批量删除 ({selectedRowKeys.length})
+              </Button>
+            )}
             <Tooltip title="刷新">
               <Button 
                 icon={<ReloadOutlined />} 
@@ -458,6 +531,10 @@ const DownloadTasksPage: React.FC = () => {
           dataSource={tasks}
           rowKey="id"
           loading={isLoading}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: setSelectedRowKeys,
+          }}
           pagination={{
             total: tasks.length,
             pageSize: 20,

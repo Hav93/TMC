@@ -64,6 +64,7 @@ const MediaLibraryPage: React.FC = () => {
   const [keyword, setKeyword] = useState('');
   const [fileType, setFileType] = useState('all');
   const [ruleFilter, setRuleFilter] = useState('all');
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [organizedFilter, setOrganizedFilter] = useState('all');
   const [cloudFilter, setCloudFilter] = useState('all');
   const [starredOnly, setStarredOnly] = useState(false);
@@ -138,6 +139,20 @@ const MediaLibraryPage: React.FC = () => {
     },
   });
 
+  // 批量删除文件
+  const batchDeleteMutation = useMutation({
+    mutationFn: (fileIds: number[]) => mediaFilesApi.batchDeleteFiles(fileIds),
+    onSuccess: (data) => {
+      message.success(data.message || '批量删除成功');
+      setSelectedRowKeys([]);
+      queryClient.invalidateQueries({ queryKey: ['media-files'] });
+      queryClient.invalidateQueries({ queryKey: ['media-files-stats'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '批量删除失败');
+    },
+  });
+
   // 下载文件
   const handleDownload = async (file: MediaFile) => {
     try {
@@ -175,6 +190,47 @@ const MediaLibraryPage: React.FC = () => {
     setDetailVisible(true);
   };
 
+  // 重新整理文件
+  const reorganizeMutation = useMutation({
+    mutationFn: (fileId: number) => mediaFilesApi.reorganizeFile(fileId),
+    onSuccess: () => {
+      message.success('文件重新整理成功');
+      refetch();
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.message || '重新整理失败');
+    },
+  });
+
+  const handleReorganize = (file: MediaFile) => {
+    confirm({
+      title: '重新整理文件',
+      icon: <ReloadOutlined />,
+      content: `确定要重新整理文件"${file.file_name}"吗？将尝试重新上传到115网盘。`,
+      okText: '确认',
+      cancelText: '取消',
+      onOk: () => reorganizeMutation.mutate(file.id),
+    });
+  };
+
+  // 批量删除
+  const handleBatchDelete = () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择要删除的文件');
+      return;
+    }
+    
+    confirm({
+      title: '确认批量删除',
+      icon: <ExclamationCircleOutlined />,
+      content: `确定要删除选中的 ${selectedRowKeys.length} 个文件吗？这将删除物理文件和数据库记录。`,
+      okText: '确认',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => batchDeleteMutation.mutate(selectedRowKeys as number[]),
+    });
+  };
+
   // 格式化文件大小
   const formatSize = (mb: number) => {
     if (!mb) return '-';
@@ -182,6 +238,28 @@ const MediaLibraryPage: React.FC = () => {
       return `${(mb / 1024).toFixed(2)} GB`;
     }
     return `${mb.toFixed(2)} MB`;
+  };
+
+  // 获取发送者显示名称（按优先级：username > 姓名 > ID）
+  const getSenderDisplayName = (record: MediaFile) => {
+    // 如果sender_username不是纯数字，则认为是username或姓名
+    if (record.sender_username && !/^\d+$/.test(record.sender_username)) {
+      // 直接返回，不添加@前缀（因为后端已经存储了完整的显示名称）
+      return record.sender_username;
+    }
+    // 否则显示ID
+    return record.sender_id || 'Unknown';
+  };
+
+  // 获取来源显示名称（如果是纯数字则认为是ID，否则是名称）
+  const getSourceDisplayName = (record: MediaFile) => {
+    if (!record.source_chat) return 'Unknown';
+    // 如果source_chat不是纯数字，则认为是名称
+    if (!/^\d+$/.test(record.source_chat)) {
+      return record.source_chat;
+    }
+    // 否则显示ID
+    return record.source_chat;
   };
 
   // 获取文件类型图标
@@ -255,37 +333,64 @@ const MediaLibraryPage: React.FC = () => {
       title: '来源',
       key: 'source',
       width: 150,
-      render: (_: any, record: MediaFile) => (
-        <div>
-          {record.sender_username && (
-            <div style={{ fontSize: 12 }}>@{record.sender_username}</div>
-          )}
-          {record.source_chat && (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {record.source_chat}
-            </Text>
-          )}
-        </div>
-      ),
+      render: (_: any, record: MediaFile) => {
+        const senderName = getSenderDisplayName(record);
+        const sourceName = getSourceDisplayName(record);
+        return (
+          <div>
+            {senderName && (
+              <div style={{ fontSize: 12 }}>
+                @{senderName}
+              </div>
+            )}
+            {sourceName && (
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {sourceName}
+              </Text>
+            )}
+          </div>
+        );
+      },
     },
     {
       title: '状态',
       key: 'status',
-      width: 120,
-      render: (_: any, record: MediaFile) => (
-        <Space direction="vertical" size="small">
-          {record.is_organized && (
-            <Tag icon={<FolderOutlined />} color="blue">
-              已归档
-            </Tag>
-          )}
-          {record.is_uploaded_to_cloud && (
-            <Tag icon={<CloudUploadOutlined />} color="cyan">
-              云端
-            </Tag>
-          )}
-        </Space>
-      ),
+      width: 150,
+      render: (_: any, record: MediaFile) => {
+        // 调试信息
+        console.log('状态渲染:', {
+          file_name: record.file_name,
+          is_organized: record.is_organized,
+          is_uploaded_to_cloud: record.is_uploaded_to_cloud,
+          organize_failed: record.organize_failed,
+          organize_error: record.organize_error
+        });
+        
+        return (
+          <Space direction="vertical" size="small">
+            {record.is_organized && (
+              <Tag icon={<FolderOutlined />} color="blue">
+                已归档
+              </Tag>
+            )}
+            {record.is_uploaded_to_cloud && (
+              <Tag icon={<CloudUploadOutlined />} color="cyan">
+                云端
+              </Tag>
+            )}
+            {!record.is_organized && !record.is_uploaded_to_cloud && record.organize_failed && (
+              <Tooltip title={record.organize_error || '归档失败'}>
+                <Tag icon={<ExclamationCircleOutlined />} color="warning">
+                  未归档
+                </Tag>
+              </Tooltip>
+            )}
+            {!record.is_organized && !record.is_uploaded_to_cloud && !record.organize_failed && (
+              <Tag color="default">待整理</Tag>
+            )}
+          </Space>
+        );
+      },
     },
     {
       title: '下载时间',
@@ -312,6 +417,17 @@ const MediaLibraryPage: React.FC = () => {
               onClick={() => handleViewDetail(record)}
             />
           </Tooltip>
+          {record.organize_failed && (
+            <Tooltip title="重新整理">
+              <Button
+                type="link"
+                size="small"
+                icon={<ReloadOutlined />}
+                onClick={() => handleReorganize(record)}
+                style={{ color: colors.primary }}
+              />
+            </Tooltip>
+          )}
           <Tooltip title={record.is_starred ? '取消收藏' : '收藏'}>
             <Button
               type="link"
@@ -465,6 +581,15 @@ const MediaLibraryPage: React.FC = () => {
               format="YYYY-MM-DD"
               placeholder={['开始日期', '结束日期']}
             />
+            {selectedRowKeys.length > 0 && (
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                onClick={handleBatchDelete}
+              >
+                批量删除 ({selectedRowKeys.length})
+              </Button>
+            )}
             <Tooltip title="刷新">
               <Button 
                 icon={<ReloadOutlined />} 
@@ -492,6 +617,10 @@ const MediaLibraryPage: React.FC = () => {
           dataSource={files}
           rowKey="id"
           loading={isLoading}
+          rowSelection={{
+            selectedRowKeys,
+            onChange: setSelectedRowKeys,
+          }}
           pagination={{
             total: files.length,
             pageSize: 20,
@@ -571,12 +700,10 @@ const MediaLibraryPage: React.FC = () => {
                 </Descriptions.Item>
               )}
               <Descriptions.Item label="发送者">
-                {selectedFile.sender_username 
-                  ? `@${selectedFile.sender_username}` 
-                  : selectedFile.sender_id || '-'}
+                {selectedFile ? getSenderDisplayName(selectedFile) : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="来源频道">
-                {selectedFile.source_chat || '-'}
+                {selectedFile ? getSourceDisplayName(selectedFile) : '-'}
               </Descriptions.Item>
               <Descriptions.Item label="下载时间" span={2}>
                 {selectedFile.downloaded_at 

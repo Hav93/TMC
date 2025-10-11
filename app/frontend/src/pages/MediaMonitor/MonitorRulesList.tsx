@@ -173,9 +173,10 @@ const MonitorRulesList: React.FC = () => {
       dataIndex: 'media_types',
       key: 'media_types',
       width: 120,
-      render: (types: string) => {
+      render: (types: string[] | string) => {
         try {
-          const typeArray = types ? JSON.parse(types) : [];
+          // 后端已经解析为数组，直接使用
+          const typeArray = Array.isArray(types) ? types : (types ? JSON.parse(types) : []);
           return (
             <Space>
               {getMediaTypeIcon(typeArray)}

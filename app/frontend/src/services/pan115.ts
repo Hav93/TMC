@@ -9,6 +9,21 @@ export interface Pan115Config {
   pan115_user_key?: string;
   pan115_request_interval?: number;
   is_configured?: boolean;
+  user_info?: {
+    user_id?: string;
+    user_name?: string;
+    vip_name?: string;
+    is_vip?: boolean;
+    vip_level?: number;
+    space?: {
+      total: number;
+      used: number;
+      remain: number;
+    };
+    email?: string;
+    mobile?: string;
+    [key: string]: any;
+  };
 }
 
 export interface Pan115QRCodeResponse {
@@ -23,6 +38,11 @@ export interface Pan115QRCodeStatusResponse {
   status: 'waiting' | 'scanned' | 'confirmed' | 'expired' | 'error';
   user_id?: string;
   user_key?: string;
+  user_info?: {
+    user_id?: string;
+    user_name?: string;
+    [key: string]: any;
+  };
   message?: string;
 }
 
@@ -101,31 +121,3 @@ const pan115Api = {
 
 export default pan115Api;
 
-
-    const response = await apiClient.post<{ success: boolean; message: string; user_info?: any }>('/api/pan115/test');
-    return response.data;
-  },
-
-  /**
-   * 获取常规115登录二维码（不使用开放平台API）
-   */
-  getRegularQRCode: async (deviceType: string = 'qandroid') => {
-    const response = await apiClient.post<Pan115QRCodeResponse>('/api/pan115/regular-qrcode', {
-      device_type: deviceType
-    });
-    return response.data;
-  },
-
-  /**
-   * 检查常规115二维码扫码状态
-   */
-  checkRegularQRCodeStatus: async (qrcodeTokenData: any, deviceType: string) => {
-    const response = await apiClient.post<Pan115QRCodeStatusResponse>('/api/pan115/regular-qrcode/status', {
-      qrcode_token_data: qrcodeTokenData,
-      device_type: deviceType
-    });
-    return response.data;
-  },
-};
-
-export default pan115Api;

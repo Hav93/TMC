@@ -37,7 +37,7 @@ const Pan115Settings: React.FC = () => {
   const [qrcodeUrl, setQrcodeUrl] = useState('');
   const [qrcodeToken, setQrcodeToken] = useState('');
   const [qrcodeTokenData, setQrcodeTokenData] = useState<any>(null); // 完整的token数据
-  const [qrcodeStatus, setQrcodeStatus] = useState<'waiting' | 'scanned' | 'confirmed' | 'expired' | 'error'>('waiting');
+  const [qrcodeStatus, setQrcodeStatus] = useState<'waiting' | 'scanned' | 'confirmed' | 'expired'>('waiting');
   const [polling, setPolling] = useState(false);
   const pollingTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [useOpenApi, setUseOpenApi] = useState(false); // 是否使用115开放平台API
@@ -53,7 +53,7 @@ const Pan115Settings: React.FC = () => {
   const updateConfigMutation = useMutation({
     mutationFn: pan115Api.updateConfig,
     onSuccess: () => {
-      message.success('115网盘配置已保存');
+      message.success('115网盘配置已保�?);
       queryClient.invalidateQueries({ queryKey: ['pan115Config'] });
     },
     onError: (error: any) => {
@@ -61,8 +61,7 @@ const Pan115Settings: React.FC = () => {
     },
   });
 
-  // 获取开放平台API二维码
-  const getQRCodeMutation = useMutation({
+  // 获取开放平台API二维�?  const getQRCodeMutation = useMutation({
     mutationFn: (appId: string) => pan115Api.getQRCode(appId),
     onSuccess: (data: any) => {
       setQrcodeUrl(data.qrcode_url);
@@ -70,18 +69,17 @@ const Pan115Settings: React.FC = () => {
       setQrcodeStatus('waiting');
       setQrcodeModalVisible(true);
       startPolling(data.qrcode_token);
-      message.success('请使用115 APP扫码登录');
+      message.success('请使�?15 APP扫码登录');
     },
     onError: (error: any) => {
-      console.error('❌ 获取二维码错误详情:', error);
-      console.error('❌ 响应数据:', error.response?.data);
+      console.error('�?获取二维码错误详�?', error);
+      console.error('�?响应数据:', error.response?.data);
       const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message || '未知错误';
-      message.error(`获取二维码失败: ${errorMsg}`);
+      message.error(`获取二维码失�? ${errorMsg}`);
     },
   });
 
-  // 获取常规115二维码
-  const getRegularQRCodeMutation = useMutation({
+  // 获取常规115二维�?  const getRegularQRCodeMutation = useMutation({
     mutationFn: (deviceType: string) => pan115Api.getRegularQRCode(deviceType),
     onSuccess: (data: any) => {
       setQrcodeUrl(data.qrcode_url);
@@ -89,13 +87,12 @@ const Pan115Settings: React.FC = () => {
       setQrcodeTokenData(data.qrcode_token_data); // 保存完整的token数据
       setQrcodeStatus('waiting');
       setQrcodeModalVisible(true);
-      startPolling(data.qrcode_token_data); // 传递完整数据
-      message.success('请使用115 APP扫码登录');
+      startPolling(data.qrcode_token_data); // 传递完整数�?      message.success('请使�?15 APP扫码登录');
     },
     onError: (error: any) => {
-      console.error('❌ 获取常规二维码错误:', error);
+      console.error('�?获取常规二维码错�?', error);
       const errorMsg = error.response?.data?.detail || error.response?.data?.message || error.message || '未知错误';
-      message.error(`获取二维码失败: ${errorMsg}`);
+      message.error(`获取二维码失�? ${errorMsg}`);
     },
   });
 
@@ -110,8 +107,7 @@ const Pan115Settings: React.FC = () => {
     },
   });
 
-  // 加载配置到表单
-  useEffect(() => {
+  // 加载配置到表�?  useEffect(() => {
     if (config) {
       form.setFieldsValue({
         pan115_app_id: config.pan115_app_id || '',
@@ -120,14 +116,12 @@ const Pan115Settings: React.FC = () => {
     }
   }, [config, form]);
 
-  // 开始轮询二维码状态
-  const startPolling = (tokenData: any) => {
+  // 开始轮询二维码状�?  const startPolling = (tokenData: any) => {
     setPolling(true);
     
       const poll = async () => {
       try {
-        // 使用常规方式检查状态，传递设备类型
-        const result = await pan115Api.checkRegularQRCodeStatus(tokenData, deviceType);
+        // 使用常规方式检查状态，传递设备类�?        const result = await pan115Api.checkRegularQRCodeStatus(tokenData, deviceType);
         
         setQrcodeStatus(result.status);
 
@@ -137,10 +131,10 @@ const Pan115Settings: React.FC = () => {
           const userName = userInfo.user_name || userInfo.user_id || '未知用户';
           const vipLevel = userInfo.vip_name || (userInfo.is_vip 
             ? `VIP${userInfo.vip_level || ''} 会员` 
-            : '普通用户');
+            : '普通用�?);
           
           message.success({
-            content: `登录成功！用户: ${userName} (${vipLevel})`,
+            content: `登录成功！用�? ${userName} (${vipLevel})`,
             duration: 5,
           });
           
@@ -151,20 +145,18 @@ const Pan115Settings: React.FC = () => {
           message.error('二维码已过期，请重新获取');
           stopPolling();
         } else if (result.status === 'error') {
-          message.error(result.message || '检查状态失败');
+          message.error(result.message || '检查状态失�?);
           stopPolling();
         }
       } catch (error: any) {
-        console.error('轮询二维码状态失败:', error);
+        console.error('轮询二维码状态失�?', error);
         stopPolling();
       }
     };
 
-    // 立即执行一次
-    poll();
+    // 立即执行一�?    poll();
 
-    // 每2秒轮询一次
-    pollingTimerRef.current = setInterval(poll, 2000);
+    // �?秒轮询一�?    pollingTimerRef.current = setInterval(poll, 2000);
   };
 
   // 停止轮询
@@ -176,8 +168,7 @@ const Pan115Settings: React.FC = () => {
     }
   };
 
-  // 组件卸载时清理
-  useEffect(() => {
+  // 组件卸载时清�?  useEffect(() => {
     return () => {
       stopPolling();
     };
@@ -193,8 +184,7 @@ const Pan115Settings: React.FC = () => {
     }
   };
 
-  // 常规扫码登录（步骤1）
-  const handleQRCodeLogin = async () => {
+  // 常规扫码登录（步�?�?  const handleQRCodeLogin = async () => {
     try {
       await getRegularQRCodeMutation.mutateAsync(deviceType);
     } catch (error) {
@@ -202,35 +192,31 @@ const Pan115Settings: React.FC = () => {
     }
   };
 
-  // 激活开放平台API（步骤2）
-  const handleActivateOpenApi = async () => {
+  // 激活开放平台API（步�?�?  const handleActivateOpenApi = async () => {
     try {
       const values = await form.validateFields(['pan115_app_id', 'pan115_request_interval']);
-      console.log('📝 激活开放平台API，表单值:', values);
+      console.log('📝 激活开放平台API，表单�?', values);
       
-      // 保存AppID和请求间隔
-      await updateConfigMutation.mutateAsync(values);
+      // 保存AppID和请求间�?      await updateConfigMutation.mutateAsync(values);
       
-      // TODO: 调用后端API，使用现有cookies + AppID自动激活开放平台
-      message.success('开放平台API配置已保存');
+      // TODO: 调用后端API，使用现有cookies + AppID自动激活开放平�?      message.success('开放平台API配置已保�?);
     } catch (error) {
       console.error('激活开放平台API失败:', error);
     }
   };
 
-  // 获取二维码状态描述
-  const getQRCodeStatusText = () => {
+  // 获取二维码状态描�?  const getQRCodeStatusText = () => {
     switch (qrcodeStatus) {
       case 'waiting':
         return '等待扫码...';
       case 'scanned':
-        return '已扫码，请在手机上确认';
+        return '已扫码，请在手机上确�?;
       case 'confirmed':
-        return '登录成功！';
+        return '登录成功�?;
       case 'expired':
         return '二维码已过期';
       default:
-        return '未知状态';
+        return '未知状�?;
     }
   };
 
@@ -269,19 +255,19 @@ const Pan115Settings: React.FC = () => {
               description={
                 <Space direction="vertical" size="small" style={{ width: '100%' }}>
                   <div>
-                    <Text strong>用户ID：</Text>
+                    <Text strong>用户ID�?/Text>
                     <Text>{config.user_info.user_id}</Text>
                   </div>
                   <div>
                     <Text strong>用户名：</Text>
-                    <Text>{config.user_info.user_name || '未设置'}</Text>
+                    <Text>{config.user_info.user_name || '未设�?}</Text>
                   </div>
                   <div>
-                    <Text strong>会员等级：</Text>
+                    <Text strong>会员等级�?/Text>
                     <Text>
                       {config.user_info.vip_name || (config.user_info.is_vip 
                         ? `VIP${config.user_info.vip_level || ''} 会员` 
-                        : '普通用户')}
+                        : '普通用�?)}
                     </Text>
                   </div>
                   {config.user_info.space && (
@@ -291,24 +277,24 @@ const Pan115Settings: React.FC = () => {
                         <Text>{(config.user_info.space.total / 1024 / 1024 / 1024).toFixed(2)} GB</Text>
                       </div>
                       <div>
-                        <Text strong>已用空间：</Text>
+                        <Text strong>已用空间�?/Text>
                         <Text>{(config.user_info.space.used / 1024 / 1024 / 1024).toFixed(2)} GB</Text>
                       </div>
                       <div>
-                        <Text strong>剩余空间：</Text>
+                        <Text strong>剩余空间�?/Text>
                         <Text>{(config.user_info.space.remain / 1024 / 1024 / 1024).toFixed(2)} GB</Text>
                       </div>
                     </>
                   )}
                   {config.user_info.email && (
                     <div>
-                      <Text strong>邮箱：</Text>
+                      <Text strong>邮箱�?/Text>
                       <Text>{config.user_info.email}</Text>
                     </div>
                   )}
                   {config.user_info.mobile && (
                     <div>
-                      <Text strong>手机：</Text>
+                      <Text strong>手机�?/Text>
                       <Text>{config.user_info.mobile}</Text>
                     </div>
                   )}
@@ -321,8 +307,8 @@ const Pan115Settings: React.FC = () => {
             />
           )}
 
-          {/* 步骤1：扫码登录按钮 */}
-          <Form.Item label="步骤1：登录115账号">
+          {/* 步骤1：扫码登录按�?*/}
+          <Form.Item label="步骤1：登�?15账号">
             <Space direction="vertical" style={{ width: '100%' }}>
               <Space>
                 <Select
@@ -336,10 +322,10 @@ const Pan115Settings: React.FC = () => {
                   <Select.Option value="android">🤖 115网盘 - Android</Select.Option>
                   <Select.Option value="ios">📱 115网盘 - iOS</Select.Option>
                   <Select.Option value="ipad">📱 115网盘 - iPad</Select.Option>
-                  <Select.Option value="web">🌐 网页版</Select.Option>
+                  <Select.Option value="web">🌐 网页�?/Select.Option>
                   <Select.Option value="harmony">🔷 鸿蒙系统</Select.Option>
                   <Select.Option value="alipaymini">💳 支付宝小程序</Select.Option>
-                  <Select.Option value="wechatmini">💬 微信小程序</Select.Option>
+                  <Select.Option value="wechatmini">💬 微信小程�?/Select.Option>
                 </Select>
                 <Button
                   type="primary"
@@ -364,7 +350,7 @@ const Pan115Settings: React.FC = () => {
           <Divider />
 
           {/* 步骤2：启用开放平台API（可选） */}
-          <Form.Item label="步骤2：启用115开放平台API（可选）">
+          <Form.Item label="步骤2：启�?15开放平台API（可选）">
             <Space direction="vertical" style={{ width: '100%' }}>
               <div>
                 <input
@@ -374,7 +360,7 @@ const Pan115Settings: React.FC = () => {
                   onChange={(e) => setUseOpenApi(e.target.checked)}
                   style={{ marginRight: 8 }}
                 />
-                <label htmlFor="use-open-api">启用115开放平台API（需要AppID）</label>
+                <label htmlFor="use-open-api">启用115开放平台API（需要AppID�?/label>
               </div>
 
               {useOpenApi && (
@@ -383,23 +369,23 @@ const Pan115Settings: React.FC = () => {
                     label="115开放平台AppID"
                     name="pan115_app_id"
                     rules={[
-                      { required: useOpenApi, message: '请输入115开放平台AppID' },
-                      { pattern: /^\d+$/, message: 'AppID必须是数字' },
+                      { required: useOpenApi, message: '请输�?15开放平台AppID' },
+                      { pattern: /^\d+$/, message: 'AppID必须是数�? },
                     ]}
-                    tooltip="从115开放平台获取的应用ID"
+                    tooltip="�?15开放平台获取的应用ID"
                     style={{ marginBottom: 8, marginTop: 12 }}
                   >
                     <Input 
-                      placeholder="请输入您的AppID（纯数字）" 
+                      placeholder="请输入您的AppID（纯数字�? 
                       disabled={isLoading}
                       style={{ maxWidth: 400 }}
                     />
                   </Form.Item>
 
                   <Form.Item
-                    label="API请求间隔（秒）"
+                    label="API请求间隔（秒�?
                     name="pan115_request_interval"
-                    tooltip="避免触发115 API限流，建议设置为1.0秒"
+                    tooltip="避免触发115 API限流，建议设置为1.0�?
                     style={{ marginBottom: 8 }}
                   >
                     <InputNumber
@@ -421,7 +407,7 @@ const Pan115Settings: React.FC = () => {
                   </Button>
                   {!config?.pan115_user_id && (
                     <Alert
-                      message="请先完成步骤1的扫码登录"
+                      message="请先完成步骤1的扫码登�?
                       type="warning"
                       showIcon
                       style={{ marginTop: 8 }}
@@ -436,7 +422,7 @@ const Pan115Settings: React.FC = () => {
             <>
               <Divider />
               <Alert
-                message="已配置115网盘"
+                message="已配�?15网盘"
                 description={
                   <div>
                     <p>User ID: {config.pan115_user_id}</p>
@@ -457,18 +443,18 @@ const Pan115Settings: React.FC = () => {
           message="115网盘配置说明"
           description={
             <div>
-              <p><strong>步骤1：扫码登录115</strong></p>
-              <p style={{ marginLeft: 20 }}>• 选择您手机上安装的115应用对应的设备类型</p>
-              <p style={{ marginLeft: 20 }}>• 点击"扫码登录"按钮，使用对应的115应用扫码</p>
-              <p style={{ marginLeft: 20 }}>• 这将获取基础登录凭证（cookies）</p>
+              <p><strong>步骤1：扫码登�?15</strong></p>
+              <p style={{ marginLeft: 20 }}>�?选择您手机上安装�?15应用对应的设备类�?/p>
+              <p style={{ marginLeft: 20 }}>�?点击"扫码登录"按钮，使用对应的115应用扫码</p>
+              <p style={{ marginLeft: 20 }}>�?这将获取基础登录凭证（cookies�?/p>
               
               <Divider style={{ margin: '12px 0' }} />
               
-              <p><strong>步骤2（可选）：启用115开放平台API</strong></p>
-              <p style={{ marginLeft: 20 }}>• 如需使用开放平台API功能，请启用此选项</p>
-              <p style={{ marginLeft: 20 }}>• 在 <Link href="https://www.yuque.com/115yun/open" target="_blank">115开放平台</Link> 申请AppID</p>
-              <p style={{ marginLeft: 20 }}>• 填写AppID后，系统将自动使用已登录的账号激活开放平台API</p>
-              <p style={{ marginLeft: 20 }}>• 开放平台API凭证更稳定，有效期更长</p>
+              <p><strong>步骤2（可选）：启�?15开放平台API</strong></p>
+              <p style={{ marginLeft: 20 }}>�?如需使用开放平台API功能，请启用此选项</p>
+              <p style={{ marginLeft: 20 }}>�?�?<Link href="https://www.yuque.com/115yun/open" target="_blank">115开放平�?/Link> 申请AppID</p>
+              <p style={{ marginLeft: 20 }}>�?填写AppID后，系统将自动使用已登录的账号激活开放平台API</p>
+              <p style={{ marginLeft: 20 }}>�?开放平台API凭证更稳定，有效期更�?/p>
             </div>
           }
           type="info"
@@ -518,22 +504,22 @@ const Pan115Settings: React.FC = () => {
                     )}
                   </Text>
                   {qrcodeStatus === 'waiting' && (
-                    <Text type="secondary">请使用115 APP扫描二维码</Text>
+                    <Text type="secondary">请使�?15 APP扫描二维�?/Text>
                   )}
                   {qrcodeStatus === 'scanned' && (
-                    <Text type="warning">请在手机上点击确认登录</Text>
+                    <Text type="warning">请在手机上点击确认登�?/Text>
                   )}
                   {qrcodeStatus === 'confirmed' && (
-                    <Text type="success">登录成功，正在保存凭据...</Text>
+                    <Text type="success">登录成功，正在保存凭�?..</Text>
                   )}
                   {qrcodeStatus === 'expired' && (
-                    <Button onClick={handleQRCodeLogin}>重新获取二维码</Button>
+                    <Button onClick={handleQRCodeLogin}>重新获取二维�?/Button>
                   )}
                 </Space>
               </div>
             </>
           ) : (
-            <Spin tip="正在获取二维码..." />
+            <Spin tip="正在获取二维�?.." />
           )}
         </div>
       </Modal>
@@ -543,3 +529,16 @@ const Pan115Settings: React.FC = () => {
 
 export default Pan115Settings;
 
+
+ */
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Card,
+  Form,
+  Input,
+  Button,
+  message,
+  Space,
+  Modal,
+  QRCode,
+  Typography,
