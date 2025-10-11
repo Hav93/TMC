@@ -119,10 +119,15 @@ class FileOrganizer:
         replacements = {
             '{date}': now.strftime('%Y%m%d'),
             '{time}': now.strftime('%H%M%S'),
+            '{year}': now.strftime('%Y'),
+            '{month}': now.strftime('%m'),
+            '{day}': now.strftime('%d'),
             '{sender}': FileOrganizer._sanitize_filename(
                 metadata.get('sender_name') or metadata.get('sender_username') or str(metadata.get('sender_id', 'unknown'))
             ),
+            '{sender_id}': str(metadata.get('sender_id', 'unknown')),
             '{source}': FileOrganizer._sanitize_filename(metadata.get('source_chat', 'unknown')),
+            '{source_id}': str(metadata.get('source_chat_id', 'unknown')),
             '{type}': metadata.get('type', 'file'),
             '{original_name}': name_without_ext
         }
