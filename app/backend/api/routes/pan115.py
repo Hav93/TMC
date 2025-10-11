@@ -73,7 +73,7 @@ async def get_pan115_config(
         if is_configured and hasattr(settings, 'pan115_user_key') and settings.pan115_user_key:
             try:
                 from services.p115_service import P115Service
-                p115 = P115Service()
+                p115 = P115Service(cookies=settings.pan115_user_key)
                 user_info = await p115.get_user_info(settings.pan115_user_key)
                 if user_info:
                     result['user_info'] = user_info
