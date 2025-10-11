@@ -1,9 +1,20 @@
 version: '3.8'
 
+# TMC Docker Compose 配置
+# 
+# 版本说明：
+# - test 分支默认使用 hav93/tmc:test 镜像（开发测试版本）
+# - 如需使用稳定版本，设置环境变量: DOCKER_TAG=latest
+#
+# 使用方法：
+#   测试版本（默认）: docker-compose up -d
+#   稳定版本: DOCKER_TAG=latest docker-compose up -d
+#   指定版本: DOCKER_TAG=v1.2.0 docker-compose up -d
+
 services:
   tmc:
-    image: hav93/tmc:latest
-    container_name: tmc
+    image: hav93/tmc:${DOCKER_TAG:-test}  # 默认使用 test 标签，可通过环境变量切换
+    container_name: tmc-${DOCKER_TAG:-test}  # 容器名称根据版本区分
     restart: always
     ports:
       - "${APP_PORT:-9393}:9393"
