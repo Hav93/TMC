@@ -11,7 +11,6 @@ import {
   Select,
   Tooltip,
   Modal,
-  Statistic,
   Row,
   Col,
   Badge,
@@ -24,7 +23,6 @@ import {
   DeleteOutlined,
   RedoOutlined,
   ClockCircleOutlined,
-  DownloadOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   SyncOutlined,
@@ -377,9 +375,18 @@ const DownloadTasksPage: React.FC = () => {
     },
   ];
 
+  // 计算成功率和失败率
+  const totalCompleted = (stats.total_downloaded_ever || 0) + (stats.total_failed_ever || 0);
+  const successRate = totalCompleted > 0 
+    ? ((stats.total_downloaded_ever || 0) / totalCompleted * 100).toFixed(1) 
+    : '0.0';
+  const failedRate = totalCompleted > 0 
+    ? ((stats.total_failed_ever || 0) / totalCompleted * 100).toFixed(1) 
+    : '0.0';
+
   return (
     <div style={{ padding: '24px' }}>
-      {/* 统计卡片 */}
+      {/* 统计卡片 - 左右分栏布局 */}
       <Card 
         title="📊 下载统计" 
         style={{ marginBottom: 24, background: colors.cardBg }}
@@ -390,80 +397,128 @@ const DownloadTasksPage: React.FC = () => {
             icon={<RedoOutlined />}
             onClick={handleRetryAllFailed}
             disabled={(stats.failed_count || 0) === 0}
+            size="small"
           >
-            重试失败
+            重试失败任务
           </Button>
         }
       >
-        {/* 历史累计统计 */}
-        <Row gutter={16} style={{ marginBottom: 16, paddingBottom: 16, borderBottom: `1px solid ${colors.border}` }}>
-          <Col span={8}>
-            <Statistic
-              title="📈 累计下载"
-              value={stats.total_downloaded_ever || 0}
-              suffix="个"
-              valueStyle={{ color: colors.success }}
-            />
-          </Col>
-          <Col span={8}>
-            <Statistic
-              title="💾 累计大小"
-              value={stats.total_size_ever_mb ? (stats.total_size_ever_mb / 1024).toFixed(2) : 0}
-              suffix="GB"
-              valueStyle={{ color: colors.info }}
-            />
-          </Col>
-          <Col span={8}>
-            <Statistic
-              title="❌ 累计失败"
-              value={stats.total_failed_ever || 0}
-              suffix="个"
-              valueStyle={{ color: colors.error }}
-            />
-          </Col>
-        </Row>
-
-        {/* 当前任务统计 */}
         <Row gutter={16}>
-          <Col span={4}>
-            <Statistic
-              title="全部任务"
-              value={stats.total_count || 0}
-              prefix={<DownloadOutlined />}
-              valueStyle={{ color: colors.primary }}
-            />
+          {/* 左侧：核心数据大卡片（淡雅蓝色渐变） - 一行四列 */}
+          <Col xs={24} sm={24} md={12} lg={12} xl={12}>
+            <Card
+              bordered={false}
+              style={{
+                background: 'linear-gradient(135deg, #e6f7ff 0%, #bae7ff 100%)',
+                height: '100%',
+                border: '1px solid #91d5ff',
+              }}
+              bodyStyle={{ padding: '16px 20px' }}
+            >
+              <Row gutter={16}>
+                <Col span={6} style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#0050b3', marginBottom: 4 }}>📈 累计下载</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: '#003a8c' }}>
+                    {stats.total_downloaded_ever || 0}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#0050b3', marginTop: 4 }}>个文件</div>
+                </Col>
+                <Col span={6} style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#0050b3', marginBottom: 4 }}>💾 累计大小</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: '#003a8c' }}>
+                    {stats.total_size_ever_mb ? (stats.total_size_ever_mb / 1024).toFixed(0) : 0}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#0050b3', marginTop: 4 }}>GB</div>
+                </Col>
+                <Col span={6} style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#0050b3', marginBottom: 4 }}>✅ 成功率</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: '#003a8c' }}>
+                    {successRate}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#0050b3', marginTop: 4 }}>%</div>
+                </Col>
+                <Col span={6} style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, color: '#0050b3', marginBottom: 4 }}>❌ 失败率</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, lineHeight: 1, color: '#003a8c' }}>
+                    {failedRate}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#0050b3', marginTop: 4 }}>%</div>
+                </Col>
+              </Row>
+            </Card>
           </Col>
-          <Col span={5}>
-            <Statistic
-              title="等待中"
-              value={stats.pending_count || 0}
-              prefix={<ClockCircleOutlined />}
-              valueStyle={{ color: colors.textSecondary }}
-            />
-          </Col>
-          <Col span={5}>
-            <Statistic
-              title="下载中"
-              value={stats.downloading_count || 0}
-              prefix={<SyncOutlined spin={(stats.downloading_count || 0) > 0} />}
-              valueStyle={{ color: colors.info }}
-            />
-          </Col>
-          <Col span={5}>
-            <Statistic
-              title="已完成"
-              value={stats.success_count || 0}
-              prefix={<CheckCircleOutlined />}
-              valueStyle={{ color: colors.success }}
-            />
-          </Col>
-          <Col span={5}>
-            <Statistic
-              title="失败"
-              value={stats.failed_count || 0}
-              prefix={<CloseCircleOutlined />}
-              valueStyle={{ color: colors.error }}
-            />
+
+          {/* 右侧：4个状态卡片（一行四列） */}
+          <Col xs={24} sm={24} md={12} lg={12} xl={12}>
+            <Row gutter={12}>
+              <Col span={6}>
+                <Card 
+                  bordered={false}
+                  style={{ 
+                    background: colors.cardBg,
+                    height: '100%',
+                    textAlign: 'center',
+                  }}
+                  bodyStyle={{ padding: '16px 8px' }}
+                >
+                  <div style={{ fontSize: 28, fontWeight: 700, color: colors.warning, marginBottom: 4 }}>
+                    {stats.pending_count || 0}
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 11 }}>⏳ 等待中</Text>
+                </Card>
+              </Col>
+
+              <Col span={6}>
+                <Card 
+                  bordered={false}
+                  style={{ 
+                    background: colors.cardBg,
+                    height: '100%',
+                    textAlign: 'center',
+                  }}
+                  bodyStyle={{ padding: '16px 8px' }}
+                >
+                  <div style={{ fontSize: 28, fontWeight: 700, color: colors.info, marginBottom: 4 }}>
+                    {stats.downloading_count || 0}
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 11 }}>🔄 下载中</Text>
+                </Card>
+              </Col>
+
+              <Col span={6}>
+                <Card 
+                  bordered={false}
+                  style={{ 
+                    background: colors.cardBg,
+                    height: '100%',
+                    textAlign: 'center',
+                  }}
+                  bodyStyle={{ padding: '16px 8px' }}
+                >
+                  <div style={{ fontSize: 28, fontWeight: 700, color: colors.success, marginBottom: 4 }}>
+                    {stats.success_count || 0}
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 11 }}>✅ 已完成</Text>
+                </Card>
+              </Col>
+
+              <Col span={6}>
+                <Card 
+                  bordered={false}
+                  style={{ 
+                    background: colors.cardBg,
+                    height: '100%',
+                    textAlign: 'center',
+                  }}
+                  bodyStyle={{ padding: '16px 8px' }}
+                >
+                  <div style={{ fontSize: 28, fontWeight: 700, color: colors.error, marginBottom: 4 }}>
+                    {stats.failed_count || 0}
+                  </div>
+                  <Text type="secondary" style={{ fontSize: 11 }}>❌ 失败</Text>
+                </Card>
+              </Col>
+            </Row>
           </Col>
         </Row>
       </Card>

@@ -20,6 +20,9 @@ from models import ForwardRule, MessageLog, get_local_now
 from filters import KeywordFilter, RegexReplacer
 from proxy_utils import get_proxy_manager
 from log_manager import get_logger
+from services.message_context import MessageContext
+from services.message_dispatcher import get_message_dispatcher
+from services.resource_monitor_service import ResourceMonitorProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -489,6 +492,9 @@ class TelegramClientManager:
             # 注册事件处理器（使用装饰器方式）
             self._register_event_handlers()
             
+            # 注册消息处理器（资源监控等）
+            await self._register_message_processors()
+            
             # 更新监听聊天列表
             await self._update_monitored_chats()
             
@@ -727,6 +733,51 @@ class TelegramClientManager:
         
         self.logger.info("✅ 事件处理器已注册（装饰器方式）")
     
+    async def _register_message_processors(self):
+        """注册消息处理器（资源监控等）"""
+        try:
+            # 获取消息分发器
+            dispatcher = get_message_dispatcher()
+            
+            # 注册资源监控处理器（不需要传入数据库会话）
+            resource_processor = ResourceMonitorProcessor()
+            dispatcher.register(resource_processor)
+            self.logger.info("✅ 资源监控处理器已注册")
+        except Exception as e:
+            self.logger.error(f"注册消息处理器失败: {e}", exc_info=True)
+    
+    async def _safe_send_message(self, chat_id: int, text: str, **kwargs):
+        """
+        安全地发送消息（跨事件循环调用）
+        
+        用于 MessageContext 调用，自动处理事件循环切换
+        """
+        if not self.client or not self.loop:
+            raise Exception("客户端未连接")
+        
+        async def _send():
+            return await self.client.send_message(chat_id, text, **kwargs)
+        
+        # 使用 run_coroutine_threadsafe 在客户端事件循环中执行
+        future = asyncio.run_coroutine_threadsafe(_send(), self.loop)
+        return future.result(timeout=30)  # 30秒超时
+    
+    async def _safe_download_media(self, message, file_path: str):
+        """
+        安全地下载媒体（跨事件循环调用）
+        
+        用于 MessageContext 调用，自动处理事件循环切换
+        """
+        if not self.client or not self.loop:
+            raise Exception("客户端未连接")
+        
+        async def _download():
+            return await self.client.download_media(message, file=file_path)
+        
+        # 使用 run_coroutine_threadsafe 在客户端事件循环中执行
+        future = asyncio.run_coroutine_threadsafe(_download(), self.loop)
+        return future.result(timeout=300)  # 5分钟超时
+    
     async def _process_message(self, event, is_edited: bool = False):
         """处理消息（在独立任务中运行）- 优化版"""
         start_time = time.time()
@@ -788,6 +839,22 @@ class TelegramClientManager:
             
             # 2. 处理媒体监控规则
             await self._process_media_monitor(chat_id, message)
+            
+            # 3. 使用消息分发器处理资源监控和其他处理器
+            try:
+                # 创建消息上下文
+                context = MessageContext(
+                    message=message,
+                    client_manager=self,
+                    chat_id=chat_id,
+                    is_edited=is_edited
+                )
+                
+                # 获取消息分发器并分发消息
+                dispatcher = get_message_dispatcher()
+                await dispatcher.dispatch(context)
+            except Exception as e:
+                self.logger.error(f"消息分发器处理失败: {e}", exc_info=True)
                 
             # 性能监控
             processing_time = (time.time() - start_time) * 1000

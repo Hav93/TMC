@@ -1,28 +1,20 @@
 import React from 'react';
-import { Row, Col, Card, Statistic, Typography, Space, Button, Tag, Progress, Spin, Alert } from 'antd';
+import { Row, Col, Card, Statistic, Typography, Space, Button, Progress, Spin, Alert } from 'antd';
 import {
-  ReloadOutlined,
   CheckCircleOutlined,
-  ClockCircleOutlined,
-  CloudOutlined,
-  FolderOutlined,
   FileOutlined,
-  VideoCameraOutlined,
-  PictureOutlined,
-  AudioOutlined,
-  FileTextOutlined,
   WarningOutlined,
   RightOutlined,
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import dayjs from 'dayjs';
 import { dashboardApi } from '../../services/dashboard';
 import type { DashboardOverview, DashboardInsights } from '../../services/dashboard';
 import { useThemeContext } from '../../theme';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 // 颜色配置
 const COLORS = {
@@ -115,21 +107,6 @@ const NewDashboard: React.FC = () => {
     );
   }
 
-  // 系统状态标签
-  const getSystemStatusTag = (status: string) => {
-    const statusConfig = {
-      normal: { color: 'success', text: '正常', icon: <CheckCircleOutlined /> },
-      warning: { color: 'warning', text: '警告', icon: <WarningOutlined /> },
-      busy: { color: 'processing', text: '繁忙', icon: <ClockCircleOutlined /> },
-    };
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.normal;
-    return (
-      <Tag color={config.color} icon={config.icon}>
-        {config.text}
-      </Tag>
-    );
-  };
-
   // 准备文件类型饼图数据
   const fileTypeChartData = Object.entries(overview.file_type_distribution).map(([type, data]) => ({
     name: type === 'video' ? '视频' : type === 'image' ? '图片' : type === 'audio' ? '音频' : '文档',
@@ -170,7 +147,7 @@ const NewDashboard: React.FC = () => {
         border: `1px solid ${isDark ? colors.border : '#d9d9d9'}`,
         borderRadius: '4px',
         padding: '12px',
-        color: isDark ? colors.text : '#000',
+        color: isDark ? colors.textPrimary : '#000',
         boxShadow: isDark 
           ? '0 2px 8px rgba(0, 0, 0, 0.45)' 
           : '0 2px 8px rgba(0, 0, 0, 0.15)'
@@ -198,41 +175,6 @@ const NewDashboard: React.FC = () => {
 
   return (
     <div style={{ padding: '24px', minHeight: '100vh' }}>
-      {/* 系统总览卡片 */}
-      <Card 
-        style={{ marginBottom: 16 }}
-        bodyStyle={{ padding: '16px 24px' }}
-      >
-        <Row align="middle" justify="space-between">
-          <Col>
-            <Space size="large">
-              <Text strong style={{ fontSize: 16 }}>🎯 系统总览</Text>
-              <Text type="secondary">
-                {overview.system_overview.total_rules}个规则 | 
-                {overview.system_overview.active_rules}个活跃 | 
-                {overview.system_overview.today_downloads}个下载 | 
-                {overview.system_overview.total_storage_gb}GB存储
-              </Text>
-              {getSystemStatusTag(overview.system_overview.system_status)}
-            </Space>
-          </Col>
-          <Col>
-            <Space>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                最后更新: {dayjs().format('HH:mm:ss')}
-              </Text>
-              <Button 
-                icon={<ReloadOutlined />} 
-                size="small"
-                onClick={() => refetchOverview()}
-              >
-                刷新
-              </Button>
-            </Space>
-          </Col>
-        </Row>
-      </Card>
-
       {/* 双栏模块卡片 */}
       <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
         {/* 消息转发模块 */}
@@ -363,17 +305,17 @@ const NewDashboard: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke={isDark ? colors.border : '#f0f0f0'} />
                   <XAxis 
                     dataKey="date" 
-                    stroke={isDark ? colors.text : '#666'}
+                    stroke={isDark ? colors.textPrimary : '#666'}
                   />
-                  <YAxis stroke={isDark ? colors.text : '#666'} />
+                  <YAxis stroke={isDark ? colors.textPrimary : '#666'} />
                   <Tooltip 
                     contentStyle={{ 
                       backgroundColor: isDark ? colors.cardBg : '#fff',
                       border: `1px solid ${isDark ? colors.border : '#d9d9d9'}`,
                       borderRadius: '4px',
-                      color: isDark ? colors.text : '#000'
+                      color: isDark ? colors.textPrimary : '#000'
                     }}
-                    labelStyle={{ color: isDark ? colors.text : '#000', fontWeight: 'bold' }}
+                    labelStyle={{ color: isDark ? colors.textPrimary : '#000', fontWeight: 'bold' }}
                     formatter={(value: any) => [`${value}条消息`, '转发数量']}
                   />
                   <Bar dataKey="count" fill={COLORS.primary} radius={[8, 8, 0, 0]} />
@@ -397,9 +339,9 @@ const NewDashboard: React.FC = () => {
                   <CartesianGrid strokeDasharray="3 3" stroke={isDark ? colors.border : '#f0f0f0'} />
                   <XAxis 
                     dataKey="date" 
-                    stroke={isDark ? colors.text : '#666'}
+                    stroke={isDark ? colors.textPrimary : '#666'}
                   />
-                  <YAxis stroke={isDark ? colors.text : '#666'} />
+                  <YAxis stroke={isDark ? colors.textPrimary : '#666'} />
                   <Tooltip 
                     content={<CustomMediaTooltip />}
                     cursor={{ fill: 'transparent' }}
@@ -419,32 +361,38 @@ const NewDashboard: React.FC = () => {
       </Row>
 
       {/* 详细统计 */}
-      <Row gutter={[16, 16]}>
+      <Row gutter={[16, 16]} style={{ display: 'flex', flexWrap: 'wrap' }}>
         {/* 文件类型分布 */}
-        <Col xs={24} sm={12} lg={8}>
-          <Card title="📁 文件类型分布" bodyStyle={{ padding: '20px' }}>
+        <Col xs={24} sm={12} lg={8} style={{ display: 'flex' }}>
+          <Card 
+            title="📁 文件类型分布" 
+            bodyStyle={{ padding: '20px', height: 'calc(100% - 57px)', display: 'flex', flexDirection: 'column' }}
+            style={{ height: '100%', width: '100%', minHeight: '450px' }}
+          >
             {fileTypeChartData.length > 0 ? (
               <>
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie
-                      data={fileTypeChartData}
-                      cx="50%"
-                      cy="50%"
-                      labelLine={false}
-                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="value"
-                    >
-                      {fileTypeChartData.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS.chartColors[index % COLORS.chartColors.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div style={{ marginTop: 16 }}>
+                <div style={{ flex: '0 0 auto' }}>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie
+                        data={fileTypeChartData}
+                        cx="50%"
+                        cy="50%"
+                        labelLine={false}
+                        label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        dataKey="value"
+                      >
+                        {fileTypeChartData.map((_entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS.chartColors[index % COLORS.chartColors.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div style={{ flex: '1 1 auto', marginTop: 16, overflow: 'auto' }}>
                   {fileTypeChartData.map((item, index) => (
                     <div key={index} style={{ marginBottom: 8 }}>
                       <Space>
@@ -462,7 +410,7 @@ const NewDashboard: React.FC = () => {
                 </div>
               </>
             ) : (
-              <div style={{ textAlign: 'center', padding: '60px 0', color: '#999' }}>
+              <div style={{ textAlign: 'center', padding: '60px 0', color: '#999', flex: '1 1 auto', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
                 <FileOutlined style={{ fontSize: 48, marginBottom: 16 }} />
                 <div>暂无文件</div>
               </div>
@@ -471,8 +419,12 @@ const NewDashboard: React.FC = () => {
         </Col>
 
         {/* 存储分布 - 双栏对比布局 */}
-        <Col xs={24} sm={24} lg={8}>
-          <Card title="☁️ 存储分布" bodyStyle={{ padding: '20px' }}>
+        <Col xs={24} sm={24} lg={8} style={{ display: 'flex' }}>
+          <Card 
+            title="☁️ 存储分布" 
+            bodyStyle={{ padding: '20px', height: 'calc(100% - 57px)', display: 'flex', flexDirection: 'column' }}
+            style={{ height: '100%', width: '100%', minHeight: '450px' }}
+          >
             {/* 云端占比 */}
             <div style={{ textAlign: 'center', marginBottom: 20, paddingBottom: 16, borderBottom: `1px solid ${isDark ? colors.border : '#f0f0f0'}` }}>
               <Text type="secondary">云端占比：</Text>
@@ -641,14 +593,15 @@ const NewDashboard: React.FC = () => {
         </Col>
 
         {/* 快速洞察 */}
-        <Col xs={24} sm={24} lg={8}>
+        <Col xs={24} sm={24} lg={8} style={{ display: 'flex' }}>
           <Card 
             title="🎯 快速洞察" 
-            bodyStyle={{ padding: '20px' }}
+            bodyStyle={{ padding: '20px', height: 'calc(100% - 57px)', display: 'flex', flexDirection: 'column' }}
+            style={{ height: '100%', width: '100%', minHeight: '450px' }}
             loading={insightsLoading}
           >
             {insights ? (
-              <Space direction="vertical" size="large" style={{ width: '100%' }}>
+              <Space direction="vertical" size="large" style={{ width: '100%', flex: '1 1 auto', overflow: 'auto' }}>
                 {/* 今日高峰 */}
                 {insights.peak_hour && (
                   <div>

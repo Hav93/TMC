@@ -568,3 +568,152 @@ class MediaFile(Base):
     
     def __repr__(self):
         return f"<MediaFile(id={self.id}, name='{self.file_name}', type='{self.file_type}')>"
+
+
+# ==================== 资源监控模型 ====================
+
+class ResourceMonitorRule(Base):
+    """资源监控规则模型"""
+    __tablename__ = 'resource_monitor_rules'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, comment='规则名称')
+    source_chats = Column(Text, nullable=False, comment='源聊天列表(JSON)')
+    is_active = Column(Boolean, default=True, comment='是否启用')
+    
+    # 链接过滤
+    link_types = Column(Text, comment='链接类型(JSON): ["pan115", "magnet", "ed2k"]')
+    keywords = Column(Text, comment='关键词(JSON)')
+    
+    # 115配置
+    auto_save_to_115 = Column(Boolean, default=False, comment='是否自动转存到115')
+    target_path = Column(String(500), comment='目标路径')
+    pan115_user_key = Column(String(100), comment='115用户密钥（可选）')
+    
+    # 标签
+    default_tags = Column(Text, comment='默认标签(JSON)')
+    
+    # 去重
+    enable_deduplication = Column(Boolean, default=True, comment='是否启用去重')
+    dedup_time_window = Column(Integer, default=3600, comment='去重时间窗口(秒)')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
+    
+    # 关系
+    records = relationship("ResourceRecord", back_populates="rule", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<ResourceMonitorRule(id={self.id}, name='{self.name}')>"
+
+
+class ResourceRecord(Base):
+    """资源记录模型"""
+    __tablename__ = 'resource_records'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rule_id = Column(Integer, ForeignKey('resource_monitor_rules.id'), nullable=False)
+    rule_name = Column(String(100), comment='规则名称（冗余）')
+    
+    # 消息信息
+    source_chat_id = Column(String(50), comment='源聊天ID')
+    source_chat_name = Column(String(200), comment='源聊天名称')
+    message_id = Column(Integer, comment='消息ID')
+    message_text = Column(Text, comment='消息文本')
+    message_date = Column(DateTime, comment='消息时间')
+    
+    # 链接信息
+    link_type = Column(String(20), comment='链接类型')
+    link_url = Column(Text, nullable=False, comment='链接URL')
+    link_hash = Column(String(64), index=True, comment='链接哈希（用于去重）')
+    
+    # 115转存信息
+    save_status = Column(String(20), default='pending', comment='转存状态')
+    save_path = Column(String(500), comment='转存路径')
+    save_error = Column(Text, comment='转存错误信息')
+    save_time = Column(DateTime, comment='转存时间')
+    retry_count = Column(Integer, default=0, comment='重试次数')
+    
+    # 标签
+    tags = Column(Text, comment='标签(JSON)')
+    
+    # 消息快照
+    message_snapshot = Column(Text, comment='消息快照(JSON)')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
+    
+    # 关系
+    rule = relationship("ResourceMonitorRule", back_populates="records")
+    
+    def __repr__(self):
+        return f"<ResourceRecord(id={self.id}, link_type='{self.link_type}', status='{self.save_status}')>"
+
+
+class NotificationRule(Base):
+    """通知规则模型"""
+    __tablename__ = 'notification_rules'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, comment='用户ID（NULL表示全局规则）')
+    notification_type = Column(String(50), nullable=False, index=True, comment='通知类型')
+    is_active = Column(Boolean, default=True, comment='是否启用')
+    
+    # 通知渠道配置
+    telegram_chat_id = Column(String(50), comment='Telegram聊天ID')
+    telegram_enabled = Column(Boolean, default=True, comment='是否启用Telegram通知')
+    webhook_url = Column(String(500), comment='Webhook URL')
+    webhook_enabled = Column(Boolean, default=False, comment='是否启用Webhook')
+    email_address = Column(String(200), comment='邮箱地址')
+    email_enabled = Column(Boolean, default=False, comment='是否启用邮件通知')
+    
+    # 通知频率控制
+    min_interval = Column(Integer, default=0, comment='最小间隔（秒），0表示不限制')
+    max_per_hour = Column(Integer, default=0, comment='每小时最大数量，0表示不限制')
+    last_sent_at = Column(DateTime, comment='最后发送时间')
+    sent_count_hour = Column(Integer, default=0, comment='当前小时已发送数量')
+    hour_reset_at = Column(DateTime, comment='小时计数器重置时间')
+    
+    # 通知内容配置
+    custom_template = Column(Text, comment='自定义模板')
+    include_details = Column(Boolean, default=True, comment='是否包含详细信息')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
+    
+    # 关系
+    user = relationship("User", backref="notification_rules")
+    
+    def __repr__(self):
+        return f"<NotificationRule(id={self.id}, type='{self.notification_type}', active={self.is_active})>"
+
+
+class NotificationLog(Base):
+    """通知历史模型"""
+    __tablename__ = 'notification_logs'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    notification_type = Column(String(50), nullable=False, index=True, comment='通知类型')
+    message = Column(Text, nullable=False, comment='通知消息')
+    channels = Column(String(200), comment='通知渠道（逗号分隔）')
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, comment='用户ID')
+    
+    # 发送状态
+    status = Column(String(20), default='pending', comment='发送状态：pending/sent/failed')
+    error_message = Column(Text, comment='错误信息')
+    
+    # 关联信息
+    related_type = Column(String(50), comment='关联类型：resource/media/forward')
+    related_id = Column(Integer, comment='关联ID')
+    
+    # 时间戳
+    sent_at = Column(DateTime, default=get_local_now, index=True, comment='发送时间')
+    
+    # 关系
+    user = relationship("User", backref="notification_logs")
+    
+    def __repr__(self):
+        return f"<NotificationLog(id={self.id}, type='{self.notification_type}', status='{self.status}')>"

@@ -20,6 +20,13 @@ from . import (
     media_files,     # 媒体文件 - /api/media
     media_settings,  # 媒体配置 - /api/settings/media
     pan115,          # 115网盘 - /api/pan115
+    resource_monitor,# 资源监控 - /api/resources
+    performance,     # 性能监控 - /api/performance
+    notifications,   # 通知系统 - /api/notifications
+    ad_filter,       # 广告过滤 - /api/ad-filter
+    quick_upload,    # 秒传检测 - /api/quick-upload
+    smart_rename,    # 智能重命名 - /api/smart-rename
+    strm,            # STRM生成 - /api/strm
 )
 
 # 导出所有路由器
@@ -35,6 +42,13 @@ __all__ = [
     'media_files',
     'media_settings',
     'pan115',
+    'resource_monitor',
+    'performance',
+    'notifications',
+    'ad_filter',
+    'quick_upload',
+    'smart_rename',
+    'strm',
 ]
 
 # API路由配置信息（用于文档和验证）
@@ -93,6 +107,41 @@ API_ROUTE_CONFIG = {
         'prefix': '/api/pan115',
         'tags': ['115网盘'],
         'router': pan115.router,
+    },
+    'resource_monitor': {
+        'prefix': '/api/resources',
+        'tags': ['资源监控'],
+        'router': resource_monitor.router,
+    },
+    'performance': {
+        'prefix': '/api/performance',
+        'tags': ['性能监控'],
+        'router': performance.router,
+    },
+    'notifications': {
+        'prefix': '/api/notifications',
+        'tags': ['通知系统'],
+        'router': notifications.router,
+    },
+    'ad_filter': {
+        'prefix': '/api/ad-filter',
+        'tags': ['广告过滤'],
+        'router': ad_filter.router,
+    },
+    'quick_upload': {
+        'prefix': '/api/quick-upload',
+        'tags': ['秒传检测'],
+        'router': quick_upload.router,
+    },
+    'smart_rename': {
+        'prefix': '/api/smart-rename',
+        'tags': ['智能重命名'],
+        'router': smart_rename.router,
+    },
+    'strm': {
+        'prefix': '/api/strm',
+        'tags': ['STRM生成'],
+        'router': strm.router,
     },
 }
 

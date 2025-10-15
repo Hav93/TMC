@@ -46,10 +46,12 @@ except:
     if [ $MIGRATION_EXIT -eq 0 ]; then
         echo "   └─ ✅ 数据库迁移成功"
     else
-        # 显示错误信息
-        echo "$MIGRATION_OUTPUT" | grep -v "^INFO" | grep -v "^$"
+        # 显示完整错误信息
         echo ""
-        echo "❌ 数据库迁移失败"
+        echo "❌ 数据库迁移失败！完整错误信息："
+        echo "============================================"
+        echo "$MIGRATION_OUTPUT"
+        echo "============================================"
         echo ""
         echo "💡 建议删除旧数据库后重新启动："
         echo "   docker-compose down"
@@ -69,9 +71,11 @@ else
     if [ $MIGRATION_EXIT -eq 0 ]; then
         echo "   └─ ✅ 数据库创建成功"
     else
-        echo "$MIGRATION_OUTPUT" | grep -v "^INFO" | grep -v "^$"
         echo ""
-        echo "❌ 数据库创建失败"
+        echo "❌ 数据库创建失败！完整错误信息："
+        echo "============================================"
+        echo "$MIGRATION_OUTPUT"
+        echo "============================================"
         exit 1
     fi
 fi

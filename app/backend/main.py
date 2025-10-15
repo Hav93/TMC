@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 # 导入API路由
-from api.routes import system, rules, logs, chats, clients, settings, dashboard, auth, users, media_monitor, media_files, media_settings, pan115
+from api.routes import system, rules, logs, chats, clients, settings, dashboard, auth, users, media_monitor, media_files, media_settings, pan115, resource_monitor, performance, notifications
 
 # 导入核心业务逻辑
 from enhanced_bot import EnhancedTelegramBot
@@ -56,6 +56,26 @@ async def lifespan(app: FastAPI):
         await init_database()
         logger.info("✅ 数据库初始化完成")
         
+        # 初始化性能优化组件
+        logger.info("🔧 初始化性能优化组件...")
+        from services.common.message_cache import init_message_cache
+        from services.common.retry_queue import init_retry_queue
+        from services.common.batch_writer import init_batch_writer
+        from services.resource_monitor_service import register_retry_handlers
+        
+        await init_message_cache()
+        logger.info("✅ 消息缓存管理器已启动")
+        
+        await init_retry_queue()
+        logger.info("✅ 智能重试队列已启动")
+        
+        await init_batch_writer()
+        logger.info("✅ 批量数据库写入器已启动")
+        
+        # 注册重试处理器
+        register_retry_handlers()
+        logger.info("✅ 重试处理器已注册")
+        
         # 初始化EnhancedBot
         enhanced_bot_instance = EnhancedTelegramBot()
         await enhanced_bot_instance.start(web_mode=True, skip_config_validation=True)
@@ -69,6 +89,27 @@ async def lifespan(app: FastAPI):
     finally:
         # 关闭时
         logger.info("🛑 关闭FastAPI应用...")
+        
+        # 停止性能优化组件
+        try:
+            from services.common.message_cache import get_message_cache
+            from services.common.retry_queue import get_retry_queue
+            from services.common.batch_writer import get_batch_writer
+            
+            cache = get_message_cache()
+            await cache.stop()
+            logger.info("✅ 消息缓存管理器已停止")
+            
+            retry_queue = get_retry_queue()
+            await retry_queue.stop()
+            logger.info("✅ 智能重试队列已停止")
+            
+            batch_writer = get_batch_writer()
+            await batch_writer.stop()
+            logger.info("✅ 批量数据库写入器已停止")
+        except Exception as e:
+            logger.error(f"停止性能优化组件失败: {e}")
+        
         if enhanced_bot_instance:
             await enhanced_bot_instance.stop()
             logger.info("✅ EnhancedBot已停止")
@@ -168,6 +209,14 @@ app = FastAPI(
         {
             "name": "115网盘",
             "description": "115云盘集成，支持文件上传、目录管理等操作"
+        },
+        {
+            "name": "资源监控",
+            "description": "资源链接监控，自动捕获115/磁力/ed2k链接，支持自动转存到115网盘"
+        },
+        {
+            "name": "通知系统",
+            "description": "多渠道推送通知管理，支持Telegram/Webhook通知，可自定义通知规则和模板"
         }
     ],
     contact={
@@ -211,6 +260,9 @@ app.include_router(media_monitor.router, prefix="/api/media/monitor", tags=["媒
 app.include_router(media_files.router, prefix="/api/media", tags=["媒体文件"])
 app.include_router(media_settings.router, prefix="/api/settings/media", tags=["媒体配置"])
 app.include_router(pan115.router, prefix="/api/pan115", tags=["115网盘"])
+app.include_router(resource_monitor.router, prefix="/api/resources", tags=["资源监控"])
+app.include_router(performance.router, prefix="/api/performance", tags=["性能监控"])
+app.include_router(notifications.router, prefix="/api/notifications", tags=["通知系统"])
 
 
 @app.get("/health")

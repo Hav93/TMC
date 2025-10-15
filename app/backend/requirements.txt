@@ -28,8 +28,11 @@ cryptography==43.0.3
 Pillow==11.0.0
 protobuf>=4.21.0
 
-# 115网盘SDK
-p115client>=0.0.6.11.8
+# 115网盘SDK  
+# Note: p115client needs to be installed from GitHub
+# pip install git+https://github.com/ChenyangGao/p115client.git
+# Temporarily commented out for Docker build
+# p115client>=0.0.6.11.8
 
 # 认证
 bcrypt==4.2.1
