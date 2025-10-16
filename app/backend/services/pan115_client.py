@@ -493,6 +493,10 @@ class Pan115Client:
         """
         获取用户信息和空间信息
         
+        支持两种方式：
+        1. Open API 方式（需要 app_id, user_id, user_key）
+        2. 常规登录方式（使用 cookies，user_key 存储的是 cookies）
+        
         Returns:
             {
                 "success": bool,
@@ -512,6 +516,14 @@ class Pan115Client:
             }
         """
         try:
+            # 判断是否为常规登录（cookies 包含 UID=, CID=, SEID=）
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
+            
+            if is_cookie_auth:
+                # 使用常规 Web API 获取用户信息
+                return await self._get_user_info_by_cookie()
+            
+            # 使用 Open API 获取用户信息
             params = {
                 'app_id': self.app_id,
                 'user_id': self.user_id,
@@ -577,6 +589,86 @@ class Pan115Client:
                 
         except Exception as e:
             logger.error(f"❌ 获取用户信息异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'message': f"获取用户信息异常: {str(e)}"
+            }
+    
+    async def _get_user_info_by_cookie(self) -> Dict[str, Any]:
+        """
+        使用 cookies 获取用户信息（常规登录方式）
+        
+        Returns:
+            与 get_user_info 相同的格式
+        """
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                'Cookie': self.user_key,  # user_key 存储的是 cookies
+                'Accept': 'application/json, text/plain, */*',
+            }
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # 获取用户信息
+                user_response = await client.get(
+                    f"{self.webapi_url}/user/info",
+                    headers=headers
+                )
+                
+                # 获取空间信息
+                space_response = await client.get(
+                    f"{self.webapi_url}/user/my_data",
+                    headers=headers
+                )
+            
+            if user_response.status_code == 200 and space_response.status_code == 200:
+                user_result = user_response.json()
+                space_result = space_response.json()
+                
+                logger.info(f"📦 用户信息（Cookie）: {user_result}")
+                logger.info(f"📦 空间信息（Cookie）: {space_result}")
+                
+                # 解析用户信息
+                user_data = user_result.get('data', {})
+                space_data = space_result.get('data', {})
+                
+                user_info = {
+                    'user_id': str(user_data.get('user_id', self.user_id)),
+                    'user_name': user_data.get('user_name', ''),
+                    'email': user_data.get('email', ''),
+                    'is_vip': bool(user_data.get('vip', 0) or user_data.get('is_vip', 0)),
+                    'vip_level': user_data.get('vip_level', 0),
+                }
+                
+                # 解析空间信息（字节）
+                if space_data:
+                    user_info['space'] = {
+                        'total': int(space_data.get('space', {}).get('all_total', 0)),
+                        'used': int(space_data.get('space', {}).get('all_use', 0)),
+                        'remain': int(space_data.get('space', {}).get('all_remain', 0)),
+                    }
+                else:
+                    user_info['space'] = {
+                        'total': 0,
+                        'used': 0,
+                        'remain': 0,
+                    }
+                
+                return {
+                    'success': True,
+                    'user_info': user_info,
+                    'message': '获取用户信息成功'
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {user_response.status_code} / {space_response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 使用Cookie获取用户信息异常: {e}")
             import traceback
             traceback.print_exc()
             return {
@@ -1527,15 +1619,34 @@ class Pan115Client:
                                 cookies_str = '; '.join(cookies_parts)
                                 logger.info(f"✅ 115登录成功: UID={user_id}")
                                 
+                                # 获取完整的用户信息（包括会员等级和空间信息）
+                                user_info = {
+                                    'user_id': user_id,
+                                    'user_name': login_data.get('user_name', ''),
+                                }
+                                
+                                # 尝试获取详细的用户信息
+                                try:
+                                    # 创建临时客户端获取详细信息
+                                    temp_client = Pan115Client(
+                                        app_id="",
+                                        app_key="",
+                                        user_id=user_id,
+                                        user_key=cookies_str
+                                    )
+                                    detail_result = await temp_client.get_user_info()
+                                    if detail_result.get('success') and 'user_info' in detail_result:
+                                        user_info = detail_result['user_info']
+                                        logger.info(f"✅ 获取到完整用户信息: {user_info.get('user_name', 'N/A')}")
+                                except Exception as e:
+                                    logger.warning(f"⚠️ 获取详细用户信息失败: {e}")
+                                
                                 return {
                                     'success': True,
                                     'status': 'confirmed',
                                     'cookies': cookies_str,
                                     'user_id': user_id,
-                                    'user_info': {
-                                        'user_id': user_id,
-                                        'user_name': login_data.get('user_name', ''),
-                                    },
+                                    'user_info': user_info,
                                     'message': '登录成功'
                                 }
                     

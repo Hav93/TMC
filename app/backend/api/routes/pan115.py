@@ -74,14 +74,22 @@ async def get_pan115_config(
         # 如果已登录，尝试获取用户详细信息
         if is_configured and hasattr(settings, 'pan115_user_key') and settings.pan115_user_key:
             try:
-                # TODO: 实现使用 Pan115Client 获取用户信息
-                # from services.p115_service import P115Service
-                # p115 = P115Service(cookies=settings.pan115_user_key)
-                # user_info = await p115.get_user_info(settings.pan115_user_key)
-                # if user_info:
-                #     result['user_info'] = user_info
-                #     logger.info(f"✅ 获取到用户信息: {user_info.get('user_name', 'N/A')}")
-                pass
+                # 使用 Pan115Client 获取用户信息
+                app_id = getattr(settings, 'pan115_app_id', None) or ""
+                user_id = getattr(settings, 'pan115_user_id', None) or ""
+                user_key = settings.pan115_user_key
+                
+                client = Pan115Client(
+                    app_id=app_id,
+                    app_key="",
+                    user_id=user_id,
+                    user_key=user_key
+                )
+                
+                user_info_result = await client.get_user_info()
+                if user_info_result.get('success') and 'user_info' in user_info_result:
+                    result['user_info'] = user_info_result['user_info']
+                    logger.info(f"✅ 获取到用户信息: {user_info_result['user_info'].get('user_name', 'N/A')}")
             except Exception as e:
                 logger.warning(f"⚠️ 获取用户信息失败: {e}")
         
