@@ -29,10 +29,9 @@ Pillow==11.0.0
 protobuf>=4.21.0
 
 # 115网盘SDK  
-# Note: p115client needs to be installed from GitHub
-# pip install git+https://github.com/ChenyangGao/p115client.git
-# Temporarily commented out for Docker build
-# p115client>=0.0.6.11.8
+# 使用自定义的 Pan115Client (services/pan115_client.py)
+# 基于 115 Open API: https://www.yuque.com/115yun/open/fd7fidbgsritauxm
+# 不再依赖外部 p115client 包
 
 # 认证
 bcrypt==4.2.1

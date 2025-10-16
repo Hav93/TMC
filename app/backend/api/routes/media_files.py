@@ -1117,16 +1117,31 @@ async def reorganize_media_file(
         logger.info(f"📤 上传到115网盘: {pan115_path}")
         logger.info(f"📤 上传参数: source={source_file}, target_dir={remote_target_dir}, filename={remote_filename}")
         
-        # 使用P115Service上传
-        from services.p115_service import P115Service
-        p115 = P115Service()
+        # 使用 Pan115Client 上传
+        from services.pan115_client import Pan115Client
+        
+        # 需要从数据库获取完整的配置
+        media_settings_result = await db.execute(select(MediaSettings))
+        media_settings = media_settings_result.scalars().first()
+        
+        if not media_settings or not media_settings.pan115_app_id:
+            logger.error("❌ 115网盘配置不完整")
+            return JSONResponse(
+                status_code=400,
+                content={"success": False, "message": "115网盘配置不完整，请检查 app_id"}
+            )
+        
+        client = Pan115Client(
+            app_id=media_settings.pan115_app_id,
+            app_key="",
+            user_id=media_settings.pan115_user_id,
+            user_key=pan115_user_key
+        )
         
         try:
-            upload_result = await p115.upload_file(
-                cookies=pan115_user_key,
+            upload_result = await client.upload_file(
                 file_path=source_file,
-                target_dir=remote_target_dir,
-                file_name=remote_filename
+                target_path=remote_target_dir
             )
             logger.info(f"📤 上传结果: success={upload_result.get('success')}, message={upload_result.get('message')}")
         except Exception as upload_error:

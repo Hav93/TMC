@@ -1120,15 +1120,19 @@ class MediaMonitorService:
                             logger.info(f"   本地文件: {source_file}")
                             logger.info(f"   目标路径: {pan115_path}")
                             
-                            # 使用P115Service上传
-                            from services.p115_service import P115Service
-                            p115 = P115Service()
+                            # 使用 Pan115Client 上传
+                            from services.pan115_client import Pan115Client
                             
-                            upload_result = await p115.upload_file(
-                                cookies=pan115_user_key,
+                            client = Pan115Client(
+                                app_id=media_settings.pan115_app_id or "",
+                                app_key="",
+                                user_id=media_settings.pan115_user_id or "",
+                                user_key=pan115_user_key
+                            )
+                            
+                            upload_result = await client.upload_file(
                                 file_path=source_file,
-                                target_dir=remote_target_dir,
-                                file_name=remote_filename
+                                target_path=remote_target_dir
                             )
                             
                             if upload_result.get('success'):

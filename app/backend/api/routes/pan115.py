@@ -74,12 +74,14 @@ async def get_pan115_config(
         # 如果已登录，尝试获取用户详细信息
         if is_configured and hasattr(settings, 'pan115_user_key') and settings.pan115_user_key:
             try:
-                from services.p115_service import P115Service
-                p115 = P115Service(cookies=settings.pan115_user_key)
-                user_info = await p115.get_user_info(settings.pan115_user_key)
-                if user_info:
-                    result['user_info'] = user_info
-                    logger.info(f"✅ 获取到用户信息: {user_info.get('user_name', 'N/A')}")
+                # TODO: 实现使用 Pan115Client 获取用户信息
+                # from services.p115_service import P115Service
+                # p115 = P115Service(cookies=settings.pan115_user_key)
+                # user_info = await p115.get_user_info(settings.pan115_user_key)
+                # if user_info:
+                #     result['user_info'] = user_info
+                #     logger.info(f"✅ 获取到用户信息: {user_info.get('user_name', 'N/A')}")
+                pass
             except Exception as e:
                 logger.warning(f"⚠️ 获取用户信息失败: {e}")
         
@@ -256,41 +258,40 @@ async def test_pan115_connection(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """测试115网盘连接（使用p115client SDK）"""
+    """测试115网盘连接（使用 Pan115Client）"""
     try:
-        from services.p115_service import get_p115_service
-        
         result = await db.execute(select(MediaSettings))
         settings = result.scalars().first()
         
         if not settings:
             raise HTTPException(status_code=400, detail="未配置115网盘")
         
+        app_id = getattr(settings, 'pan115_app_id', None)
         user_id = getattr(settings, 'pan115_user_id', None)
-        cookies = getattr(settings, 'pan115_user_key', None)
+        user_key = getattr(settings, 'pan115_user_key', None)
         
-        if not user_id or not cookies:
-            raise HTTPException(status_code=400, detail="请先登录115网盘")
+        if not all([app_id, user_id, user_key]):
+            raise HTTPException(status_code=400, detail="请先配置并登录115网盘")
         
-        # 使用p115client测试连接
-        p115 = get_p115_service(cookies=cookies)
+        # 使用 Pan115Client 测试连接
+        client = Pan115Client(
+            app_id=app_id,
+            app_key="",  # Open API 可能不需要 app_key
+            user_id=user_id,
+            user_key=user_key
+        )
         
-        if p115.is_logged_in():
-            # 测试列出根目录（作为连接测试）
-            list_result = await p115.list_files(parent_id="0")
-            
-            if list_result.get('success'):
-                return {
-                    "success": True,
-                    "message": "连接成功",
-                    "user_id": user_id,
-                    "files_count": len(list_result.get('files', [])),
-                    "folders_count": len(list_result.get('folders', []))
-                }
-            else:
-                raise HTTPException(status_code=400, detail="连接失败")
+        test_result = await client.test_connection()
+        
+        if test_result.get('success'):
+            return {
+                "success": True,
+                "message": test_result.get('message', '连接成功'),
+                "user_id": user_id,
+                "user_info": test_result.get('user_info', {})
+            }
         else:
-            raise HTTPException(status_code=400, detail="115网盘未登录")
+            raise HTTPException(status_code=400, detail=test_result.get('message', '连接失败'))
             
     except HTTPException:
         raise
@@ -306,9 +307,8 @@ async def upload_to_pan115(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """上传文件到115网盘"""
+    """上传文件到115网盘（使用 Pan115Client）"""
     try:
-        from services.p115_service import get_p115_service
         from pathlib import Path
         
         # 检查文件是否存在
@@ -322,21 +322,35 @@ async def upload_to_pan115(
         if not settings:
             raise HTTPException(status_code=400, detail="未配置115网盘")
         
-        cookies = getattr(settings, 'pan115_user_key', None)
+        app_id = getattr(settings, 'pan115_app_id', None)
+        user_id = getattr(settings, 'pan115_user_id', None)
+        user_key = getattr(settings, 'pan115_user_key', None)
         
-        if not cookies:
-            raise HTTPException(status_code=400, detail="请先登录115网盘")
+        if not all([app_id, user_id, user_key]):
+            raise HTTPException(status_code=400, detail="请先配置并登录115网盘")
         
-        # 使用p115client上传
-        p115 = get_p115_service(cookies=cookies)
-        upload_result = await p115.upload_file(
+        # 使用 Pan115Client 上传
+        client = Pan115Client(
+            app_id=app_id,
+            app_key="",
+            user_id=user_id,
+            user_key=user_key
+        )
+        
+        upload_result = await client.upload_file(
             file_path=file_path,
-            remote_path=remote_path
+            target_path=remote_path
         )
         
         if upload_result.get('success'):
-            logger.info(f"✅ 文件上传成功: {upload_result['file_name']}")
-            return upload_result
+            logger.info(f"✅ 文件上传成功: {Path(file_path).name}")
+            return {
+                "success": True,
+                "file_id": upload_result.get('file_id', ''),
+                "file_name": Path(file_path).name,
+                "is_quick": upload_result.get('quick_upload', False),
+                "message": upload_result.get('message', '上传成功')
+            }
         else:
             raise HTTPException(status_code=400, detail=upload_result.get('message', '上传失败'))
             
@@ -347,94 +361,22 @@ async def upload_to_pan115(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-class RegularQRCodeRequest(BaseModel):
-    """常规115登录二维码请求"""
-    device_type: str = "qandroid"  # 设备类型：qandroid/qios/android/ios/ipad/web/harmony/alipaymini/wechatmini
+# 以下端点已移除，因为依赖 p115client 包（无法安装）
+# 如需使用常规登录方式，请使用上面的 Open API 方式（/qrcode 和 /qrcode/status）
+
+# class RegularQRCodeRequest(BaseModel):
+#     """常规115登录二维码请求"""
+#     device_type: str = "qandroid"
 
 
-@router.post("/regular-qrcode")
-async def get_regular_qrcode(
-    request: RegularQRCodeRequest,
-    current_user: User = Depends(get_current_user)
-):
-    """获取常规115登录二维码（使用p115client SDK）"""
-    try:
-        from services.p115_service import P115Service
-        
-        logger.info(f"📱 获取常规115登录二维码: 设备类型={request.device_type}")
-        
-        # 使用p115client获取二维码，传入设备类型
-        p115 = P115Service()
-        result = await p115.qrcode_login(device_type=request.device_type)
-        
-        if result.get('success'):
-            logger.info(f"✅ 二维码获取成功: token={result['qrcode_token']}, device={request.device_type}")
-            return result
-        else:
-            raise HTTPException(status_code=400, detail=result.get('message', '获取二维码失败'))
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ 获取常规115登录二维码失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# @router.post("/regular-qrcode")
+# async def get_regular_qrcode(...):
+#     """获取常规115登录二维码（需要 p115client SDK）"""
+#     # 已移除，使用 /qrcode 端点替代
 
 
-@router.post("/regular-qrcode/status")
-async def check_regular_qrcode_status(
-    request: Dict[str, Any] = Body(...),
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """检查常规115登录二维码状态（使用p115client SDK）"""
-    try:
-        qrcode_token_data = request.get('qrcode_token_data')
-        device_type = request.get('device_type', 'qandroid')
-        
-        if not qrcode_token_data:
-            raise HTTPException(status_code=400, detail="缺少qrcode_token_data参数")
-        
-        from services.p115_service import P115Service
-        
-        logger.info(f"🔍 检查常规115登录二维码状态: uid={qrcode_token_data.get('uid')}, device={device_type}")
-        
-        # 使用p115client检查状态
-        p115 = P115Service()
-        result = await p115.check_qrcode_status(qrcode_token_data, device_type)
-        
-        if not result.get('success'):
-            raise HTTPException(status_code=400, detail=result.get('message', '检查状态失败'))
-        
-        # 如果登录成功，保存cookies到数据库
-        if result.get('status') == 'confirmed':
-            cookies = result.get('cookies')
-            user_id = result.get('user_id')
-            user_info = result.get('user_info', {})  # 获取完整的用户信息
-            
-            if cookies and user_id:
-                # 保存到数据库
-                db_result = await db.execute(select(MediaSettings))
-                settings = db_result.scalars().first()
-                if not settings:
-                    settings = MediaSettings()
-                    db.add(settings)
-                
-                # 存储完整的cookies字符串、用户信息和设备类型
-                setattr(settings, 'pan115_user_id', user_id)
-                setattr(settings, 'pan115_user_key', cookies)
-                setattr(settings, 'pan115_device_type', device_type)
-                await db.commit()
-                
-                logger.info(f"✅ 115登录成功并已保存: UID={user_id}, 用户名={user_info.get('user_name', 'N/A')}")
-                
-                # 在返回结果中添加用户信息用于前端显示
-                result['user_info'] = user_info
-        
-        return result
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ 检查常规115登录二维码状态失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+# @router.post("/regular-qrcode/status")
+# async def check_regular_qrcode_status(...):
+#     """检查常规115登录二维码状态（需要 p115client SDK）"""
+#     # 已移除，使用 /qrcode/status 端点替代
 
