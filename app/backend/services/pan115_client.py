@@ -631,18 +631,19 @@ class Pan115Client:
                 # 检查响应状态
                 if list_result.get('state') == False:
                     logger.warning(f"⚠️ API返回失败: {list_result.get('error', '未知错误')}")
-                    # Cookies可能已过期，但仍返回基本信息
+                    # Cookies过期，返回基本信息并提示用户
+                    # 注意：即使cookies过期，我们仍返回success=True，因为user_id是有效的
                     return {
                         'success': True,
                         'user_info': {
                             'user_id': self.user_id,
-                            'user_name': '',
+                            'user_name': f'用户 {self.user_id}',  # 使用UID作为显示名
                             'email': '',
                             'is_vip': False,
                             'vip_level': 0,
                             'space': {'total': 0, 'used': 0, 'remain': 0}
                         },
-                        'message': 'Cookies可能已过期，请重新登录'
+                        'message': '无法获取详细信息，Cookies可能已过期。空间信息将在重新登录后显示。'
                     }
                 
                 # 解析空间信息
@@ -683,6 +684,70 @@ class Pan115Client:
             return {
                 'success': False,
                 'message': f"获取用户信息异常: {str(e)}"
+            }
+    
+    async def _get_space_info_only(self) -> Dict[str, Any]:
+        """
+        仅获取空间信息（用于登录后立即获取）
+        
+        Returns:
+            {
+                "success": bool,
+                "space": {"total": int, "used": int, "remain": int},
+                "message": str
+            }
+        """
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+            }
+            
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                # 使用文件列表API获取空间信息
+                response = await client.get(
+                    f"{self.webapi_url}/files",
+                    params={'aid': 1, 'cid': 0, 'limit': 1},
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                if result.get('state') == False:
+                    # API调用失败，返回默认值
+                    return {
+                        'success': False,
+                        'space': {'total': 0, 'used': 0, 'remain': 0},
+                        'message': result.get('error', '获取失败')
+                    }
+                
+                # 解析空间信息
+                data = result.get('data', result)
+                space = data.get('space', {})
+                
+                return {
+                    'success': True,
+                    'space': {
+                        'total': int(space.get('all_total', {}).get('size', 0) if isinstance(space.get('all_total'), dict) else space.get('all_total', 0)),
+                        'used': int(space.get('all_use', {}).get('size', 0) if isinstance(space.get('all_use'), dict) else space.get('all_use', 0)),
+                        'remain': int(space.get('all_remain', {}).get('size', 0) if isinstance(space.get('all_remain'), dict) else space.get('all_remain', 0)),
+                    },
+                    'message': '获取空间信息成功'
+                }
+            else:
+                return {
+                    'success': False,
+                    'space': {'total': 0, 'used': 0, 'remain': 0},
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 获取空间信息异常: {e}")
+            return {
+                'success': False,
+                'space': {'total': 0, 'used': 0, 'remain': 0},
+                'message': str(e)
             }
     
     async def list_files(self, parent_id: str = "0", limit: int = 1150, 
@@ -1628,27 +1693,41 @@ class Pan115Client:
                                 cookies_str = '; '.join(cookies_parts)
                                 logger.info(f"✅ 115登录成功: UID={user_id}")
                                 
-                                # 获取完整的用户信息（包括会员等级和空间信息）
+                                # 直接从登录响应中构建用户信息（不再调用额外API）
+                                # 登录响应已包含所有必要信息
+                                is_vip_value = login_data.get('is_vip', 0)
+                                # is_vip 是一个大数字（如 4294967295）表示VIP，0表示非VIP
+                                is_vip = bool(is_vip_value and is_vip_value > 0)
+                                
                                 user_info = {
                                     'user_id': user_id,
                                     'user_name': login_data.get('user_name', ''),
+                                    'email': login_data.get('email', ''),
+                                    'mobile': login_data.get('mobile', ''),
+                                    'is_vip': is_vip,
+                                    'vip_level': 0,  # 登录响应不包含具体等级
+                                    'space': {
+                                        'total': 0,
+                                        'used': 0,
+                                        'remain': 0
+                                    }
                                 }
                                 
-                                # 尝试获取详细的用户信息
+                                # 尝试获取空间信息（使用新保存的cookies）
                                 try:
-                                    # 创建临时客户端获取详细信息
                                     temp_client = Pan115Client(
                                         app_id="",
                                         app_key="",
                                         user_id=user_id,
                                         user_key=cookies_str
                                     )
-                                    detail_result = await temp_client.get_user_info()
-                                    if detail_result.get('success') and 'user_info' in detail_result:
-                                        user_info = detail_result['user_info']
-                                        logger.info(f"✅ 获取到完整用户信息: {user_info.get('user_name', 'N/A')}")
+                                    # 只获取空间信息，不获取完整用户信息
+                                    space_result = await temp_client._get_space_info_only()
+                                    if space_result.get('success'):
+                                        user_info['space'] = space_result.get('space', user_info['space'])
+                                        logger.info(f"✅ 获取到空间信息: {space_result.get('space')}")
                                 except Exception as e:
-                                    logger.warning(f"⚠️ 获取详细用户信息失败: {e}")
+                                    logger.warning(f"⚠️ 获取空间信息失败，使用默认值: {e}")
                                 
                                 return {
                                     'success': True,
