@@ -1151,6 +1151,182 @@ class Pan115Client:
             logger.error(f"❌ 获取下载链接异常: {e}")
             return {'success': False, 'message': str(e)}
     
+    async def save_share(self, share_code: str, receive_code: Optional[str] = None, 
+                        target_dir_id: str = "0", file_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+        """
+        转存115分享链接到我的网盘
+        
+        Args:
+            share_code: 分享码（从分享链接中提取，如 https://115.com/s/sw1abc123 中的 sw1abc123）
+            receive_code: 提取码/接收码（如果分享有密码保护）
+            target_dir_id: 目标目录ID（默认为根目录）
+            file_ids: 要转存的文件ID列表（如果为空，则转存全部）
+            
+        Returns:
+            {
+                "success": bool,
+                "message": str,
+                "saved_count": int,  # 成功转存的文件数量
+                "file_list": [...]   # 转存的文件列表
+            }
+        """
+        try:
+            logger.info(f"📥 开始转存分享: share_code={share_code}, receive_code={'***' if receive_code else None}")
+            
+            # 构建请求参数
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'share_code': share_code,
+                'receive_code': receive_code or '',
+                'cid': target_dir_id,
+            }
+            
+            # 如果指定了文件ID，添加到参数中
+            if file_ids:
+                params['file_id'] = ','.join(file_ids)
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/2.0/share/receive",
+                    data=params
+                )
+            
+            logger.info(f"📥 转存响应: {response.status_code}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 转存结果: {result}")
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    data = result.get('data', {})
+                    
+                    # 提取转存结果
+                    saved_count = data.get('count', 0)
+                    file_list = data.get('file_list', [])
+                    
+                    logger.info(f"✅ 转存成功: {saved_count} 个文件")
+                    
+                    return {
+                        'success': True,
+                        'message': f'成功转存 {saved_count} 个文件',
+                        'saved_count': saved_count,
+                        'file_list': file_list
+                    }
+                else:
+                    error_msg = result.get('message', result.get('error', '未知错误'))
+                    error_code = result.get('code', 'unknown')
+                    
+                    # 处理常见错误
+                    if 'password' in error_msg.lower() or error_code == 20009:
+                        error_msg = "提取码错误或分享链接需要提取码"
+                    elif 'not found' in error_msg.lower() or error_code == 20010:
+                        error_msg = "分享链接不存在或已失效"
+                    elif 'expired' in error_msg.lower() or error_code == 20011:
+                        error_msg = "分享链接已过期"
+                    
+                    logger.error(f"❌ 转存失败: {error_msg} (code={error_code})")
+                    
+                    return {
+                        'success': False,
+                        'message': f"转存失败: {error_msg}",
+                        'saved_count': 0,
+                        'file_list': []
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}: {response.text[:200]}",
+                    'saved_count': 0,
+                    'file_list': []
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 转存分享异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'message': f"转存异常: {str(e)}",
+                'saved_count': 0,
+                'file_list': []
+            }
+    
+    async def get_share_info(self, share_code: str, receive_code: Optional[str] = None) -> Dict[str, Any]:
+        """
+        获取115分享链接的文件信息（转存前预览）
+        
+        Args:
+            share_code: 分享码
+            receive_code: 提取码/接收码
+            
+        Returns:
+            {
+                "success": bool,
+                "share_info": {
+                    "title": str,
+                    "file_count": int,
+                    "files": [...]
+                },
+                "message": str
+            }
+        """
+        try:
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'share_code': share_code,
+                'receive_code': receive_code or '',
+            }
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/2.0/share/info",
+                    params=params
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    data = result.get('data', {})
+                    
+                    share_info = {
+                        'title': data.get('share_title', ''),
+                        'file_count': data.get('file_count', 0),
+                        'files': data.get('file_list', []),
+                        'expire_time': data.get('expire_time', 0),
+                    }
+                    
+                    return {
+                        'success': True,
+                        'share_info': share_info,
+                        'message': '获取分享信息成功'
+                    }
+                else:
+                    error_msg = result.get('message', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"获取分享信息失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 获取分享信息异常: {e}")
+            return {'success': False, 'message': str(e)}
+    
     async def test_connection(self) -> Dict[str, Any]:
         """测试连接（使用 get_user_info）"""
         result = await self.get_user_info()
