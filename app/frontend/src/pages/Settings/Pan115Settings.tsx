@@ -102,10 +102,10 @@ const Pan115Settings: React.FC = () => {
     onSuccess: (data: any) => {
       setQrcodeUrl(data.qrcode_url);
       setQrcodeToken(data.qrcode_token);
-      setQrcodeTokenData(data.qrcode_token_data); // 保存完整的token数据
+      setQrcodeTokenData(data.qrcode_token); // 修正：直接使用 qrcode_token
       setQrcodeStatus('waiting');
       setQrcodeModalVisible(true);
-      startPolling(data.qrcode_token_data); // 传递完整数据
+      startPolling(data.qrcode_token); // 修正：传递 qrcode_token 对象
       message.success('请使用115 APP扫码登录');
     },
     onError: (error: any) => {

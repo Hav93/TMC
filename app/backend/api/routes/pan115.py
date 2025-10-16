@@ -401,13 +401,19 @@ async def check_regular_qrcode_status(
 ):
     """检查常规115登录二维码状态（使用 Pan115Client）"""
     try:
+        # 添加详细的请求日志
+        logger.info(f"📥 收到二维码状态检查请求: {request}")
+        
         qrcode_token = request.get('qrcode_token')
         app = request.get('app', 'web')
         
+        logger.info(f"📦 解析参数: qrcode_token={qrcode_token}, app={app}")
+        
         if not qrcode_token:
+            logger.error("❌ 缺少qrcode_token参数")
             raise HTTPException(status_code=400, detail="缺少qrcode_token参数")
         
-        logger.info(f"🔍 检查常规115登录二维码状态: uid={qrcode_token.get('uid')}, app={app}")
+        logger.info(f"🔍 检查常规115登录二维码状态: uid={qrcode_token.get('uid') if isinstance(qrcode_token, dict) else 'N/A'}, app={app}")
         
         # 使用 Pan115Client 的静态方法检查状态
         result = await Pan115Client.check_regular_qrcode_status(qrcode_token, app)
