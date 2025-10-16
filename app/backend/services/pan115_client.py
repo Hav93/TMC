@@ -620,83 +620,38 @@ class Pan115Client:
         """
         使用 cookies 获取用户信息（常规登录方式）
         
-        由于115 Web API可能需要特殊认证，这里使用更通用的方法：
-        通过已有的登录信息构建基本的用户信息
+        直接使用专用的空间信息API（参考 p115_service.py.backup）
         
         Returns:
             与 get_user_info 相同的格式
         """
         try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                'Cookie': self.user_key,  # user_key 存储的是 cookies
-                'Accept': 'application/json, text/plain, */*',
+            # 直接使用专用的空间信息 API
+            space_result = await self._get_space_info_only()
+            
+            user_info = {
+                'user_id': self.user_id,
+                'user_name': '',  # Cookie方式无法获取用户名（需要从登录响应中保存）
+                'email': '',
+                'is_vip': False,  # Cookie方式无法获取VIP信息（需要从登录响应中保存）
+                'vip_level': 0,
+                'vip_name': '普通用户',
+                'space': space_result.get('space', {'total': 0, 'used': 0, 'remain': 0})
             }
             
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-                # 尝试获取文件列表来验证cookies有效性，同时获取空间信息
-                # 115文件列表API: https://webapi.115.com/files
-                list_response = await client.get(
-                    f"{self.webapi_url}/files",
-                    params={'aid': 1, 'cid': 0, 'o': 'user_ptime', 'asc': 0, 'offset': 0, 'show_dir': 1, 'limit': 1},
-                    headers=headers
-                )
-            
-            logger.info(f"📦 文件列表响应状态: {list_response.status_code}")
-            
-            if list_response.status_code == 200:
-                list_result = list_response.json()
-                logger.info(f"📦 文件列表数据（前200字符）: {str(list_result)[:200]}")
-                
-                # 检查响应状态
-                if list_result.get('state') == False:
-                    logger.warning(f"⚠️ API返回失败: {list_result.get('error', '未知错误')}")
-                    # Cookies过期，返回基本信息并提示用户
-                    # 注意：即使cookies过期，我们仍返回success=True，因为user_id是有效的
-                    return {
-                        'success': True,
-                        'user_info': {
-                            'user_id': self.user_id,
-                            'user_name': f'用户 {self.user_id}',  # 使用UID作为显示名
-                            'email': '',
-                            'is_vip': False,
-                            'vip_level': 0,
-                            'vip_name': '普通用户',
-                            'space': {'total': 0, 'used': 0, 'remain': 0}
-                        },
-                        'message': '无法获取详细信息，Cookies可能已过期。空间信息将在重新登录后显示。'
-                    }
-                
-                # 解析空间信息
-                data = list_result.get('data', list_result)  # 有时数据直接在根级别
-                space = data.get('space', {})
-                count = data.get('count', {})
-                
-                user_info = {
-                    'user_id': self.user_id,
-                    'user_name': '',  # 文件列表API不包含用户名
-                    'email': '',
-                    'is_vip': False,  # 需要通过其他方式获取
-                    'vip_level': 0,
-                    'vip_name': '普通用户',
-                    'space': {
-                        'total': int(space.get('all_total', {}).get('size', 0) if isinstance(space.get('all_total'), dict) else space.get('all_total', 0)),
-                        'used': int(space.get('all_use', {}).get('size', 0) if isinstance(space.get('all_use'), dict) else space.get('all_use', 0)),
-                        'remain': int(space.get('all_remain', {}).get('size', 0) if isinstance(space.get('all_remain'), dict) else space.get('all_remain', 0)),
-                    }
-                }
-                
-                logger.info(f"✅ 成功获取空间信息: 总={user_info['space']['total']}, 已用={user_info['space']['used']}")
-                
+            if space_result.get('success'):
+                logger.info(f"✅ Cookie方式获取用户信息成功")
                 return {
                     'success': True,
                     'user_info': user_info,
                     'message': '获取用户信息成功'
                 }
             else:
+                logger.warning(f"⚠️ 获取空间信息失败: {space_result.get('message')}")
                 return {
-                    'success': False,
-                    'message': f"HTTP {list_response.status_code}"
+                    'success': True,  # 仍返回成功，但空间信息为0
+                    'user_info': user_info,
+                    'message': f"已登录，但无法获取空间信息: {space_result.get('message')}"
                 }
                 
         except Exception as e:

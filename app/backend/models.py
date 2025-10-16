@@ -485,6 +485,7 @@ class MediaSettings(Base):
     pan115_user_key = Column(String(200), comment='115用户密钥')
     pan115_request_interval = Column(Float, default=1.0, comment='API请求间隔(秒)')
     pan115_device_type = Column(String(20), default='qandroid', comment='115登录设备类型')
+    pan115_user_info = Column(Text, comment='115用户信息(JSON格式，包含用户名、VIP等级、空间信息等)')
     
     # 下载设置
     temp_folder = Column(String(500), default='/app/media/downloads', comment='临时下载文件夹')

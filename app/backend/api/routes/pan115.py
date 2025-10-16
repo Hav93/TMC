@@ -76,29 +76,50 @@ async def get_pan115_config(
         if is_configured and hasattr(settings, 'pan115_user_key') and settings.pan115_user_key:
             logger.info("✅ 条件满足，进入获取用户信息流程")
             try:
-                # 使用 Pan115Client 获取用户信息
-                app_id = getattr(settings, 'pan115_app_id', None) or ""
-                user_id = getattr(settings, 'pan115_user_id', None) or ""
-                user_key = settings.pan115_user_key
+                # 优先使用数据库中保存的用户信息（登录时保存的）
+                if hasattr(settings, 'pan115_user_info') and settings.pan115_user_info:
+                    try:
+                        import json
+                        cached_user_info = json.loads(settings.pan115_user_info)
+                        result['user_info'] = cached_user_info
+                        logger.info(f"✅ 使用缓存的用户信息: {cached_user_info.get('user_name', 'N/A')}, VIP={cached_user_info.get('vip_name', '普通用户')}")
+                    except Exception as parse_error:
+                        logger.warning(f"⚠️ 解析缓存的用户信息失败: {parse_error}")
+                        # 如果解析失败，继续尝试从API获取
+                        pass
                 
-                logger.info(f"🔍 准备获取用户信息: user_id={user_id}, app_id={app_id}, user_key_len={len(user_key) if user_key else 0}")
-                
-                client = Pan115Client(
-                    app_id=app_id,
-                    app_key="",
-                    user_id=user_id,
-                    user_key=user_key
-                )
-                
-                logger.info(f"📞 调用 get_user_info()...")
-                user_info_result = await client.get_user_info()
-                logger.info(f"📦 get_user_info 返回: success={user_info_result.get('success')}, has_user_info={'user_info' in user_info_result}")
-                
-                if user_info_result.get('success') and 'user_info' in user_info_result:
-                    result['user_info'] = user_info_result['user_info']
-                    logger.info(f"✅ 获取到用户信息: {user_info_result['user_info'].get('user_name', 'N/A')}")
-                else:
-                    logger.warning(f"⚠️ 获取用户信息返回失败: {user_info_result.get('message', 'N/A')}")
+                # 如果没有缓存的用户信息，或解析失败，则从API获取
+                if 'user_info' not in result:
+                    app_id = getattr(settings, 'pan115_app_id', None) or ""
+                    user_id = getattr(settings, 'pan115_user_id', None) or ""
+                    user_key = settings.pan115_user_key
+                    
+                    logger.info(f"🔍 从API获取用户信息: user_id={user_id}")
+                    
+                    client = Pan115Client(
+                        app_id=app_id,
+                        app_key="",
+                        user_id=user_id,
+                        user_key=user_key
+                    )
+                    
+                    user_info_result = await client.get_user_info()
+                    
+                    if user_info_result.get('success') and 'user_info' in user_info_result:
+                        result['user_info'] = user_info_result['user_info']
+                        logger.info(f"✅ 从API获取到用户信息")
+                        
+                        # 更新数据库缓存
+                        try:
+                            import json
+                            settings.pan115_user_info = json.dumps(user_info_result['user_info'], ensure_ascii=False)
+                            await db.commit()
+                            logger.info(f"💾 已更新用户信息缓存")
+                        except Exception as update_error:
+                            logger.warning(f"⚠️ 更新用户信息缓存失败: {update_error}")
+                    else:
+                        logger.warning(f"⚠️ API获取用户信息失败: {user_info_result.get('message', 'N/A')}")
+                        
             except Exception as e:
                 logger.error(f"❌ 获取用户信息异常: {e}")
                 import traceback
@@ -236,6 +257,7 @@ async def check_qrcode_login_status(
         if status == 'confirmed':
             user_id = result.get('user_id')
             user_key = result.get('user_key')
+            user_info = result.get('user_info', {})
             
             if user_id and user_key:
                 # 保存到数据库
@@ -248,15 +270,21 @@ async def check_qrcode_login_status(
                 
                 settings.pan115_user_id = user_id
                 settings.pan115_user_key = user_key
+                settings.pan115_device_type = app  # 保存设备类型
+                
+                # 保存完整的用户信息（JSON格式）
+                import json
+                settings.pan115_user_info = json.dumps(user_info, ensure_ascii=False)
                 
                 await db.commit()
                 
-                logger.info(f"✅ 115用户登录成功并保存: user_id={user_id}")
+                logger.info(f"✅ 115用户登录成功并保存: user_id={user_id}, user_name={user_info.get('user_name', '')}, vip={user_info.get('vip_name', '普通用户')}, device={app}")
                 
                 return {
                     "success": True,
                     "status": "confirmed",
                     "user_id": user_id,
+                    "user_info": user_info,  # 返回完整的用户信息给前端
                     "message": "登录成功"
                 }
         
@@ -459,6 +487,15 @@ async def check_regular_qrcode_status(
                 setattr(settings, 'pan115_user_id', user_id)
                 setattr(settings, 'pan115_user_key', cookies)  # 复用字段存储 cookies
                 setattr(settings, 'pan115_device_type', app)
+                
+                # 保存完整的用户信息到数据库（JSON格式）
+                try:
+                    import json
+                    setattr(settings, 'pan115_user_info', json.dumps(user_info, ensure_ascii=False))
+                    logger.info(f"💾 已保存用户信息到数据库: {user_info.get('user_name', 'N/A')}, VIP={user_info.get('vip_name', '普通用户')}")
+                except Exception as json_error:
+                    logger.warning(f"⚠️ 保存用户信息失败: {json_error}")
+                
                 await db.commit()
                 
                 logger.info(f"✅ 115常规登录成功并已保存: UID={user_id}, 用户名={user_info.get('user_name', 'N/A')}")
