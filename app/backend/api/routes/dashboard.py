@@ -346,13 +346,25 @@ async def get_dashboard_overview():
             pan115_available_space_gb = 0
             
             if media_settings and media_settings.pan115_user_id:
-                # TODO: 实现使用 Pan115Client 获取空间信息
-                # 暂时使用默认值
+                # 使用 Pan115Client 获取空间信息
                 try:
-                    # from services.pan115_client import Pan115Client
-                    # client = Pan115Client(...)
-                    # 需要实现获取用户空间信息的API
-                    logger.info(f"✅ 115空间信息 - 总: {pan115_total_space_gb}GB, 已用: {pan115_used_space_gb}GB, 剩余: {pan115_available_space_gb}GB")
+                    from services.pan115_client import Pan115Client
+                    
+                    client = Pan115Client(
+                        app_id=media_settings.pan115_app_id or "",
+                        app_key="",
+                        user_id=media_settings.pan115_user_id,
+                        user_key=media_settings.pan115_user_key or ""
+                    )
+                    
+                    user_info_result = await client.get_user_info()
+                    if user_info_result.get('success') and 'user_info' in user_info_result:
+                        space_info = user_info_result['user_info'].get('space', {})
+                        # 空间信息单位是字节，转换为GB
+                        pan115_total_space_gb = round(space_info.get('total', 0) / (1024**3), 2)
+                        pan115_used_space_gb = round(space_info.get('used', 0) / (1024**3), 2)
+                        pan115_available_space_gb = round(space_info.get('remain', 0) / (1024**3), 2)
+                        logger.info(f"✅ 115空间信息 - 总: {pan115_total_space_gb}GB, 已用: {pan115_used_space_gb}GB, 剩余: {pan115_available_space_gb}GB")
                 except Exception as e:
                     logger.error(f"获取115网盘空间信息失败: {e}")
             

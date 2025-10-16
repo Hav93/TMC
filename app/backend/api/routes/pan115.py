@@ -361,22 +361,91 @@ async def upload_to_pan115(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# 以下端点已移除，因为依赖 p115client 包（无法安装）
-# 如需使用常规登录方式，请使用上面的 Open API 方式（/qrcode 和 /qrcode/status）
+# ==================== 常规扫码登录（非 Open API）====================
 
-# class RegularQRCodeRequest(BaseModel):
-#     """常规115登录二维码请求"""
-#     device_type: str = "qandroid"
-
-
-# @router.post("/regular-qrcode")
-# async def get_regular_qrcode(...):
-#     """获取常规115登录二维码（需要 p115client SDK）"""
-#     # 已移除，使用 /qrcode 端点替代
+class RegularQRCodeRequest(BaseModel):
+    """常规115登录二维码请求"""
+    app: str = "web"  # 应用类型：web/android/ios/tv/alipaymini/wechatmini/qandroid
 
 
-# @router.post("/regular-qrcode/status")
-# async def check_regular_qrcode_status(...):
-#     """检查常规115登录二维码状态（需要 p115client SDK）"""
-#     # 已移除，使用 /qrcode/status 端点替代
+@router.post("/regular-qrcode")
+async def get_regular_qrcode(
+    request: RegularQRCodeRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """获取常规115登录二维码（使用 Pan115Client）"""
+    try:
+        logger.info(f"📱 获取常规115登录二维码: app={request.app}")
+        
+        # 使用 Pan115Client 的静态方法获取二维码
+        result = await Pan115Client.get_regular_qrcode(app=request.app)
+        
+        if result.get('success'):
+            logger.info(f"✅ 二维码获取成功: token={result['qrcode_token'].get('uid')}, app={request.app}")
+            return result
+        else:
+            raise HTTPException(status_code=400, detail=result.get('message', '获取二维码失败'))
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 获取常规115登录二维码失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/regular-qrcode/status")
+async def check_regular_qrcode_status(
+    request: Dict[str, Any] = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """检查常规115登录二维码状态（使用 Pan115Client）"""
+    try:
+        qrcode_token = request.get('qrcode_token')
+        app = request.get('app', 'web')
+        
+        if not qrcode_token:
+            raise HTTPException(status_code=400, detail="缺少qrcode_token参数")
+        
+        logger.info(f"🔍 检查常规115登录二维码状态: uid={qrcode_token.get('uid')}, app={app}")
+        
+        # 使用 Pan115Client 的静态方法检查状态
+        result = await Pan115Client.check_regular_qrcode_status(qrcode_token, app)
+        
+        if not result.get('success'):
+            raise HTTPException(status_code=400, detail=result.get('message', '检查状态失败'))
+        
+        # 如果登录成功，保存cookies到数据库
+        if result.get('status') == 'confirmed':
+            cookies = result.get('cookies')
+            user_id = result.get('user_id')
+            user_info = result.get('user_info', {})
+            
+            if cookies and user_id:
+                # 保存到数据库
+                db_result = await db.execute(select(MediaSettings))
+                settings = db_result.scalars().first()
+                if not settings:
+                    settings = MediaSettings()
+                    db.add(settings)
+                
+                # 常规登录存储 cookies
+                # 注意：这里存储的是 cookies，不是 Open API 的 user_key
+                setattr(settings, 'pan115_user_id', user_id)
+                setattr(settings, 'pan115_user_key', cookies)  # 复用字段存储 cookies
+                setattr(settings, 'pan115_device_type', app)
+                await db.commit()
+                
+                logger.info(f"✅ 115常规登录成功并已保存: UID={user_id}, 用户名={user_info.get('user_name', 'N/A')}")
+                
+                # 在返回结果中添加用户信息用于前端显示
+                result['user_info'] = user_info
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 检查常规115登录二维码状态失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 

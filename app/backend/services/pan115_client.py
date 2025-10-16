@@ -14,7 +14,7 @@ logger = get_logger('pan115')
 
 
 class Pan115Client:
-    """115网盘 Open API 客户端"""
+    """115网盘 Open API 客户端（同时支持常规登录）"""
     
     def __init__(self, app_id: str, app_key: str, user_id: str, user_key: str):
         """
@@ -32,6 +32,7 @@ class Pan115Client:
         self.user_key = user_key
         self.base_url = "https://proapi.115.com"
         self.auth_url = "https://passportapi.115.com"  # 认证API使用不同的域名
+        self.webapi_url = "https://webapi.115.com"  # 常规 Web API
         
     def _generate_signature(self, params: Dict[str, Any]) -> str:
         """生成API签名"""
@@ -488,8 +489,28 @@ class Pan115Client:
                 'message': str(e)
             }
     
-    async def test_connection(self) -> Dict[str, Any]:
-        """测试连接"""
+    async def get_user_info(self) -> Dict[str, Any]:
+        """
+        获取用户信息和空间信息
+        
+        Returns:
+            {
+                "success": bool,
+                "user_info": {
+                    "user_id": str,
+                    "user_name": str,
+                    "email": str,
+                    "is_vip": bool,
+                    "vip_level": int,
+                    "space": {
+                        "total": int,  # 总空间（字节）
+                        "used": int,   # 已用空间（字节）
+                        "remain": int  # 剩余空间（字节）
+                    }
+                },
+                "message": str
+            }
+        """
         try:
             params = {
                 'app_id': self.app_id,
@@ -508,26 +529,580 @@ class Pan115Client:
             
             if response.status_code == 200:
                 result = response.json()
+                logger.info(f"📦 用户信息响应: {result}")
+                
                 if result.get('state') == True or result.get('code') == 0:
+                    data = result.get('data', {})
+                    
+                    # 解析用户信息
+                    user_info = {
+                        'user_id': data.get('user_id', self.user_id),
+                        'user_name': data.get('user_name', ''),
+                        'email': data.get('email', ''),
+                        'is_vip': bool(data.get('vip', {}).get('is_vip', 0)),
+                        'vip_level': data.get('vip', {}).get('level', 0),
+                    }
+                    
+                    # 解析空间信息
+                    space_data = data.get('space', {})
+                    if space_data:
+                        user_info['space'] = {
+                            'total': int(space_data.get('all_total', {}).get('size', 0)),
+                            'used': int(space_data.get('all_use', {}).get('size', 0)),
+                            'remain': int(space_data.get('all_remain', {}).get('size', 0)),
+                        }
+                    else:
+                        # 如果没有空间信息，尝试单独获取
+                        user_info['space'] = {
+                            'total': 0,
+                            'used': 0,
+                            'remain': 0,
+                        }
+                    
                     return {
                         'success': True,
-                        'message': '115网盘连接成功',
-                        'user_info': result.get('data', {})
+                        'user_info': user_info,
+                        'message': '获取用户信息成功'
                     }
                 else:
                     return {
                         'success': False,
-                        'message': f"认证失败: {result.get('message', '未知错误')}"
+                        'message': f"获取用户信息失败: {result.get('message', '未知错误')}"
                     }
             else:
                 return {
                     'success': False,
-                    'message': f"连接失败: HTTP {response.status_code}"
+                    'message': f"HTTP {response.status_code}: {response.text[:200]}"
                 }
                 
         except Exception as e:
+            logger.error(f"❌ 获取用户信息异常: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 'success': False,
-                'message': f"连接异常: {str(e)}"
+                'message': f"获取用户信息异常: {str(e)}"
+            }
+    
+    async def list_files(self, parent_id: str = "0", limit: int = 1150, 
+                        offset: int = 0, show_dir: int = 1) -> Dict[str, Any]:
+        """
+        列出目录下的文件和文件夹
+        
+        Args:
+            parent_id: 父目录ID，0表示根目录
+            limit: 返回数量限制
+            offset: 偏移量
+            show_dir: 是否显示文件夹，1=显示，0=不显示
+            
+        Returns:
+            {
+                "success": bool,
+                "files": [
+                    {
+                        "id": str,
+                        "name": str,
+                        "size": int,
+                        "is_dir": bool,
+                        "ctime": int,  # 创建时间戳
+                        "utime": int,  # 修改时间戳
+                    }
+                ],
+                "count": int,
+                "message": str
+            }
+        """
+        try:
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'cid': parent_id,
+                'limit': str(limit),
+                'offset': str(offset),
+                'show_dir': str(show_dir),
+            }
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/2.0/file/list",
+                    params=params
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 文件列表响应状态: state={result.get('state')}, count={result.get('count', 0)}")
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    data = result.get('data', [])
+                    
+                    files = []
+                    for item in data:
+                        file_info = {
+                            'id': item.get('fid') or item.get('cid', ''),
+                            'name': item.get('n', ''),
+                            'size': int(item.get('s', 0)),
+                            'is_dir': bool(item.get('cid') and not item.get('fid')),
+                            'ctime': int(item.get('te', 0)),
+                            'utime': int(item.get('tu', 0)),
+                        }
+                        files.append(file_info)
+                    
+                    return {
+                        'success': True,
+                        'files': files,
+                        'count': result.get('count', len(files)),
+                        'message': f'获取文件列表成功，共 {len(files)} 项'
+                    }
+                else:
+                    error_msg = result.get('message', '未知错误')
+                    return {
+                        'success': False,
+                        'files': [],
+                        'count': 0,
+                        'message': f"获取文件列表失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'files': [],
+                    'count': 0,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 列出文件异常: {e}")
+            return {
+                'success': False,
+                'files': [],
+                'count': 0,
+                'message': str(e)
+            }
+    
+    async def delete_files(self, file_ids: List[str]) -> Dict[str, Any]:
+        """
+        删除文件或文件夹
+        
+        Args:
+            file_ids: 文件ID列表（支持批量删除）
+            
+        Returns:
+            {"success": bool, "message": str}
+        """
+        try:
+            # 115 Open API 删除接口支持批量删除
+            fid_str = ','.join(file_ids)
+            
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'fid': fid_str,
+            }
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/2.0/file/delete",
+                    data=params
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    logger.info(f"✅ 删除成功: {len(file_ids)} 个文件/文件夹")
+                    return {
+                        'success': True,
+                        'message': f'成功删除 {len(file_ids)} 个文件/文件夹'
+                    }
+                else:
+                    error_msg = result.get('message', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"删除失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 删除文件异常: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    async def move_files(self, file_ids: List[str], target_dir_id: str) -> Dict[str, Any]:
+        """
+        移动文件或文件夹
+        
+        Args:
+            file_ids: 要移动的文件ID列表
+            target_dir_id: 目标目录ID
+            
+        Returns:
+            {"success": bool, "message": str}
+        """
+        try:
+            fid_str = ','.join(file_ids)
+            
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'fid': fid_str,
+                'pid': target_dir_id,
+            }
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/2.0/file/move",
+                    data=params
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    logger.info(f"✅ 移动成功: {len(file_ids)} 个文件/文件夹")
+                    return {
+                        'success': True,
+                        'message': f'成功移动 {len(file_ids)} 个文件/文件夹'
+                    }
+                else:
+                    error_msg = result.get('message', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"移动失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 移动文件异常: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    async def copy_files(self, file_ids: List[str], target_dir_id: str) -> Dict[str, Any]:
+        """
+        复制文件或文件夹
+        
+        Args:
+            file_ids: 要复制的文件ID列表
+            target_dir_id: 目标目录ID
+            
+        Returns:
+            {"success": bool, "message": str}
+        """
+        try:
+            fid_str = ','.join(file_ids)
+            
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'fid': fid_str,
+                'pid': target_dir_id,
+            }
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/2.0/file/copy",
+                    data=params
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    logger.info(f"✅ 复制成功: {len(file_ids)} 个文件/文件夹")
+                    return {
+                        'success': True,
+                        'message': f'成功复制 {len(file_ids)} 个文件/文件夹'
+                    }
+                else:
+                    error_msg = result.get('message', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"复制失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 复制文件异常: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    async def test_connection(self) -> Dict[str, Any]:
+        """测试连接（使用 get_user_info）"""
+        result = await self.get_user_info()
+        if result['success']:
+            return {
+                'success': True,
+                'message': '115网盘连接成功',
+                'user_info': result.get('user_info', {})
+            }
+        else:
+            return {
+                'success': False,
+                'message': f"连接失败: {result.get('message', '未知错误')}"
+            }
+    
+    # ==================== 常规扫码登录（非 Open API）====================
+    
+    @staticmethod
+    async def get_regular_qrcode(app: str = "web") -> Dict[str, Any]:
+        """
+        获取常规115登录二维码（非 Open API）
+        
+        Args:
+            app: 应用类型，可选值：
+                - "web": 网页版（默认）
+                - "android": Android客户端
+                - "ios": iOS客户端
+                - "tv": TV版
+                - "alipaymini": 支付宝小程序
+                - "wechatmini": 微信小程序
+                - "qandroid": 115生活Android版
+                
+        Returns:
+            {
+                "success": bool,
+                "qrcode_url": str,  # 二维码图片URL（base64）
+                "qrcode_token": {
+                    "uid": str,
+                    "time": int,
+                    "sign": str
+                },
+                "expires_in": int,
+                "message": str
+            }
+        """
+        try:
+            # 115 常规登录二维码 API
+            # 参考：https://github.com/ChenyangGao/web-mount-packs/tree/main/python-115-client
+            url = "https://qrcodeapi.115.com/api/1.0/web/1.0/token"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json',
+            }
+            
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                response = await client.get(url, headers=headers)
+            
+            logger.info(f"📥 常规二维码响应: {response.status_code}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 二维码数据: {result}")
+                
+                if result.get('state') or result.get('code') == 0:
+                    data = result.get('data', {})
+                    
+                    # 提取二维码信息
+                    qrcode_token = {
+                        'uid': data.get('uid', ''),
+                        'time': data.get('time', 0),
+                        'sign': data.get('sign', ''),
+                    }
+                    
+                    # 二维码图片URL
+                    qrcode_url = data.get('qrcode', '')
+                    
+                    return {
+                        'success': True,
+                        'qrcode_url': qrcode_url,
+                        'qrcode_token': qrcode_token,
+                        'expires_in': 300,  # 默认5分钟
+                        'app': app,
+                        'message': '获取二维码成功'
+                    }
+                else:
+                    error_msg = result.get('message', result.get('error', '未知错误'))
+                    return {
+                        'success': False,
+                        'message': f"获取二维码失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}: {response.text[:200]}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 获取常规二维码异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
+    @staticmethod
+    async def check_regular_qrcode_status(qrcode_token: Dict[str, Any], app: str = "web") -> Dict[str, Any]:
+        """
+        检查常规115登录二维码状态
+        
+        Args:
+            qrcode_token: 二维码token数据 {"uid": str, "time": int, "sign": str}
+            app: 应用类型（与获取二维码时保持一致）
+            
+        Returns:
+            {
+                "success": bool,
+                "status": str,  # "waiting" | "scanned" | "confirmed" | "expired"
+                "cookies": str,  # 登录成功后的cookies（status=confirmed时返回）
+                "user_id": str,  # 用户ID
+                "message": str
+            }
+        """
+        try:
+            uid = qrcode_token.get('uid', '')
+            time_val = qrcode_token.get('time', 0)
+            sign = qrcode_token.get('sign', '')
+            
+            if not all([uid, time_val, sign]):
+                return {
+                    'success': False,
+                    'status': 'error',
+                    'message': '二维码token数据不完整'
+                }
+            
+            # 检查扫码状态
+            status_url = f"https://qrcodeapi.115.com/get/status/"
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json',
+            }
+            
+            params = {
+                'uid': uid,
+                'time': time_val,
+                'sign': sign,
+            }
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(status_url, params=params, headers=headers)
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📱 扫码状态: {result}")
+                
+                data = result.get('data', {})
+                status_code = data.get('status', 0)
+                
+                # status: 0=等待扫码, 1=已扫码待确认, 2=已确认
+                if status_code == 2:
+                    # 已确认，获取登录凭证
+                    logger.info(f"✅ 扫码已确认，获取登录凭证")
+                    
+                    # 请求登录接口获取 cookies
+                    login_url = "https://passportapi.115.com/app/1.0/web/1.0/login/qrcode"
+                    
+                    login_params = {
+                        'account': uid,
+                        'app': app,
+                    }
+                    
+                    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as login_client:
+                        login_response = await login_client.post(
+                            login_url,
+                            data=login_params,
+                            headers=headers
+                        )
+                    
+                    logger.info(f"🔐 登录响应: {login_response.status_code}")
+                    
+                    if login_response.status_code == 200:
+                        login_result = login_response.json()
+                        logger.info(f"🔐 登录结果: {login_result}")
+                        
+                        if login_result.get('state'):
+                            login_data = login_result.get('data', {})
+                            
+                            # 提取 cookies
+                            cookie_dict = login_data.get('cookie', {})
+                            user_id = str(login_data.get('user_id', ''))
+                            
+                            # 构建 cookies 字符串
+                            cookies_parts = []
+                            for key in ['UID', 'CID', 'SEID']:
+                                if key in cookie_dict:
+                                    cookies_parts.append(f"{key}={cookie_dict[key]}")
+                            
+                            if cookies_parts and user_id:
+                                cookies_str = '; '.join(cookies_parts)
+                                logger.info(f"✅ 115登录成功: UID={user_id}")
+                                
+                                return {
+                                    'success': True,
+                                    'status': 'confirmed',
+                                    'cookies': cookies_str,
+                                    'user_id': user_id,
+                                    'user_info': {
+                                        'user_id': user_id,
+                                        'user_name': login_data.get('user_name', ''),
+                                    },
+                                    'message': '登录成功'
+                                }
+                    
+                    # 获取登录凭证失败
+                    return {
+                        'success': False,
+                        'status': 'error',
+                        'message': '获取登录凭证失败'
+                    }
+                    
+                elif status_code == 1:
+                    # 已扫码，等待确认
+                    return {
+                        'success': True,
+                        'status': 'scanned',
+                        'message': '已扫码，等待确认'
+                    }
+                elif status_code == -1 or status_code == -2:
+                    # 已过期或取消
+                    return {
+                        'success': True,
+                        'status': 'expired',
+                        'message': '二维码已过期'
+                    }
+                else:
+                    # 等待扫码
+                    return {
+                        'success': True,
+                        'status': 'waiting',
+                        'message': '等待扫码'
+                    }
+            else:
+                return {
+                    'success': False,
+                    'status': 'error',
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 检查常规二维码状态异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'status': 'error',
+                'message': str(e)
             }
 
