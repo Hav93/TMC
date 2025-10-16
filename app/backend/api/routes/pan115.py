@@ -72,12 +72,16 @@ async def get_pan115_config(
         }
         
         # 如果已登录，尝试获取用户详细信息
+        logger.info(f"🔎 检查条件: is_configured={is_configured}, has_attr={hasattr(settings, 'pan115_user_key')}, user_key_exists={bool(settings.pan115_user_key if hasattr(settings, 'pan115_user_key') else False)}")
         if is_configured and hasattr(settings, 'pan115_user_key') and settings.pan115_user_key:
+            logger.info("✅ 条件满足，进入获取用户信息流程")
             try:
                 # 使用 Pan115Client 获取用户信息
                 app_id = getattr(settings, 'pan115_app_id', None) or ""
                 user_id = getattr(settings, 'pan115_user_id', None) or ""
                 user_key = settings.pan115_user_key
+                
+                logger.info(f"🔍 准备获取用户信息: user_id={user_id}, app_id={app_id}, user_key_len={len(user_key) if user_key else 0}")
                 
                 client = Pan115Client(
                     app_id=app_id,
@@ -86,12 +90,19 @@ async def get_pan115_config(
                     user_key=user_key
                 )
                 
+                logger.info(f"📞 调用 get_user_info()...")
                 user_info_result = await client.get_user_info()
+                logger.info(f"📦 get_user_info 返回: success={user_info_result.get('success')}, has_user_info={'user_info' in user_info_result}")
+                
                 if user_info_result.get('success') and 'user_info' in user_info_result:
                     result['user_info'] = user_info_result['user_info']
                     logger.info(f"✅ 获取到用户信息: {user_info_result['user_info'].get('user_name', 'N/A')}")
+                else:
+                    logger.warning(f"⚠️ 获取用户信息返回失败: {user_info_result.get('message', 'N/A')}")
             except Exception as e:
-                logger.warning(f"⚠️ 获取用户信息失败: {e}")
+                logger.error(f"❌ 获取用户信息异常: {e}")
+                import traceback
+                traceback.print_exc()
         
         logger.info(f"📤 返回115配置: {result}")
         return result

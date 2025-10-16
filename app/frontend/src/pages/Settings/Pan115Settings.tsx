@@ -49,6 +49,8 @@ const Pan115Settings: React.FC = () => {
   const [qrcodeStatus, setQrcodeStatus] = useState<'waiting' | 'scanned' | 'confirmed' | 'expired' | 'error'>('waiting');
   const [polling, setPolling] = useState(false);
   const pollingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingCountRef = useRef<number>(0); // 轮询次数计数器
+  const maxPollingCount = 150; // 最大轮询次数（150次 * 2秒 = 5分钟）
   const [useOpenApi, setUseOpenApi] = useState(false); // 是否使用115开放平台API
   const [deviceType, setDeviceType] = useState('qandroid'); // 设备类型
 
@@ -139,9 +141,22 @@ const Pan115Settings: React.FC = () => {
   // 开始轮询二维码状态
   const startPolling = (tokenData: any) => {
     setPolling(true);
+    pollingCountRef.current = 0; // 重置计数器
     
-      const poll = async () => {
+    const poll = async () => {
       try {
+        pollingCountRef.current += 1;
+        
+        // 检查是否超时（5分钟）
+        if (pollingCountRef.current > maxPollingCount) {
+          console.log('二维码已超时，自动刷新...');
+          message.warning('二维码已过期，正在自动刷新...');
+          stopPolling();
+          // 自动重新获取二维码
+          await handleQRCodeLogin();
+          return;
+        }
+        
         // 使用常规方式检查状态，传递设备类型
         const result = await pan115Api.checkRegularQRCodeStatus(tokenData, deviceType);
         
@@ -164,15 +179,17 @@ const Pan115Settings: React.FC = () => {
           setQrcodeModalVisible(false);
           queryClient.invalidateQueries({ queryKey: ['pan115Config'] });
         } else if (result.status === 'expired') {
-          message.error('二维码已过期，请重新获取');
+          message.warning('二维码已过期，正在自动刷新...');
           stopPolling();
+          // 自动重新获取二维码
+          await handleQRCodeLogin();
         } else if (result.status === 'error') {
-          message.error(result.message || '检查状态失败');
-          stopPolling();
+          console.error('检查状态错误:', result.message);
+          // 不停止轮询，继续尝试
         }
       } catch (error: any) {
         console.error('轮询二维码状态失败:', error);
-        stopPolling();
+        // 不停止轮询，继续尝试
       }
     };
 
