@@ -12,6 +12,20 @@ from log_manager import get_logger
 
 logger = get_logger('pan115')
 
+# VIP等级名称映射（参考 p115_service.py.backup）
+VIP_LEVEL_NAMES = {
+    0: '普通用户',
+    1: '原石会员',
+    2: '尝鲜VIP',
+    3: '体验VIP',
+    4: '月费VIP',
+    5: '年费VIP',
+    6: '年费VIP高级版',
+    7: '年费VIP特级版',
+    8: '超级VIP',
+    9: '长期VIP',
+}
+
 
 class Pan115Client:
     """115网盘 Open API 客户端（同时支持常规登录）"""
@@ -547,12 +561,18 @@ class Pan115Client:
                     data = result.get('data', {})
                     
                     # 解析用户信息
+                    vip_data = data.get('vip', {})
+                    vip_level = vip_data.get('level', 0)
+                    is_vip = bool(vip_data.get('is_vip', 0))
+                    vip_name = VIP_LEVEL_NAMES.get(vip_level, f'VIP{vip_level}' if is_vip else '普通用户')
+                    
                     user_info = {
                         'user_id': data.get('user_id', self.user_id),
                         'user_name': data.get('user_name', ''),
                         'email': data.get('email', ''),
-                        'is_vip': bool(data.get('vip', {}).get('is_vip', 0)),
-                        'vip_level': data.get('vip', {}).get('level', 0),
+                        'is_vip': is_vip,
+                        'vip_level': vip_level,
+                        'vip_name': vip_name,
                     }
                     
                     # 解析空间信息
@@ -641,6 +661,7 @@ class Pan115Client:
                             'email': '',
                             'is_vip': False,
                             'vip_level': 0,
+                            'vip_name': '普通用户',
                             'space': {'total': 0, 'used': 0, 'remain': 0}
                         },
                         'message': '无法获取详细信息，Cookies可能已过期。空间信息将在重新登录后显示。'
@@ -657,6 +678,7 @@ class Pan115Client:
                     'email': '',
                     'is_vip': False,  # 需要通过其他方式获取
                     'vip_level': 0,
+                    'vip_name': '普通用户',
                     'space': {
                         'total': int(space.get('all_total', {}).get('size', 0) if isinstance(space.get('all_total'), dict) else space.get('all_total', 0)),
                         'used': int(space.get('all_use', {}).get('size', 0) if isinstance(space.get('all_use'), dict) else space.get('all_use', 0)),
@@ -1708,11 +1730,26 @@ class Pan115Client:
                                 cookies_str = '; '.join(cookies_parts)
                                 logger.info(f"✅ 115登录成功: UID={user_id}")
                                 
-                                # 直接从登录响应中构建用户信息（不再调用额外API）
+                                # 直接从登录响应中构建用户信息（参考 p115_service.py.backup）
                                 # 登录响应已包含所有必要信息
                                 is_vip_value = login_data.get('is_vip', 0)
-                                # is_vip 是一个大数字（如 4294967295）表示VIP，0表示非VIP
-                                is_vip = bool(is_vip_value and is_vip_value > 0)
+                                
+                                # 解析 VIP 状态和等级
+                                # is_vip: 0=普通用户, 大数字(如 4294967295)=VIP用户
+                                # 实际VIP等级需要通过其他方式判断，这里简化处理
+                                if isinstance(is_vip_value, int) and is_vip_value > 9:
+                                    # 大数字表示VIP，但不知道具体等级，默认为VIP会员
+                                    is_vip = True
+                                    vip_level = 0  # 未知等级
+                                    vip_name = 'VIP会员'
+                                else:
+                                    # 小数字直接表示等级
+                                    is_vip = bool(is_vip_value and is_vip_value > 0)
+                                    vip_level = is_vip_value
+                                    vip_name = VIP_LEVEL_NAMES.get(is_vip_value, f'VIP{is_vip_value}' if is_vip else '普通用户')
+                                
+                                # 提取头像信息
+                                face_info = login_data.get('face', {})
                                 
                                 user_info = {
                                     'user_id': user_id,
@@ -1720,13 +1757,22 @@ class Pan115Client:
                                     'email': login_data.get('email', ''),
                                     'mobile': login_data.get('mobile', ''),
                                     'is_vip': is_vip,
-                                    'vip_level': 0,  # 登录响应不包含具体等级
+                                    'vip_level': vip_level,
+                                    'vip_name': vip_name,
+                                    'face': {
+                                        'face_l': face_info.get('face_l', ''),
+                                        'face_m': face_info.get('face_m', ''),
+                                        'face_s': face_info.get('face_s', '')
+                                    },
+                                    'country': login_data.get('country', ''),
                                     'space': {
                                         'total': 0,
                                         'used': 0,
                                         'remain': 0
                                     }
                                 }
+                                
+                                logger.info(f"👤 用户信息: {user_info['user_name']} ({vip_name})")
                                 
                                 # 尝试获取空间信息（使用新保存的cookies）
                                 try:
