@@ -849,6 +849,308 @@ class Pan115Client:
             logger.error(f"❌ 复制文件异常: {e}")
             return {'success': False, 'message': str(e)}
     
+    async def rename_file(self, file_id: str, new_name: str) -> Dict[str, Any]:
+        """
+        重命名文件或文件夹
+        
+        Args:
+            file_id: 文件或文件夹ID
+            new_name: 新名称
+            
+        Returns:
+            {"success": bool, "message": str}
+        """
+        try:
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'fid': file_id,
+                'file_name': new_name,
+            }
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.base_url}/2.0/file/edit",
+                    data=params
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    logger.info(f"✅ 重命名成功: {new_name}")
+                    return {
+                        'success': True,
+                        'message': f'重命名成功: {new_name}'
+                    }
+                else:
+                    error_msg = result.get('message', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"重命名失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 重命名文件异常: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    async def get_file_info(self, file_id: str) -> Dict[str, Any]:
+        """
+        获取文件或文件夹详细信息
+        
+        Args:
+            file_id: 文件或文件夹ID
+            
+        Returns:
+            {
+                "success": bool,
+                "file_info": {
+                    "id": str,
+                    "name": str,
+                    "size": int,
+                    "is_dir": bool,
+                    "ctime": int,
+                    "utime": int,
+                    "parent_id": str,
+                },
+                "message": str
+            }
+        """
+        try:
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'file_id': file_id,
+            }
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/2.0/file/info",
+                    params=params
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    data = result.get('data', {})
+                    
+                    file_info = {
+                        'id': data.get('fid') or data.get('cid', ''),
+                        'name': data.get('n', ''),
+                        'size': int(data.get('s', 0)),
+                        'is_dir': bool(data.get('cid') and not data.get('fid')),
+                        'ctime': int(data.get('te', 0)),
+                        'utime': int(data.get('tu', 0)),
+                        'parent_id': str(data.get('pid', '0')),
+                    }
+                    
+                    return {
+                        'success': True,
+                        'file_info': file_info,
+                        'message': '获取文件信息成功'
+                    }
+                else:
+                    error_msg = result.get('message', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"获取文件信息失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 获取文件信息异常: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    async def search_files(self, keyword: str, parent_id: str = "0", 
+                          file_type: Optional[str] = None, limit: int = 100) -> Dict[str, Any]:
+        """
+        搜索文件
+        
+        Args:
+            keyword: 搜索关键词
+            parent_id: 搜索范围的父目录ID，0表示全盘搜索
+            file_type: 文件类型过滤，可选值：
+                - None: 所有类型
+                - "video": 视频
+                - "audio": 音频
+                - "image": 图片
+                - "document": 文档
+            limit: 返回数量限制
+            
+        Returns:
+            {
+                "success": bool,
+                "files": [...],
+                "count": int,
+                "message": str
+            }
+        """
+        try:
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'search_value': keyword,
+                'cid': parent_id,
+                'limit': str(limit),
+                'offset': '0',
+            }
+            
+            if file_type:
+                # 文件类型映射
+                type_map = {
+                    'video': '1',
+                    'audio': '2',
+                    'image': '3',
+                    'document': '4',
+                }
+                params['type'] = type_map.get(file_type, '0')
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/2.0/file/search",
+                    params=params
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    data = result.get('data', [])
+                    
+                    files = []
+                    for item in data:
+                        file_info = {
+                            'id': item.get('fid') or item.get('cid', ''),
+                            'name': item.get('n', ''),
+                            'size': int(item.get('s', 0)),
+                            'is_dir': bool(item.get('cid') and not item.get('fid')),
+                            'ctime': int(item.get('te', 0)),
+                            'utime': int(item.get('tu', 0)),
+                            'parent_id': str(item.get('pid', '0')),
+                        }
+                        files.append(file_info)
+                    
+                    return {
+                        'success': True,
+                        'files': files,
+                        'count': len(files),
+                        'message': f'搜索成功，找到 {len(files)} 个结果'
+                    }
+                else:
+                    error_msg = result.get('message', '未知错误')
+                    return {
+                        'success': False,
+                        'files': [],
+                        'count': 0,
+                        'message': f"搜索失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'files': [],
+                    'count': 0,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 搜索文件异常: {e}")
+            return {
+                'success': False,
+                'files': [],
+                'count': 0,
+                'message': str(e)
+            }
+    
+    async def get_download_url(self, file_id: str, user_agent: Optional[str] = None) -> Dict[str, Any]:
+        """
+        获取文件下载链接
+        
+        Args:
+            file_id: 文件ID（pickcode）
+            user_agent: 自定义 User-Agent
+            
+        Returns:
+            {
+                "success": bool,
+                "download_url": str,
+                "file_name": str,
+                "file_size": int,
+                "message": str
+            }
+        """
+        try:
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'pick_code': file_id,
+            }
+            
+            params['sign'] = self._generate_signature(params)
+            
+            headers = {}
+            if user_agent:
+                headers['User-Agent'] = user_agent
+            
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                response = await client.get(
+                    f"{self.base_url}/2.0/file/download_url",
+                    params=params,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    data = result.get('data', {})
+                    
+                    return {
+                        'success': True,
+                        'download_url': data.get('url', {}).get('url', ''),
+                        'file_name': data.get('file_name', ''),
+                        'file_size': int(data.get('file_size', 0)),
+                        'message': '获取下载链接成功'
+                    }
+                else:
+                    error_msg = result.get('message', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"获取下载链接失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 获取下载链接异常: {e}")
+            return {'success': False, 'message': str(e)}
+    
     async def test_connection(self) -> Dict[str, Any]:
         """测试连接（使用 get_user_info）"""
         result = await self.get_user_info()
