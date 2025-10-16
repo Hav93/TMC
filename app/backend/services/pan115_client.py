@@ -689,6 +689,7 @@ class Pan115Client:
     async def _get_space_info_only(self) -> Dict[str, Any]:
         """
         仅获取空间信息（用于登录后立即获取）
+        使用 115 的空间信息专用 API
         
         Returns:
             {
@@ -701,37 +702,49 @@ class Pan115Client:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Cookie': self.user_key,
+                'Accept': 'application/json',
             }
             
             async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-                # 使用文件列表API获取空间信息
+                # 使用115的空间信息API（参考 p115client 的 fs_space_info）
                 response = await client.get(
-                    f"{self.webapi_url}/files",
-                    params={'aid': 1, 'cid': 0, 'limit': 1},
+                    f"{self.webapi_url}/user/space_info",
                     headers=headers
                 )
             
+            logger.info(f"📦 空间信息API响应: status={response.status_code}")
+            
             if response.status_code == 200:
                 result = response.json()
+                logger.info(f"📦 空间信息数据: {result}")
                 
                 if result.get('state') == False:
-                    # API调用失败，返回默认值
+                    # API调用失败
                     return {
                         'success': False,
                         'space': {'total': 0, 'used': 0, 'remain': 0},
                         'message': result.get('error', '获取失败')
                     }
                 
-                # 解析空间信息
-                data = result.get('data', result)
-                space = data.get('space', {})
+                # 解析空间信息（参考 p115_service.py.backup 的数据结构）
+                data = result.get('data', {})
+                
+                # all_total 和 all_use 是字典，包含 size 字段
+                total_info = data.get('all_total', {})
+                used_info = data.get('all_use', {})
+                
+                total = int(total_info.get('size', 0) if isinstance(total_info, dict) else total_info)
+                used = int(used_info.get('size', 0) if isinstance(used_info, dict) else used_info)
+                remain = max(0, total - used)  # 计算剩余空间
+                
+                logger.info(f"✅ 空间信息解析成功: 总={total/1024/1024/1024:.2f}GB, 已用={used/1024/1024/1024:.2f}GB, 剩余={remain/1024/1024/1024:.2f}GB")
                 
                 return {
                     'success': True,
                     'space': {
-                        'total': int(space.get('all_total', {}).get('size', 0) if isinstance(space.get('all_total'), dict) else space.get('all_total', 0)),
-                        'used': int(space.get('all_use', {}).get('size', 0) if isinstance(space.get('all_use'), dict) else space.get('all_use', 0)),
-                        'remain': int(space.get('all_remain', {}).get('size', 0) if isinstance(space.get('all_remain'), dict) else space.get('all_remain', 0)),
+                        'total': total,
+                        'used': used,
+                        'remain': remain,
                     },
                     'message': '获取空间信息成功'
                 }
@@ -744,6 +757,8 @@ class Pan115Client:
                 
         except Exception as e:
             logger.error(f"❌ 获取空间信息异常: {e}")
+            import traceback
+            traceback.print_exc()
             return {
                 'success': False,
                 'space': {'total': 0, 'used': 0, 'remain': 0},
