@@ -102,7 +102,7 @@ const pan115Api = {
    */
   getRegularQRCode: async (deviceType: string = 'qandroid') => {
     const response = await apiClient.post<Pan115QRCodeResponse>('/api/pan115/regular-qrcode', {
-      device_type: deviceType
+      app: deviceType  // 修正：后端使用 app 参数
     });
     return response.data;
   },
@@ -112,8 +112,8 @@ const pan115Api = {
    */
   checkRegularQRCodeStatus: async (qrcodeTokenData: any, deviceType: string) => {
     const response = await apiClient.post<Pan115QRCodeStatusResponse>('/api/pan115/regular-qrcode/status', {
-      qrcode_token_data: qrcodeTokenData,
-      device_type: deviceType
+      qrcode_token: qrcodeTokenData,  // 修正：后端使用 qrcode_token 参数
+      app: deviceType  // 修正：后端使用 app 参数
     });
     return response.data;
   },
