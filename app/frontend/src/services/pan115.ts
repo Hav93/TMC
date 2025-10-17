@@ -8,7 +8,10 @@ export interface Pan115Config {
   pan115_user_id?: string;
   pan115_user_key?: string;
   pan115_request_interval?: number;
+  pan115_device_type?: string;
+  pan115_use_proxy?: boolean;  // 是否使用代理
   is_configured?: boolean;
+  open_api_activated?: boolean;  // 开放平台API是否已激活
   user_info?: {
     user_id?: string;
     user_name?: string;
@@ -63,6 +66,7 @@ const pan115Api = {
     pan115_user_id?: string;
     pan115_user_key?: string;
     pan115_request_interval?: number;
+    pan115_use_proxy?: boolean;
   }) => {
     const response = await apiClient.post('/api/pan115/config', data);
     return response.data;
@@ -98,6 +102,14 @@ const pan115Api = {
   },
 
   /**
+   * 刷新115用户信息和空间信息
+   */
+  refreshUserInfo: async () => {
+    const response = await apiClient.post<{ success: boolean; message: string; user_info?: any; from_cache?: boolean }>('/api/pan115/refresh-user-info');
+    return response.data;
+  },
+
+  /**
    * 获取常规115登录二维码（不使用开放平台API）
    */
   getRegularQRCode: async (deviceType: string = 'qandroid') => {
@@ -115,6 +127,32 @@ const pan115Api = {
       qrcode_token: qrcodeTokenData,  // 修正：后端使用 qrcode_token 参数
       app: deviceType  // 修正：后端使用 app 参数
     });
+    return response.data;
+  },
+
+  /**
+   * 测试115 cookies可用性
+   */
+  testCookies: async () => {
+    const response = await apiClient.post<{ 
+      success: boolean; 
+      message: string; 
+      user_info?: any;
+    }>('/api/pan115/test-cookies');
+    return response.data;
+  },
+
+  /**
+   * 激活115开放平台API
+   * 直接使用已有cookies + AppID获取access_token
+   */
+  activateOpenApi: async () => {
+    const response = await apiClient.post<{ 
+      success: boolean;
+      message: string;
+      user_info?: any;
+      has_space_info?: boolean;
+    }>('/api/pan115/activate-open-api');
     return response.data;
   },
 };

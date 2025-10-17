@@ -486,6 +486,10 @@ class MediaSettings(Base):
     pan115_request_interval = Column(Float, default=1.0, comment='API请求间隔(秒)')
     pan115_device_type = Column(String(20), default='qandroid', comment='115登录设备类型')
     pan115_user_info = Column(Text, comment='115用户信息(JSON格式，包含用户名、VIP等级、空间信息等)')
+    pan115_access_token = Column(Text, comment='115开放平台access_token(扫码登录时获取)')
+    pan115_token_expires_at = Column(DateTime, comment='access_token过期时间')
+    pan115_last_refresh_at = Column(DateTime, comment='最后刷新用户信息时间')
+    pan115_use_proxy = Column(Boolean, default=False, comment='115网盘API是否使用代理')
     
     # 下载设置
     temp_folder = Column(String(500), default='/app/media/downloads', comment='临时下载文件夹')

@@ -68,6 +68,7 @@ data/
 temp/
 config/*.json
 config/*.yaml
+config/*.txt
 !config/app.config.example
 
 # Node

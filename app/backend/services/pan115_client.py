@@ -6,6 +6,9 @@ import httpx
 import hashlib
 import time
 import os
+import base64
+import secrets
+import asyncio
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 from log_manager import get_logger
@@ -30,23 +33,402 @@ VIP_LEVEL_NAMES = {
 class Pan115Client:
     """115网盘 Open API 客户端（同时支持常规登录）"""
     
-    def __init__(self, app_id: str, app_key: str, user_id: str, user_key: str):
+    def __init__(self, app_id: str, app_key: str, user_id: str, user_key: str, use_proxy: bool = False):
         """
         初始化115网盘客户端
         
         Args:
-            app_id: 应用ID
-            app_key: 应用密钥
+            app_id: 应用ID (开放平台AppID)
+            app_key: 应用密钥 (开放平台AppSecret)
             user_id: 用户ID
-            user_key: 用户密钥（从115 Open获取）
+            user_key: 用户密钥（可以是cookies字符串或access_token）
+            use_proxy: 是否使用系统代理(默认False,因为115是国内服务)
         """
         self.app_id = app_id
         self.app_key = app_key
         self.user_id = user_id
         self.user_key = user_key
-        self.base_url = "https://proapi.115.com"
+        self.use_proxy = use_proxy  # 是否使用代理
+        self.base_url = "https://proapi.115.com"  # 开放平台API
+        self.open_api_url = "https://passportapi.115.com"  # 开放平台API(正确域名)
         self.auth_url = "https://passportapi.115.com"  # 认证API使用不同的域名
         self.webapi_url = "https://webapi.115.com"  # 常规 Web API
+        self.access_token = None  # Bearer Token(用于开放平台API)
+    
+    def _get_client_kwargs(self, timeout: float = 10.0, **extra_kwargs) -> Dict[str, Any]:
+        """
+        获取httpx.AsyncClient的参数配置
+        
+        Args:
+            timeout: 超时时间(秒)
+            **extra_kwargs: 其他额外参数
+        
+        Returns:
+            客户端配置字典
+        """
+        kwargs = {'timeout': timeout}
+        kwargs.update(extra_kwargs)
+        
+        if self.use_proxy:
+            kwargs['trust_env'] = True  # 使用环境变量中的代理
+        else:
+            kwargs['trust_env'] = False
+            kwargs['proxies'] = None  # 明确禁用所有代理
+        
+        return kwargs
+        
+    def _generate_pkce_pair(self) -> tuple[str, str]:
+        """
+        生成PKCE所需的code_verifier和code_challenge
+        
+        Returns:
+            (code_verifier, code_challenge)
+        """
+        # 生成code_verifier: 43-128个字符的随机字符串
+        code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode('utf-8').rstrip('=')
+        
+        # 生成code_challenge: code_verifier的SHA256哈希的base64编码
+        challenge_bytes = hashlib.sha256(code_verifier.encode('utf-8')).digest()
+        code_challenge = base64.urlsafe_b64encode(challenge_bytes).decode('utf-8').rstrip('=')
+        
+        return code_verifier, code_challenge
+    
+    async def get_device_code(self) -> Dict[str, Any]:
+        """
+        获取设备授权码(Device Code Flow第一步)
+        
+        Returns:
+            {
+                'success': bool,
+                'device_code': str,
+                'user_code': str,
+                'verification_uri': str,
+                'expires_in': int,
+                'interval': int,
+                'code_verifier': str,  # 用于后续获取token
+                'message': str
+            }
+        """
+        try:
+            if not self.app_id:
+                return {
+                    'success': False,
+                    'message': '未配置AppID'
+                }
+            
+            # 生成PKCE参数
+            code_verifier, code_challenge = self._generate_pkce_pair()
+            
+            # 准备请求参数
+            params = {
+                'client_id': self.app_id,
+                'code_challenge': code_challenge,
+                'code_challenge_method': 'sha256',  # 115要求小写
+                'scope': 'basic'  # 基础权限
+            }
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded',
+            }
+            
+            # 如果有cookies,也带上(可能有帮助)
+            if self.user_key:
+                headers['Cookie'] = self.user_key
+            
+            logger.info(f"🔑 请求设备授权码: client_id={self.app_id}")
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
+                response = await client.post(
+                    f"{self.open_api_url}/open/authDeviceCode",
+                    data=params,
+                    headers=headers
+                )
+                
+                logger.info(f"📥 设备授权码响应: status={response.status_code}")
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    logger.info(f"📦 设备授权码数据: {result}")
+                    
+                    if result.get('state') == 1 or result.get('code') == 0:
+                        data = result.get('data', result)
+                        
+                        # 115返回的是二维码格式,需要适配
+                        # 返回的数据: uid, time, qrcode(URL), sign
+                        uid = data.get('uid')
+                        qrcode_url = data.get('qrcode')
+                        
+                        if uid and qrcode_url:
+                            logger.info(f"✅ 获取到开放平台授权二维码: uid={uid}")
+                            
+                            # 115的实现：返回二维码让用户扫描，扫描后自动授权开放平台
+                            return {
+                                'success': True,
+                                'device_code': uid,  # 二维码token的uid
+                                'user_code': '',  # 不需要手动输入码
+                                'verification_uri': qrcode_url,  # 二维码URL，前端用QRCode组件显示
+                                'qrcode_token': data,  # 完整的二维码token数据
+                                'expires_in': 300,  # 默认5分钟
+                                'interval': 2,  # 2秒轮询一次（检查扫码状态）
+                                'code_verifier': code_verifier,
+                                'message': '请使用115 APP扫描二维码完成开放平台授权'
+                            }
+                    
+                    error_msg = result.get('error', result.get('message', '获取授权信息失败'))
+                    logger.warning(f"⚠️ 授权信息获取失败: {error_msg}")
+                    return {
+                        'success': False,
+                        'message': error_msg or '返回数据格式不正确'
+                    }
+                else:
+                    error_text = response.text[:200]
+                    logger.error(f"❌ 设备授权码请求失败: HTTP {response.status_code}, {error_text}")
+                    return {
+                        'success': False,
+                        'message': f'HTTP错误: {response.status_code}'
+                    }
+                    
+        except Exception as e:
+            error_type = type(e).__name__
+            error_msg = str(e) if str(e) else repr(e)
+            logger.error(f"❌ 获取设备授权码异常: {error_type}: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'message': f"{error_type}: {error_msg}"
+            }
+    
+    async def poll_device_token(self, device_code: str, code_verifier: str, qrcode_token: Dict = None, max_attempts: int = 1, interval: int = 0) -> Dict[str, Any]:
+        """
+        轮询检查扫码状态并获取访问令牌
+        
+        115的流程：
+        1. 先检查二维码扫描状态
+        2. 扫描成功后，使用新的cookies + AppID获取access_token
+        
+        Args:
+            device_code: 二维码uid
+            code_verifier: PKCE验证码(暂未使用)
+            qrcode_token: 完整的二维码token数据
+            max_attempts: 最大轮询次数(默认1,由前端控制轮询)
+            interval: 轮询间隔(秒,默认0)
+            
+        Returns:
+            {
+                'success': bool,
+                'access_token': str,
+                'refresh_token': str,
+                'expires_in': int,
+                'status': 'pending'|'authorized'|'error',
+                'message': str
+            }
+        """
+        try:
+            # 步骤1: 检查二维码扫描状态（使用已有的check_regular_qrcode_status方法）
+            if not qrcode_token:
+                qrcode_token = {
+                    'uid': device_code,
+                    'time': int(time.time()),
+                    'sign': ''
+                }
+            
+            logger.info(f"🔄 检查扫码状态: uid={device_code}")
+            
+            # 检查扫码状态（可能会超时，需要捕获异常）
+            try:
+                status_result = await self.check_regular_qrcode_status(qrcode_token, 'qandroid')
+            except Exception as check_err:
+                # 检查扫码状态时出错（可能是超时），返回pending继续等待
+                logger.warning(f"⚠️ 检查扫码状态出错: {check_err}, 继续等待...")
+                return {
+                    'success': False,
+                    'status': 'pending',
+                    'message': '正在检查扫码状态...'
+                }
+            
+            if not status_result.get('success'):
+                # 还在等待扫码
+                return {
+                    'success': False,
+                    'status': 'pending',
+                    'message': '等待用户扫码...'
+                }
+            
+            # 步骤2: 扫码成功，获取到新的cookies
+            status = status_result.get('status')
+            
+            if status == 'confirmed':
+                # 扫码确认成功，获取到新的cookies
+                new_cookies = status_result.get('user_key', '')
+                new_user_id = status_result.get('user_id', '')
+                
+                logger.info(f"✅ 扫码成功，获取到新凭证: user_id={new_user_id}")
+                
+                # 更新客户端的cookies
+                self.user_key = new_cookies
+                self.user_id = new_user_id
+                
+                # 纯Cookie模式：扫码登录只获取Cookie，不自动激活开放平台
+                # 如果用户需要开放平台API，需要后续手动调用 activate_open_api()
+                logger.info(f"✅ 扫码登录完成（Cookie模式）")
+                
+                return {
+                    'success': True,
+                    'status': 'authorized',
+                    'user_key': new_cookies,
+                    'user_id': new_user_id,
+                    'message': '扫码登录成功'
+                }
+                        
+            elif status == 'waiting':
+                return {
+                    'success': False,
+                    'status': 'pending',
+                    'message': '等待用户扫码...'
+                }
+            elif status == 'scanned':
+                return {
+                    'success': False,
+                    'status': 'pending',
+                    'message': '已扫码，等待用户确认...'
+                }
+            elif status == 'expired':
+                return {
+                    'success': False,
+                    'status': 'expired',
+                    'message': '二维码已过期'
+                }
+            else:
+                return {
+                    'success': False,
+                    'status': 'error',
+                    'message': status_result.get('message', '未知状态')
+                }
+                    
+        except Exception as e:
+            error_type = type(e).__name__
+            error_msg = str(e) if str(e) else repr(e)
+            logger.error(f"❌ 轮询异常: {error_type}: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'status': 'error',
+                'message': f"{error_type}: {error_msg}"
+            }
+    
+    async def get_access_token(self) -> Dict[str, Any]:
+        """
+        直接使用cookies + AppID获取115开放平台access_token
+        
+        不需要重新扫码，直接用已登录的cookies激活开放平台
+        
+        Returns:
+            {
+                'success': bool,
+                'access_token': str,
+                'refresh_token': str,
+                'expires_in': int,
+                'message': str
+            }
+        """
+        try:
+            if not self.app_id:
+                logger.warning("⚠️ 未配置AppID")
+                return {
+                    'success': False,
+                    'message': '未配置开放平台AppID'
+                }
+            
+            if not self.user_key:
+                logger.warning("⚠️ 未配置cookies")
+                return {
+                    'success': False,
+                    'message': '请先扫码登录115账号'
+                }
+            
+            logger.info(f"🔑 使用cookies + AppID获取access_token")
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+            }
+            
+            # 115 Open API的token端点 - 使用passportapi.115.com/app/1.0/token
+            # 需要：已登录的cookies + AppID
+            token_url = f"{self.open_api_url}/app/1.0/token"
+            
+            logger.info(f"🔄 请求access_token: {token_url}")
+            logger.info(f"📦 请求参数: client_id={self.app_id}")
+            logger.info(f"🍪 Cookies长度: {len(self.user_key)} 字符")
+            logger.info(f"🍪 Cookies前100字符: {self.user_key[:100]}...")
+            
+            # 尝试使用form-data格式而不是JSON
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0, follow_redirects=False)) as client:
+                response = await client.post(
+                    token_url,
+                    data={'client_id': self.app_id},  # 使用form-data
+                    headers=headers
+                )
+                
+                logger.info(f"📥 响应: HTTP {response.status_code}")
+                if response.status_code == 302:
+                    redirect_url = response.headers.get('Location', 'N/A')
+                    logger.warning(f"🔀 重定向到: {redirect_url}")
+                    logger.error(f"❌ Cookies无效或已过期，需要重新登录")
+                    return {
+                        'success': False,
+                        'message': '登录凭证已过期，请重新扫码登录'
+                    }
+                logger.info(f"📄 响应内容: {response.text[:500]}")
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    logger.info(f"📦 数据: {result}")
+                    
+                    if result.get('state') == 1 or result.get('code') == 0:
+                        data = result.get('data', result)
+                        access_token = data.get('access_token')
+                        
+                        if access_token:
+                            self.access_token = access_token
+                            logger.info(f"✅ access_token获取成功!")
+                            
+                            return {
+                                'success': True,
+                                'access_token': access_token,
+                                'refresh_token': data.get('refresh_token', ''),
+                                'expires_in': data.get('expires_in', 7200),
+                                'message': 'access_token获取成功'
+                            }
+                        else:
+                            error_msg = result.get('message', result.get('error', '响应中没有access_token'))
+                            logger.error(f"❌ {error_msg}")
+                            return {'success': False, 'message': error_msg}
+                    else:
+                        error_msg = result.get('message', result.get('error', 'API返回失败'))
+                        logger.error(f"❌ {error_msg}")
+                        return {'success': False, 'message': error_msg}
+                else:
+                    error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+                    logger.error(f"❌ {error_msg}")
+                    return {'success': False, 'message': error_msg}
+                    
+        except Exception as e:
+            error_type = type(e).__name__
+            error_msg = str(e) if str(e) else repr(e)
+            logger.error(f"❌ 获取access_token异常: {error_type}: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'message': f"{error_type}: {error_msg}"
+            }
         
     def _generate_signature(self, params: Dict[str, Any]) -> str:
         """生成API签名"""
@@ -106,7 +488,7 @@ class Pan115Client:
             params['sign'] = self._generate_signature(params)
             
             # 请求上传信息
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.post(
                     f"{self.base_url}/2.0/upload/init",
                     data=params
@@ -216,7 +598,7 @@ class Pan115Client:
                 # 生成签名
                 upload_params['sign'] = self._generate_signature(upload_params)
                 
-                async with httpx.AsyncClient(timeout=600.0) as client:
+                async with httpx.AsyncClient(**self._get_client_kwargs(timeout=600.0)) as client:
                     response = await client.post(
                         upload_url,
                         files=files,
@@ -321,7 +703,7 @@ class Pan115Client:
             
             params['sign'] = self._generate_signature(params)
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.post(
                     f"{self.base_url}/2.0/file/add",
                     data=params
@@ -389,7 +771,7 @@ class Pan115Client:
                 'Origin': 'https://115.com'
             }
             
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0, follow_redirects=False)) as client:
                 # 115开放平台二维码登录 - 正确的API端点
                 # 参考: https://www.yuque.com/115yun/open/okr2cq0wywelscpe
                 response = await client.get(
@@ -454,7 +836,7 @@ class Pan115Client:
                 'qrcode_token': qrcode_token,
             }
             
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
                 # 115开放平台二维码状态查询
                 # 参考: https://www.yuque.com/115yun/open/okr2cq0wywelscpe
                 response = await client.get(
@@ -547,7 +929,7 @@ class Pan115Client:
             
             params['sign'] = self._generate_signature(params)
             
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
                 response = await client.post(
                     f"{self.base_url}/2.0/user/info",
                     data=params
@@ -666,7 +1048,9 @@ class Pan115Client:
     async def _get_space_info_only(self) -> Dict[str, Any]:
         """
         仅获取空间信息（用于登录后立即获取）
-        使用 115 的空间信息专用 API
+        
+        优先使用p115client SDK的fs_space_info()方法(最可靠)
+        如果SDK不可用,则回退到115云开放平台的Web API
         
         Returns:
             {
@@ -675,61 +1059,232 @@ class Pan115Client:
                 "message": str
             }
         """
+        # 方案0: 优先使用p115client官方库(最可靠)
+        try:
+            from services.p115client_wrapper import get_space_info_with_p115client, P115CLIENT_AVAILABLE
+            
+            if P115CLIENT_AVAILABLE:
+                logger.info("🚀 尝试使用p115client官方库获取空间信息")
+                p115_result = await get_space_info_with_p115client(self.user_key)
+                
+                if p115_result.get('success'):
+                    logger.info(f"✅ p115client成功获取空间信息")
+                    return p115_result
+                else:
+                    logger.warning(f"⚠️ p115client获取失败: {p115_result.get('message')}")
+            else:
+                logger.info("📦 p115client库不可用,跳过")
+        except Exception as p115_error:
+            logger.warning(f"⚠️ p115client调用异常: {p115_error}")
+        
+        # 方案1: 使用115开放平台API(需要access_token)
+        # 如果有AppID,先尝试获取access_token,然后调用开放平台API
+        if self.app_id and not self.access_token:
+            logger.info("🔑 检测到AppID,尝试获取access_token")
+            token_result = await self.get_access_token()
+            if token_result.get('success'):
+                self.access_token = token_result.get('access_token')
+                logger.info("✅ access_token获取成功,将使用开放平台API")
+        
+        # 如果有access_token,使用开放平台API
+        if self.access_token:
+            try:
+                headers = {
+                    'Authorization': f'Bearer {self.access_token}',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Accept': 'application/json',
+                }
+                
+                async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
+                    # 调用开放平台用户信息API
+                    response = await client.get(
+                        f"{self.open_api_url}/open/user/info",
+                        headers=headers
+                    )
+                    
+                    logger.info(f"📦 开放平台API响应: status={response.status_code}")
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        logger.info(f"📦 开放平台API完整响应: {str(result)[:800]}")
+                        
+                        if result.get('state') or result.get('success'):
+                            data = result.get('data', result)
+                            
+                            # 解析空间信息
+                            space_info = data.get('space_info', data.get('space', {}))
+                            total = 0
+                            used = 0
+                            remain = 0
+                            
+                            if isinstance(space_info, dict):
+                                # 尝试多种数据结构
+                                if 'all_total' in space_info:
+                                    if isinstance(space_info['all_total'], dict):
+                                        total = int(space_info['all_total'].get('size', 0))
+                                        used = int(space_info.get('all_use', {}).get('size', 0))
+                                    else:
+                                        total = int(space_info.get('all_total', 0))
+                                        used = int(space_info.get('all_use', 0))
+                                elif 'total' in space_info:
+                                    total = int(space_info.get('total', 0))
+                                    used = int(space_info.get('used', 0))
+                                
+                                remain = max(0, total - used)
+                            
+                            if total > 0:
+                                logger.info(f"✅ 开放平台API获取空间信息成功: 总={total/1024/1024/1024:.2f}GB, 已用={used/1024/1024/1024:.2f}GB")
+                                return {
+                                    'success': True,
+                                    'space': {'total': total, 'used': used, 'remain': remain},
+                                    'message': '从115开放平台获取空间信息成功'
+                                }
+                            else:
+                                logger.warning(f"⚠️ 开放平台API返回的空间信息为0")
+                        else:
+                            error_msg = result.get('error', result.get('message', 'Unknown'))
+                            logger.warning(f"⚠️ 开放平台API失败: {error_msg}")
+                    else:
+                        logger.warning(f"⚠️ 开放平台API HTTP错误: {response.status_code}")
+                        
+            except Exception as open_api_error:
+                logger.warning(f"⚠️ 开放平台API调用失败: {open_api_error}")
+        
+        # 方案1: 回退到Web API(大概率会失败,因为有严格限流)
+        logger.info("📡 回退到Web API(可能会因限流失败)")
         try:
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Cookie': self.user_key,
-                'Accept': 'application/json',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Referer': 'https://115.com/',
+                'Origin': 'https://115.com',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Connection': 'keep-alive',
+                'Sec-Fetch-Dest': 'empty',
+                'Sec-Fetch-Mode': 'cors',
+                'Sec-Fetch-Site': 'same-site',
             }
             
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-                # 使用115的空间信息API（参考 p115client 的 fs_space_info）
-                response = await client.get(
-                    f"{self.webapi_url}/user/space_info",
-                    headers=headers
-                )
-            
-            logger.info(f"📦 空间信息API响应: status={response.status_code}")
-            
-            if response.status_code == 200:
-                result = response.json()
-                logger.info(f"📦 空间信息数据: {result}")
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0, follow_redirects=True)) as client:
+                # 方案1: 尝试多个不同的API获取空间信息
+                # 参考: https://www.yuque.com/115yun/open/ot1litggzxa1czww
                 
-                if result.get('state') == False:
-                    # API调用失败
-                    return {
-                        'success': False,
-                        'space': {'total': 0, 'used': 0, 'remain': 0},
-                        'message': result.get('error', '获取失败')
-                    }
+                # 1.1 先尝试 /user/info (基础用户信息API)
+                try:
+                    user_info_response = await client.get(
+                        f"{self.webapi_url}/user/info",
+                        headers=headers
+                    )
+                    
+                    logger.info(f"📦 /user/info API响应: status={user_info_response.status_code}")
+                    
+                    if user_info_response.status_code == 200:
+                        user_info_result = user_info_response.json()
+                        logger.info(f"📦 /user/info完整响应(前800字符): {str(user_info_result)[:800]}")
+                        logger.info(f"📦 /user/info响应keys: {list(user_info_result.keys())}")
+                        
+                        if user_info_result.get('state'):
+                            data = user_info_result.get('data', {})
+                            logger.info(f"📦 data字段keys: {list(data.keys()) if isinstance(data, dict) else 'not a dict'}")
+                            
+                            # 根据115云开放平台文档,空间信息在data字段中
+                            total = 0
+                            used = 0
+                            remain = 0
+                            
+                            # 尝试多种可能的数据结构
+                            # 结构1: data.space_info.all_total.size
+                            space_info = data.get('space_info', {})
+                            if isinstance(space_info, dict) and space_info:
+                                logger.info(f"📦 space_info字段: {space_info}")
+                                if isinstance(space_info.get('all_total'), dict):
+                                    total = int(space_info['all_total'].get('size', 0))
+                                    used = int(space_info.get('all_use', {}).get('size', 0))
+                                    remain = int(space_info.get('all_remain', {}).get('size', 0))
+                                elif isinstance(space_info.get('all_total'), (int, float)):
+                                    total = int(space_info.get('all_total', 0))
+                                    used = int(space_info.get('all_use', 0))
+                                    remain = int(space_info.get('all_remain', 0))
+                            
+                            # 结构2: 直接从data中获取
+                            if total == 0:
+                                if isinstance(data.get('all_total'), dict):
+                                    total = int(data['all_total'].get('size', 0))
+                                    used = int(data.get('all_use', {}).get('size', 0))
+                                    remain = int(data.get('all_remain', {}).get('size', 0))
+                                elif isinstance(data.get('all_total'), (int, float)):
+                                    total = int(data.get('all_total', 0))
+                                    used = int(data.get('all_use', 0))
+                                    remain = int(data.get('all_remain', 0))
+                            
+                            # 如果remain为0但total和used有值,计算remain
+                            if remain == 0 and total > 0:
+                                remain = max(0, total - used)
+                            
+                            logger.info(f"📊 解析结果: total={total}, used={used}, remain={remain}")
+                            
+                            if total > 0:  # 成功获取到空间信息
+                                logger.info(f"✅ 从/user/data获取空间信息成功: 总={total/1024/1024/1024:.2f}GB, 已用={used/1024/1024/1024:.2f}GB, 剩余={remain/1024/1024/1024:.2f}GB")
+                                return {
+                                    'success': True,
+                                    'space': {'total': total, 'used': used, 'remain': remain},
+                                    'message': '从用户数据获取空间信息成功'
+                                }
+                            else:
+                                logger.warning(f"⚠️ /user/data API返回的空间信息为0")
+                        else:
+                            logger.warning(f"⚠️ /user/info API state=False: {user_info_result.get('error', 'Unknown error')}")
+                except Exception as user_info_error:
+                    logger.warning(f"⚠️ /user/info API调用失败: {user_info_error}")
                 
-                # 解析空间信息（参考 p115_service.py.backup 的数据结构）
-                data = result.get('data', {})
+                # 方案2: 回退到 /files API
+                try:
+                    files_response = await client.get(
+                        f"{self.webapi_url}/files",
+                        params={'cid': 0, 'limit': 1},
+                        headers=headers
+                    )
+                    
+                    if files_response.status_code == 200:
+                        files_result = files_response.json()
+                        if files_result.get('state'):
+                            space_data = files_result.get('space', {})
+                            if space_data:
+                                total = 0
+                                used = 0
+                                remain = 0
+                                
+                                if isinstance(space_data.get('all_total'), dict):
+                                    total = int(space_data['all_total'].get('size', 0))
+                                    used = int(space_data.get('all_use', {}).get('size', 0))
+                                    remain = int(space_data.get('all_remain', {}).get('size', 0))
+                                elif isinstance(space_data.get('all_total'), (int, float)):
+                                    total = int(space_data.get('all_total', 0))
+                                    used = int(space_data.get('all_use', 0))
+                                    remain = int(space_data.get('all_remain', 0))
+                                
+                                if remain == 0 and total > 0:
+                                    remain = max(0, total - used)
+                                
+                                if total > 0:
+                                    logger.info(f"✅ 从/files获取空间信息成功: 总={total/1024/1024/1024:.2f}GB")
+                                    return {
+                                        'success': True,
+                                        'space': {'total': total, 'used': used, 'remain': remain},
+                                        'message': '从文件列表获取空间信息成功'
+                                    }
+                except Exception as files_error:
+                    logger.warning(f"⚠️ /files API调用失败: {files_error}")
                 
-                # all_total 和 all_use 是字典，包含 size 字段
-                total_info = data.get('all_total', {})
-                used_info = data.get('all_use', {})
-                
-                total = int(total_info.get('size', 0) if isinstance(total_info, dict) else total_info)
-                used = int(used_info.get('size', 0) if isinstance(used_info, dict) else used_info)
-                remain = max(0, total - used)  # 计算剩余空间
-                
-                logger.info(f"✅ 空间信息解析成功: 总={total/1024/1024/1024:.2f}GB, 已用={used/1024/1024/1024:.2f}GB, 剩余={remain/1024/1024/1024:.2f}GB")
-                
-                return {
-                    'success': True,
-                    'space': {
-                        'total': total,
-                        'used': used,
-                        'remain': remain,
-                    },
-                    'message': '获取空间信息成功'
-                }
-            else:
+                # 所有方案都失败
+                logger.warning(f"⚠️ 所有空间信息API都失败")
                 return {
                     'success': False,
                     'space': {'total': 0, 'used': 0, 'remain': 0},
-                    'message': f"HTTP {response.status_code}"
+                    'message': '所有空间信息API都失败'
                 }
                 
         except Exception as e:
@@ -784,7 +1339,7 @@ class Pan115Client:
             
             params['sign'] = self._generate_signature(params)
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.get(
                     f"{self.base_url}/2.0/file/list",
                     params=params
@@ -864,7 +1419,7 @@ class Pan115Client:
             
             params['sign'] = self._generate_signature(params)
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.post(
                     f"{self.base_url}/2.0/file/delete",
                     data=params
@@ -920,7 +1475,7 @@ class Pan115Client:
             
             params['sign'] = self._generate_signature(params)
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.post(
                     f"{self.base_url}/2.0/file/move",
                     data=params
@@ -976,7 +1531,7 @@ class Pan115Client:
             
             params['sign'] = self._generate_signature(params)
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.post(
                     f"{self.base_url}/2.0/file/copy",
                     data=params
@@ -1030,7 +1585,7 @@ class Pan115Client:
             
             params['sign'] = self._generate_signature(params)
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.post(
                     f"{self.base_url}/2.0/file/edit",
                     data=params
@@ -1094,7 +1649,7 @@ class Pan115Client:
             
             params['sign'] = self._generate_signature(params)
             
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
                 response = await client.get(
                     f"{self.base_url}/2.0/file/info",
                     params=params
@@ -1185,7 +1740,7 @@ class Pan115Client:
             
             params['sign'] = self._generate_signature(params)
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.get(
                     f"{self.base_url}/2.0/file/search",
                     params=params
@@ -1273,7 +1828,7 @@ class Pan115Client:
             if user_agent:
                 headers['User-Agent'] = user_agent
             
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
                 response = await client.get(
                     f"{self.base_url}/2.0/file/download_url",
                     params=params,
@@ -1348,7 +1903,7 @@ class Pan115Client:
             
             params['sign'] = self._generate_signature(params)
             
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=60.0)) as client:
                 response = await client.post(
                     f"{self.base_url}/2.0/share/receive",
                     data=params
@@ -1445,7 +2000,7 @@ class Pan115Client:
             
             params['sign'] = self._generate_signature(params)
             
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
                 response = await client.get(
                     f"{self.base_url}/2.0/share/info",
                     params=params
@@ -1502,10 +2057,12 @@ class Pan115Client:
     
     # ==================== 常规扫码登录（非 Open API）====================
     
-    @staticmethod
-    async def get_regular_qrcode(app: str = "web") -> Dict[str, Any]:
+    async def get_regular_qrcode(self, app: str = "web") -> Dict[str, Any]:
         """
-        获取常规115登录二维码（非 Open API）
+        获取115登录二维码（纯Cookie模式）
+        
+        注意：此方法始终使用常规登录二维码，不管是否配置了AppID
+        如果需要使用开放平台API，请在登录后调用 activate_open_api()
         
         Args:
             app: 应用类型，可选值：
@@ -1515,7 +2072,7 @@ class Pan115Client:
                 - "tv": TV版
                 - "alipaymini": 支付宝小程序
                 - "wechatmini": 微信小程序
-                - "qandroid": 115生活Android版
+                - "qandroid": 115生活Android版（推荐）
                 
         Returns:
             {
@@ -1527,20 +2084,26 @@ class Pan115Client:
                     "sign": str
                 },
                 "expires_in": int,
+                "app": str,
                 "message": str
             }
         """
         try:
+            # 始终使用常规登录二维码（纯Cookie模式）
             # 115 常规登录二维码 API
             # 参考：https://github.com/ChenyangGao/web-mount-packs/tree/main/python-115-client
-            url = "https://qrcodeapi.115.com/api/1.0/web/1.0/token"
+            # 不同的app类型使用不同的URL路径
+            # 格式: https://qrcodeapi.115.com/api/1.0/{app}/1.0/token
+            url = f"https://qrcodeapi.115.com/api/1.0/{app}/1.0/token"
+            
+            logger.info(f"📱 生成常规登录二维码: app={app}, url={url}")
             
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Accept': 'application/json',
             }
             
-            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0, follow_redirects=True)) as client:
                 response = await client.get(url, headers=headers)
             
             logger.info(f"📥 常规二维码响应: {response.status_code}")
@@ -1588,8 +2151,7 @@ class Pan115Client:
             traceback.print_exc()
             return {'success': False, 'message': str(e)}
     
-    @staticmethod
-    async def check_regular_qrcode_status(qrcode_token: Dict[str, Any], app: str = "web") -> Dict[str, Any]:
+    async def check_regular_qrcode_status(self, qrcode_token: Dict[str, Any], app: str = "web") -> Dict[str, Any]:
         """
         检查常规115登录二维码状态
         
@@ -1632,8 +2194,11 @@ class Pan115Client:
                 'sign': sign,
             }
             
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            # 增加timeout到30秒,因为115的状态检查API可能比较慢
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                logger.info(f"🌐 请求扫码状态API: {status_url}")
                 response = await client.get(status_url, params=params, headers=headers)
+                logger.info(f"📡 状态API响应: HTTP {response.status_code}")
             
             if response.status_code == 200:
                 result = response.json()
@@ -1648,14 +2213,18 @@ class Pan115Client:
                     logger.info(f"✅ 扫码已确认，获取登录凭证")
                     
                     # 请求登录接口获取 cookies
-                    login_url = "https://passportapi.115.com/app/1.0/web/1.0/login/qrcode"
+                    # 不同的app类型使用不同的URL路径
+                    # 格式: https://passportapi.115.com/app/1.0/{app}/1.0/login/qrcode
+                    login_url = f"https://passportapi.115.com/app/1.0/{app}/1.0/login/qrcode"
+                    
+                    logger.info(f"🔐 登录URL: {login_url}, app={app}")
                     
                     login_params = {
                         'account': uid,
                         'app': app,
                     }
                     
-                    async with httpx.AsyncClient(timeout=10.0, follow_redirects=False) as login_client:
+                    async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0, follow_redirects=False)) as login_client:
                         login_response = await login_client.post(
                             login_url,
                             data=login_params,
@@ -1675,6 +2244,14 @@ class Pan115Client:
                             cookie_dict = login_data.get('cookie', {})
                             user_id = str(login_data.get('user_id', ''))
                             
+                            # 🔑 提取 access_token (根据115开放平台文档,扫码登录响应中包含access_token)
+                            access_token = login_data.get('access_token', login_data.get('token', ''))
+                            if access_token:
+                                logger.info(f"🔑 获取到access_token: {access_token[:30]}...")
+                            else:
+                                logger.warning(f"⚠️ 登录响应中未找到access_token")
+                                logger.info(f"📦 登录响应keys: {list(login_data.keys())}")
+                            
                             # 构建 cookies 字符串（包含所有必要的cookie字段）
                             cookies_parts = []
                             for key in ['UID', 'CID', 'SEID', 'KID']:
@@ -1683,7 +2260,7 @@ class Pan115Client:
                             
                             if cookies_parts and user_id:
                                 cookies_str = '; '.join(cookies_parts)
-                                logger.info(f"✅ 115登录成功: UID={user_id}")
+                                logger.info(f"✅ 115登录成功: UID={user_id}, has_access_token={bool(access_token)}")
                                 
                                 # 直接从登录响应中构建用户信息（参考 p115_service.py.backup）
                                 # 登录响应已包含所有必要信息
@@ -1729,7 +2306,7 @@ class Pan115Client:
                                 
                                 logger.info(f"👤 用户信息: {user_info['user_name']} ({vip_name})")
                                 
-                                # 尝试获取空间信息（使用新保存的cookies）
+                                # 尝试获取空间信息（优先使用access_token）
                                 try:
                                     temp_client = Pan115Client(
                                         app_id="",
@@ -1737,6 +2314,12 @@ class Pan115Client:
                                         user_id=user_id,
                                         user_key=cookies_str
                                     )
+                                    
+                                    # 🔑 如果有access_token,设置到client中
+                                    if access_token:
+                                        temp_client.access_token = access_token
+                                        logger.info(f"🔑 使用access_token获取空间信息")
+                                    
                                     # 只获取空间信息，不获取完整用户信息
                                     space_result = await temp_client._get_space_info_only()
                                     if space_result.get('success'):
@@ -1751,6 +2334,7 @@ class Pan115Client:
                                     'cookies': cookies_str,
                                     'user_id': user_id,
                                     'user_info': user_info,
+                                    'access_token': access_token if access_token else None,  # 返回access_token
                                     'message': '登录成功'
                                 }
                     

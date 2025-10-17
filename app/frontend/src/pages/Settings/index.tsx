@@ -19,6 +19,7 @@ import {
 } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { settingsApi } from '../../services/settings';
+import apiConfig from '../../services/api-config';
 import { useThemeContext } from '../../theme';
 import Pan115Settings from './Pan115Settings';
 import MediaSettingsPage from './MediaSettings';
@@ -64,25 +65,59 @@ const SettingsPage: React.FC = () => {
     }
   }, [currentConfig, proxyForm, systemForm]);
 
-  // 模拟代理测试功能
+  // 测试代理连接
   const testProxyMutation = useMutation({
     mutationFn: async (values: any) => {
-      const response = await fetch(`http://${values.proxy_host}:${values.proxy_port}`, {
-        method: 'GET',
-        mode: 'no-cors',
-      }).catch(() => null);
+      // 调用后端API测试代理连接
+      const baseURL = (import.meta as any)?.env?.VITE_API_URL || ((import.meta as any)?.env?.PROD ? '' : 'http://localhost:9393');
+      const response = await fetch(`${baseURL}/api/settings/test-proxy`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+        },
+        body: JSON.stringify(values)
+      });
       
-      return {
-        success: !!response,
-        message: response ? '代理连接测试完成' : '代理连接失败'
-      };
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || '测试失败');
+      }
+      return data;
     },
     onSuccess: (result) => {
       if (result.success) {
-        message.success('✅ 代理连接测试完成！');
+        // 根据延迟显示不同的提示
+        const latency = result.latency_ms;
+        let duration = 4;
+        
+        if (latency && latency < 100) {
+          // 延迟很低,显示时间短一些
+          duration = 3;
+        } else if (latency && latency > 500) {
+          // 延迟高,显示时间长一些并加提示
+          duration = 5;
+        }
+        
+        message.success({
+          content: result.message || '✅ 代理连接测试成功！',
+          duration,
+          style: { whiteSpace: 'pre-line', fontSize: '14px' }
+        });
       } else {
-        message.error(`❌ 代理测试失败: ${result.message}`);
+        message.error({
+          content: result.message || '❌ 代理测试失败',
+          duration: 5,
+          style: { whiteSpace: 'pre-line' }
+        });
       }
+    },
+    onError: (error: any) => {
+      message.error({
+        content: error.message || '❌ 测试失败: 未知错误',
+        duration: 5,
+        style: { whiteSpace: 'pre-line' }
+      });
     },
   });
 

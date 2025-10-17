@@ -173,9 +173,182 @@ async def save_settings(request: Request):
         }, status_code=500)
 
 
+@router.post("/test-proxy")
+async def test_proxy(request: Request):
+    """
+    测试代理连接
+    
+    从请求中获取代理配置并测试连接性
+    """
+    try:
+        data = await request.json()
+        logger.info(f"🧪 测试代理连接: {data.get('proxy_type', 'http')}://{data.get('proxy_host', '127.0.0.1')}:{data.get('proxy_port', '7890')}")
+        
+        # 验证必需参数
+        if not data.get('enable_proxy'):
+            return JSONResponse(content={
+                "success": False,
+                "message": "代理未启用"
+            }, status_code=400)
+        
+        proxy_host = data.get('proxy_host')
+        proxy_port = data.get('proxy_port')
+        
+        if not proxy_host or not proxy_port:
+            return JSONResponse(content={
+                "success": False,
+                "message": "代理配置不完整：缺少主机或端口"
+            }, status_code=400)
+        
+        # 测试代理连接到Telegram
+        import socket
+        import time
+        import httpx
+        from proxy_utils import get_proxy_manager
+        
+        try:
+            # 第1步: 测试TCP连接到代理服务器
+            logger.info(f"🔌 步骤1: 测试代理服务器连接 {proxy_host}:{proxy_port}...")
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5.0)
+            
+            start_time = time.time()
+            tcp_result = sock.connect_ex((proxy_host, int(proxy_port)))
+            tcp_time = time.time()
+            sock.close()
+            
+            tcp_latency_ms = (tcp_time - start_time) * 1000
+            
+            if tcp_result != 0:
+                error_codes = {
+                    10061: "连接被拒绝 (目标端口未开放)",
+                    10060: "连接超时 (目标主机无响应)",
+                    10051: "网络不可达",
+                    10065: "主机不可达"
+                }
+                error_msg = error_codes.get(tcp_result, f"连接失败 (错误码: {tcp_result})")
+                logger.warning(f"❌ 代理TCP连接失败: {error_msg}")
+                return JSONResponse(content={
+                    "success": False,
+                    "message": f"❌ 代理连接失败\n{error_msg}\n\n请检查:\n1. 代理服务器是否运行\n2. IP和端口是否正确\n3. 防火墙设置"
+                }, status_code=400)
+            
+            logger.info(f"✅ TCP连接成功, 延迟: {tcp_latency_ms:.0f}ms")
+            
+            # 第2步: 通过代理访问Telegram网站
+            logger.info(f"🌐 步骤2: 通过代理访问Telegram网站...")
+            
+            try:
+                # 构建代理URL
+                proxy_type = data.get('proxy_type', 'http').lower()
+                proxy_username = data.get('proxy_username', '')
+                proxy_password = data.get('proxy_password', '')
+                
+                # 构建代理认证信息
+                if proxy_username and proxy_password:
+                    proxy_url = f"{proxy_type}://{proxy_username}:{proxy_password}@{proxy_host}:{proxy_port}"
+                else:
+                    proxy_url = f"{proxy_type}://{proxy_host}:{proxy_port}"
+                
+                # 测试访问Telegram网站
+                test_url = "https://telegram.org"
+                
+                async with httpx.AsyncClient(
+                    proxies=proxy_url,
+                    timeout=10.0,
+                    follow_redirects=True
+                ) as client:
+                    tg_start_time = time.time()
+                    response = await client.get(test_url)
+                    tg_end_time = time.time()
+                    
+                    tg_latency_ms = (tg_end_time - tg_start_time) * 1000
+                    
+                    if response.status_code == 200:
+                        # 成功访问Telegram
+                        total_latency = tcp_latency_ms + tg_latency_ms
+                        
+                        # 根据总延迟给出评价
+                        if total_latency < 500:
+                            speed_rating = "极快 🚀"
+                        elif total_latency < 1000:
+                            speed_rating = "很快 ✨"
+                        elif total_latency < 2000:
+                            speed_rating = "良好 ✅"
+                        elif total_latency < 5000:
+                            speed_rating = "一般 ⚠️"
+                        else:
+                            speed_rating = "较慢 🐢"
+                        
+                        logger.info(f"✅ Telegram访问成功: {response.status_code}, 延迟: {tg_latency_ms:.0f}ms")
+                        return JSONResponse(content={
+                            "success": True,
+                            "message": f"✅ 代理测试成功\n\n主机: {proxy_host}\n端口: {proxy_port}\nTCP延迟: {tcp_latency_ms:.0f}ms\nTelegram延迟: {tg_latency_ms:.0f}ms\n总延迟: {total_latency:.0f}ms ({speed_rating})\n\n✅ 可以正常访问Telegram",
+                            "latency_ms": round(total_latency, 2),
+                            "tcp_latency_ms": round(tcp_latency_ms, 2),
+                            "tg_latency_ms": round(tg_latency_ms, 2)
+                        })
+                    else:
+                        logger.warning(f"⚠️ Telegram访问HTTP错误: {response.status_code}")
+                        return JSONResponse(content={
+                            "success": False,
+                            "message": f"⚠️ 代理连接成功,但访问Telegram失败\n\nTCP延迟: {tcp_latency_ms:.0f}ms\nHTTP状态: {response.status_code}\n\n可能原因:\n1. 代理不支持HTTPS\n2. 代理限制了Telegram访问\n3. 网络环境问题"
+                        }, status_code=400)
+                        
+            except httpx.ProxyError as proxy_err:
+                logger.error(f"❌ 代理协议错误: {proxy_err}")
+                return JSONResponse(content={
+                    "success": False,
+                    "message": f"❌ 代理配置错误\n\nTCP连接: ✅ 成功 ({tcp_latency_ms:.0f}ms)\nTelegram访问: ❌ 失败\n\n错误: {str(proxy_err)}\n\n可能原因:\n1. 代理类型选择错误\n2. 需要用户名密码认证\n3. 代理协议不兼容"
+                }, status_code=400)
+                
+            except httpx.TimeoutException:
+                logger.error(f"❌ Telegram访问超时")
+                return JSONResponse(content={
+                    "success": False,
+                    "message": f"❌ 访问Telegram超时\n\nTCP连接: ✅ 成功 ({tcp_latency_ms:.0f}ms)\nTelegram访问: ❌ 超时(>10秒)\n\n可能原因:\n1. 代理速度太慢\n2. 代理不稳定\n3. 网络环境差"
+                }, status_code=400)
+                
+            except Exception as http_err:
+                logger.error(f"❌ HTTP请求异常: {http_err}")
+                return JSONResponse(content={
+                    "success": False,
+                    "message": f"❌ 代理测试失败\n\nTCP连接: ✅ 成功 ({tcp_latency_ms:.0f}ms)\nTelegram访问: ❌ 失败\n\n错误: {str(http_err)}"
+                }, status_code=400)
+                
+        except socket.gaierror as e:
+            logger.error(f"❌ DNS解析失败: {e}")
+            return JSONResponse(content={
+                "success": False,
+                "message": f"❌ 无法解析主机名: {proxy_host}\n请检查主机名是否正确"
+            }, status_code=400)
+            
+        except ValueError as e:
+            logger.error(f"❌ 端口格式错误: {e}")
+            return JSONResponse(content={
+                "success": False,
+                "message": f"❌ 端口格式错误: {proxy_port}\n请输入1-65535之间的数字"
+            }, status_code=400)
+            
+        except Exception as e:
+            logger.error(f"❌ 代理连接测试异常: {e}")
+            return JSONResponse(content={
+                "success": False,
+                "message": f"❌ 测试失败: {str(e)}"
+            }, status_code=500)
+            
+    except Exception as e:
+        logger.error(f"❌ 测试代理失败: {e}", exc_info=True)
+        return JSONResponse(content={
+            "success": False,
+            "message": f"测试失败: {str(e)}"
+        }, status_code=500)
+
+
 """
-✅ 所有2个端点已完成!
+✅ 所有3个端点已完成!
 
 - GET /api/settings - 获取系统设置
 - POST /api/settings - 保存系统设置
+- POST /api/settings/test-proxy - 测试代理连接
 """

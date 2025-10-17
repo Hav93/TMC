@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/proxy.conf
 
 # 配置pip代理（如果提供）
