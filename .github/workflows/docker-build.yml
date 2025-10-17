@@ -71,8 +71,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}  # PR 不推送
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          no-cache: true  # 禁用缓存，确保每次都是完整构建
           build-args: |
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
