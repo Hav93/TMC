@@ -232,12 +232,7 @@ app = FastAPI(
 # CORS配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Vite开发服务器
-        "http://localhost:9393",  # 生产环境
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:9393",
-    ],
+    allow_origins=["*"],  # 允许所有域名（生产环境建议指定具体域名）
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
