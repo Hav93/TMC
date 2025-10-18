@@ -1048,7 +1048,7 @@ async def reorganize_media_file(
             raise HTTPException(status_code=404, detail="关联的监控规则不存在")
         
         # 检查是否启用了115网盘上传
-        if rule.organize_target_type != 'pan115':
+        if getattr(rule, 'organize_target_type', None) != 'pan115':
             return JSONResponse(
                 status_code=400,
                 content={"success": False, "message": "该规则未启用115网盘上传"}
@@ -1081,8 +1081,8 @@ async def reorganize_media_file(
                 content={"success": False, "message": error_msg}
             )
         
-        pan115_user_key = settings.pan115_user_key
-        pan115_remote_base = rule.pan115_remote_path or settings.pan115_remote_path or '/Telegram媒体'
+        pan115_user_key = getattr(settings, 'pan115_user_key', None)
+        pan115_remote_base = getattr(rule, 'pan115_remote_path', None) or getattr(settings, 'pan115_remote_path', None) or '/Telegram媒体'
         
         logger.info(f"🔑 获取到的cookies前50字符: {pan115_user_key[:50] if pan115_user_key else 'None'}...")
         logger.info(f"📂 远程基础路径: {pan115_remote_base}")
