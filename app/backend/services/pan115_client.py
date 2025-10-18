@@ -923,19 +923,26 @@ class Pan115Client:
                 if token_response.status_code == 200:
                     # 返回的是JSONP格式，需要去掉jsonp1()包装
                     token_text = token_response.text
-                    logger.debug(f"📦 Token原始响应: {token_text[:200]}")
+                    logger.info(f"📦 Token原始响应: {token_text[:500]}")  # 显示更多内容
                     
                     # 去掉jsonp包装: jsonp1({...})
                     if token_text.startswith('jsonp1(') and token_text.endswith(')'):
                         token_text = token_text[7:-1]  # 去掉 "jsonp1(" 和 ")"
+                        logger.info(f"📦 去掉JSONP包装后: {token_text[:500]}")
                     
                     import json
-                    token_data = json.loads(token_text)
-                    logger.info(f"📦 Token数据: {token_data}")
+                    try:
+                        token_data = json.loads(token_text)
+                        logger.info(f"📦 Token数据: {token_data}")
+                    except json.JSONDecodeError as e:
+                        logger.error(f"❌ JSON解析失败: {e}")
+                        logger.error(f"📦 原始文本: {token_text}")
+                        return {'success': False, 'message': f'解析token失败: {str(e)}'}
                     
                     if token_data.get('state'):
                         # 成功获取token
                         data = token_data.get('data', token_data)
+                        logger.info(f"✅ 成功获取上传token")
                         
                         return {
                             'success': True,
@@ -956,9 +963,13 @@ class Pan115Client:
                         }
                     else:
                         error_msg = token_data.get('error', '获取token失败')
-                        logger.error(f"❌ {error_msg}")
-                        return {'success': False, 'message': error_msg}
+                        errno = token_data.get('errno', 'unknown')
+                        logger.error(f"❌ Token获取失败: {error_msg} (errno={errno})")
+                        logger.error(f"📦 完整token响应: {token_data}")
+                        return {'success': False, 'message': f'{error_msg} (errno={errno})'}
                 else:
+                    logger.error(f"❌ Token请求失败: HTTP {token_response.status_code}")
+                    logger.error(f"📦 响应内容: {token_response.text[:500]}")
                     return {'success': False, 'message': f'获取token失败: HTTP {token_response.status_code}'}
             
             return {'success': False, 'message': f'HTTP {response.status_code}'}
