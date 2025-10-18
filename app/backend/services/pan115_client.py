@@ -701,15 +701,18 @@ class Pan115Client:
             file_size = os.path.getsize(file_path)
             
             # 优先使用我们的Python实现（基于fake115uploader）
-            logger.info("🚀 使用fake115uploader Python实现上传")
-            try:
-                result = await self._upload_with_fake115_python(file_path, target_dir_id)
-                if result.get('success'):
-                    return result
-                else:
-                    logger.warning(f"⚠️ Python实现上传失败: {result.get('message')}，尝试传统方式")
-            except Exception as e:
-                logger.warning(f"⚠️ Python实现异常: {e}，尝试传统方式")
+            # 暂时禁用ECDH加密相关的上传，因为公钥验证有问题
+            # TODO: 修复ECDH公钥问题后重新启用
+            if False:  # 临时禁用
+                logger.info("🚀 使用fake115uploader Python实现上传")
+                try:
+                    result = await self._upload_with_fake115_python(file_path, target_dir_id)
+                    if result.get('success'):
+                        return result
+                    else:
+                        logger.warning(f"⚠️ Python实现上传失败: {result.get('message')}，尝试传统方式")
+                except Exception as e:
+                    logger.warning(f"⚠️ Python实现异常: {e}，尝试传统方式")
             
             # 步骤1: 计算文件哈希（SHA1和sig）
             logger.info(f"📝 计算文件哈希: {file_name}, size={file_size}")
