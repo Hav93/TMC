@@ -538,6 +538,13 @@ class Pan115Client:
             {"success": bool, "message": str, "file_id": str}
         """
         try:
+            # 检查是否配置了开放平台
+            if not self.app_id:
+                return {
+                    'success': False,
+                    'message': '115文件上传功能需要开放平台AppID。请在【系统设置 → 115网盘配置】中填写AppID并激活开放平台API。'
+                }
+            
             # 如果提供了路径，先创建目录
             if target_path and target_path != '/':
                 dir_result = await self.create_directory_path(target_path)
@@ -650,6 +657,13 @@ class Pan115Client:
             {"success": bool, "dir_id": str, "message": str}
         """
         try:
+            # 检查是否配置了开放平台
+            if not self.app_id:
+                return {
+                    'success': False,
+                    'dir_id': parent_id,
+                    'message': '115文件夹创建功能需要开放平台AppID'
+                }
             # 清理路径
             path = path.strip('/')
             if not path:
@@ -2044,14 +2058,14 @@ class Pan115Client:
         """测试连接（使用 get_user_info）"""
         result = await self.get_user_info()
         if result['success']:
-            return {
-                'success': True,
-                'message': '115网盘连接成功',
+                    return {
+                        'success': True,
+                        'message': '115网盘连接成功',
                 'user_info': result.get('user_info', {})
-            }
-        else:
-            return {
-                'success': False,
+                    }
+                else:
+                    return {
+                        'success': False,
                 'message': f"连接失败: {result.get('message', '未知错误')}"
             }
     
@@ -2133,10 +2147,10 @@ class Pan115Client:
                         'app': app,
                         'message': '获取二维码成功'
                     }
-                else:
+            else:
                     error_msg = result.get('message', result.get('error', '未知错误'))
-                    return {
-                        'success': False,
+                return {
+                    'success': False,
                         'message': f"获取二维码失败: {error_msg}"
                     }
             else:
@@ -2174,8 +2188,8 @@ class Pan115Client:
             sign = qrcode_token.get('sign', '')
             
             if not all([uid, time_val, sign]):
-                return {
-                    'success': False,
+            return {
+                'success': False,
                     'status': 'error',
                     'message': '二维码token数据不完整'
                 }
