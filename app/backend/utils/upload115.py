@@ -219,10 +219,13 @@ class Upload115:
             logger.debug(f"表单数据: {form_data}")
             
             # ECDH加密表单
+            logger.info(f"📝 表单数据: {form_data[:200]}...")
             encrypted_data = self.ecdh_cipher.encrypt(form_data.encode())
+            logger.info(f"🔐 加密数据长度: {len(encrypted_data)} bytes")
             
             # 生成k_ec参数
             k_ec = self.ecdh_cipher.encode_token(timestamp)
+            logger.info(f"🔑 k_ec: {k_ec[:50]}...")
             
             # 发送请求
             url = f"{self.INIT_UPLOAD_URL}?k_ec={k_ec}"
@@ -232,10 +235,15 @@ class Upload115:
                 'Content-Type': 'application/x-www-form-urlencoded',
             }
             
+            logger.info(f"📤 发送秒传请求到: {url[:100]}...")
+            logger.info(f"📤 请求头: User-Agent={headers['User-Agent']}")
+            
             async with httpx.AsyncClient(**self._get_client_kwargs()) as client:
                 response = await client.post(url, content=encrypted_data, headers=headers)
             
-            logger.debug(f"秒传响应: HTTP {response.status_code}")
+            logger.info(f"📥 秒传响应: HTTP {response.status_code}")
+            logger.info(f"📥 响应长度: {len(response.content)} bytes")
+            logger.info(f"📥 响应头: {dict(response.headers)}")
             
             if response.status_code != 200:
                 return {

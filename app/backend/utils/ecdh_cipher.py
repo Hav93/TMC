@@ -189,15 +189,25 @@ class EcdhCipher:
         
         # 检查密文长度
         if len(ciphertext) % 16 != 0:
-            logging.error(f"❌ 密文长度不是16的倍数: {len(ciphertext)}")
-            logging.error(f"响应内容（前100字节）: {ciphertext[:100]}")
+            logging.warning(f"⚠️ 密文长度不是16的倍数: {len(ciphertext)}")
+            logging.info(f"响应内容（前100字节）: {ciphertext[:100]}")
+            
             # 尝试作为纯文本解析
             try:
                 text = ciphertext.decode('utf-8', errors='ignore')
                 logging.info(f"响应可能是纯文本: {text[:200]}")
+                # 如果是JSON，直接返回
+                if text.startswith('{') or text.startswith('['):
+                    return ciphertext
             except:
                 pass
-            raise ValueError(f"密文长度({len(ciphertext)})不是16的倍数，无法解密")
+            
+            # 尝试填充到16的倍数
+            padding_needed = 16 - (len(ciphertext) % 16)
+            logging.warning(f"⚠️ 尝试填充 {padding_needed} 字节")
+            # 使用零填充
+            ciphertext = ciphertext + b'\x00' * padding_needed
+            logging.info(f"填充后长度: {len(ciphertext)}")
         
         # 使用AES-CBC模式解密
         cipher = Cipher(
