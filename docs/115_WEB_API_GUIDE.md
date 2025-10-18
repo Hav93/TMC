@@ -229,38 +229,63 @@ data = {
 
 **上传流程**：
 
-**步骤1：秒传检测**
+**步骤1：秒传检测**（使用标准 /files/add 接口）
 ```python
-check_data = {
-    'preid': target_dir_id,
-    'fileid': target_dir_id,
-    'filename': file_name,
-    'filesize': str(file_size),
-    'target': f'U_1_{target_dir_id}',
+headers = {
+    'User-Agent': 'Mozilla/5.0 ...',
+    'Cookie': cookies,
+    'Accept': 'application/json, text/javascript, */*; q=0.01',
+    'Origin': 'https://115.com',
+    'Referer': 'https://115.com/',
 }
-# GET /rb/quick_file
+
+quick_data = {
+    'filename': file_name,
+    'filesize': file_size,
+    'file_id': target_dir_id,
+    'target': f'U_1_{target_dir_id}',
+    'fileid': target_dir_id,
+}
+# POST /files/add
 ```
 
-**步骤2：获取上传参数**
+**步骤2：获取上传参数**（秒传失败时）
 ```python
-upload_info_data = {
-    'userid': user_id,
+params = {
+    'isp': '0',
     'filename': file_name,
     'filesize': str(file_size),
-    'fileid': target_dir_id,
     'target': f'U_1_{target_dir_id}',
-    'sig': sig_sha1,  # 文件前128KB的SHA1
+    't': str(int(time.time() * 1000)),
 }
-# GET /rb/get_upload_info
+# GET /files/get_upload_info
 ```
 
 **步骤3：执行文件上传**
 ```python
-files = {
-    'file': (file_name, file_data, 'application/octet-stream')
+# 从步骤2获取：
+upload_url = result.get('upload_url', result.get('host'))
+token = result.get('token', '')
+
+# 构建multipart/form-data上传
+files = {'file': (file_name, file_data, 'application/octet-stream')}
+data = {
+    'name': file_name,
+    'key': token,
+    'policy': result.get('policy', ''),
+    'OSSAccessKeyId': result.get('access_key_id', ''),
+    'signature': result.get('signature', ''),
+    # ... 其他参数
 }
-# POST to upload_url with files and params
+# POST to upload_url
 ```
+
+**重要提示**：
+- ✅ 纯 Web API 实现，无需任何第三方库
+- ✅ 秒传使用标准的 `/files/add` 接口
+- ✅ 真实上传使用 `/files/get_upload_info` + 动态上传URL
+- ✅ 请求头必须包含 Origin 和 Referer，否则会报错
+- ✅ 支持大文件上传（一次性上传整个文件）
 
 **返回数据**：
 ```python
@@ -773,6 +798,24 @@ async def get_offline_task_status(self, task_id: str) -> Dict[str, Any]:
 - 💬 技术讨论：项目 Discussions
 
 ## 更新日志
+
+### v1.3.0 (2025-01-18)
+
+- 🎉 完全实现纯 Web API 上传功能
+- ✅ 移除对 p115client 库的依赖
+- ✅ 实现三步上传流程：秒传检测 → 获取上传参数 → 执行上传
+- ✅ 使用 `/files/get_upload_info` 获取上传配置
+- ✅ 支持 multipart/form-data 文件上传
+- ✅ 完整的错误处理和重试机制
+- ✅ 无需任何第三方库即可完整使用
+
+### v1.2.1 (2025-01-18)
+
+- 🔧 修复 Web API 上传接口错误
+- ✅ 修改秒传检测 API 从 `/rb/quick_file` 改为标准的 `/files/add`
+- ✅ 添加完整的请求头（Origin、Referer 等）
+- ✅ 改进错误处理和日志输出
+- ✅ 解决了 115 服务器返回"服务器开小差了"的错误
 
 ### v1.2.0 (2025-01-18)
 

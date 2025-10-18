@@ -226,3 +226,96 @@ async def get_space_info_with_p115client(cookies: str) -> Dict[str, Any]:
             'message': f"p115client异常: {str(e)}"
         }
 
+
+async def upload_file_with_p115client(cookie: str, file_path: str, target_dir_id: str = "0") -> Dict[str, Any]:
+    """
+    使用p115client库上传文件
+    
+    Args:
+        cookie: 115网盘cookies字符串
+        file_path: 要上传的文件路径
+        target_dir_id: 目标目录ID，默认为根目录
+    
+    Returns:
+        {
+            'success': bool,
+            'message': str,
+            'file_id': str,  # 可选
+            'quick_upload': bool  # 是否秒传
+        }
+    """
+    if not P115CLIENT_AVAILABLE:
+        return {
+            'success': False,
+            'message': 'p115client库不可用'
+        }
+    
+    try:
+        # 在线程池中执行同步上传
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None, 
+            _upload_file_sync, 
+            cookie, 
+            file_path, 
+            target_dir_id
+        )
+        return result
+    except Exception as e:
+        logger.error(f"❌ upload_file_with_p115client异常: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'success': False,
+            'message': f"p115client上传异常: {str(e)}"
+        }
+
+
+def _upload_file_sync(cookie: str, file_path: str, target_dir_id: str) -> Dict[str, Any]:
+    """同步上传文件"""
+    try:
+        # 初始化客户端
+        client = P115Client(cookie)
+        logger.info(f"📤 p115client开始上传: {file_path} -> {target_dir_id}")
+        
+        # 使用 upload_file 方法上传
+        # p115client 会自动处理秒传检测
+        result = client.upload_file(file_path, target_dir_id)
+        
+        # 检查响应
+        checked_result = check_response(result)
+        logger.info(f"📦 p115client上传响应: {checked_result}")
+        
+        # 判断上传是否成功
+        if checked_result.get('state') or checked_result.get('status') == 2:
+            file_id = checked_result.get('file_id', checked_result.get('data', {}).get('file_id', ''))
+            pickcode = checked_result.get('pickcode', checked_result.get('data', {}).get('pickcode', ''))
+            
+            # 判断是否为秒传
+            is_quick = checked_result.get('quick_upload', False) or checked_result.get('status') == 2
+            
+            logger.info(f"✅ p115client上传成功: file_id={file_id or pickcode}, 秒传={is_quick}")
+            
+            return {
+                'success': True,
+                'message': '文件上传成功',
+                'file_id': file_id or pickcode,
+                'quick_upload': is_quick
+            }
+        else:
+            error_msg = checked_result.get('error', checked_result.get('message', '上传失败'))
+            logger.error(f"❌ p115client上传失败: {error_msg}")
+            return {
+                'success': False,
+                'message': error_msg
+            }
+            
+    except Exception as e:
+        logger.error(f"❌ _upload_file_sync异常: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            'success': False,
+            'message': f"上传异常: {str(e)}"
+        }
+
