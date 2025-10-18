@@ -906,15 +906,26 @@ class Pan115Client:
                 logger.info(f"📤 步骤3.1: 获取上传token from {get_token_url}")
                 
                 # 第二步：调用gettoken.php获取真正的上传参数
+                # 需要传递更多参数来获取完整的上传信息
                 token_params = {
                     'callback': 'jsonp1',
                     't': str(int(time.time() * 1000)),
                 }
                 
+                # 尝试添加文件信息参数（可能需要）
+                token_full_params = {
+                    **token_params,
+                    'isp': '0',
+                    'filename': file_name,
+                    'filesize': str(file_size),
+                    'target': f'U_1_{target_dir_id}',
+                    'sig': sig_sha1,
+                }
+                
                 async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                     token_response = await client.get(
                         get_token_url,
-                        params=token_params,
+                        params=token_full_params,
                         headers=headers
                     )
                 
