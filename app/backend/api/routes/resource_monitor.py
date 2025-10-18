@@ -336,6 +336,58 @@ async def delete_record(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/records/{record_id}/retry")
+async def retry_resource_record(
+    record_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """重试失败的资源记录（推送到115）"""
+    try:
+        # 查找记录
+        result = await db.execute(
+            select(ResourceRecord).where(ResourceRecord.id == record_id)
+        )
+        record = result.scalar_one_or_none()
+        
+        if not record:
+            raise HTTPException(status_code=404, detail="记录不存在")
+        
+        # 检查记录状态
+        if record.status == 'success':
+            return {
+                "success": False,
+                "message": "该记录已经成功，无需重试"
+            }
+        
+        # 重置状态为待处理
+        record.status = 'pending'
+        record.error_message = None
+        record.updated_at = get_user_now()
+        
+        await db.commit()
+        await db.refresh(record)
+        
+        logger.info(f"✅ 资源记录已重置为待处理状态: record_id={record_id}")
+        
+        # TODO: 这里可以触发后台任务重新处理
+        # 或者返回信息让前端知道需要等待后台任务处理
+        
+        return {
+            "success": True,
+            "message": "记录已重置，等待后台处理",
+            "data": {
+                "id": record.id,
+                "status": record.status
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"重试记录失败: {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/records/batch-delete")
 async def batch_delete_records(
     data: dict,
