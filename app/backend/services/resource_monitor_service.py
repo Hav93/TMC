@@ -294,11 +294,26 @@ class ResourceMonitorService:
                 use_proxy=getattr(settings, 'pan115_use_proxy', False)
             )
             
+            # 获取或创建目标目录
+            target_path = rule.target_path or "/"
+            target_dir_id = "0"  # 默认根目录
+            
+            if target_path and target_path != "/":
+                # 创建目录路径并获取目录ID
+                logger.info(f"📁 创建目标目录: {target_path}")
+                dir_result = await client.create_directory_path(target_path)
+                
+                if dir_result.get('success'):
+                    target_dir_id = dir_result.get('dir_id', '0')
+                    logger.info(f"✅ 目标目录ID: {target_dir_id}")
+                else:
+                    logger.warning(f"⚠️ 创建目录失败，使用根目录: {dir_result.get('message')}")
+            
             # 调用转存API
             save_result = await client.save_share(
                 share_code=share_code,
                 receive_code=receive_code,
-                target_dir_id="0"  # 默认转存到根目录，后续可以根据target_path创建目录
+                target_dir_id=target_dir_id
             )
             
             if save_result.get('success'):
