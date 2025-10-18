@@ -353,15 +353,15 @@ async def retry_resource_record(
             raise HTTPException(status_code=404, detail="记录不存在")
         
         # 检查记录状态
-        if record.status == 'success':
+        if record.save_status == 'success':
             return {
                 "success": False,
                 "message": "该记录已经成功，无需重试"
             }
         
         # 重置状态为待处理
-        record.status = 'pending'
-        record.error_message = None
+        record.save_status = 'pending'
+        record.save_error = None
         record.updated_at = get_user_now()
         
         await db.commit()
@@ -377,7 +377,7 @@ async def retry_resource_record(
             "message": "记录已重置，等待后台处理",
             "data": {
                 "id": record.id,
-                "status": record.status
+                "save_status": record.save_status
             }
         }
     except HTTPException:
