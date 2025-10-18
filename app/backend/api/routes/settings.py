@@ -228,9 +228,22 @@ async def test_proxy(request: Request):
                 }
                 error_msg = error_codes.get(tcp_result, f"连接失败 (错误码: {tcp_result})")
                 logger.warning(f"❌ 代理TCP连接失败: {error_msg}")
+                message = (
+                    f"❌ 代理连接失败\n\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"📡 代理信息\n"
+                    f"  • 主机: {proxy_host}\n"
+                    f"  • 端口: {proxy_port}\n"
+                    f"  • 错误: {error_msg}\n\n"
+                    f"💡 请检查\n"
+                    f"  1. 代理服务器是否运行\n"
+                    f"  2. IP和端口是否正确\n"
+                    f"  3. 防火墙设置\n"
+                    f"━━━━━━━━━━━━━━━━━━"
+                )
                 return JSONResponse(content={
                     "success": False,
-                    "message": f"❌ 代理连接失败\n{error_msg}\n\n请检查:\n1. 代理服务器是否运行\n2. IP和端口是否正确\n3. 防火墙设置"
+                    "message": message
                 }, status_code=400)
             
             logger.info(f"✅ TCP连接成功, 延迟: {tcp_latency_ms:.0f}ms")
@@ -281,67 +294,166 @@ async def test_proxy(request: Request):
                             speed_rating = "较慢 🐢"
                         
                         logger.info(f"✅ Telegram访问成功: {response.status_code}, 延迟: {tg_latency_ms:.0f}ms")
+                        
+                        # 格式化消息
+                        message = (
+                            f"🎉 代理测试成功\n\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"📡 代理信息\n"
+                            f"  • 主机: {proxy_host}\n"
+                            f"  • 端口: {proxy_port}\n"
+                            f"  • 类型: {proxy_type.upper()}\n\n"
+                            f"⚡ 性能指标\n"
+                            f"  • TCP连接: {tcp_latency_ms:.0f}ms\n"
+                            f"  • Telegram: {tg_latency_ms:.0f}ms\n"
+                            f"  • 总延迟: {total_latency:.0f}ms {speed_rating}\n"
+                            f"━━━━━━━━━━━━━━━━━━\n\n"
+                            f"✅ 可以正常访问Telegram"
+                        )
+                        
                         return JSONResponse(content={
                             "success": True,
-                            "message": f"✅ 代理测试成功\n\n主机: {proxy_host}\n端口: {proxy_port}\nTCP延迟: {tcp_latency_ms:.0f}ms\nTelegram延迟: {tg_latency_ms:.0f}ms\n总延迟: {total_latency:.0f}ms ({speed_rating})\n\n✅ 可以正常访问Telegram",
+                            "message": message,
                             "latency_ms": round(total_latency, 2),
                             "tcp_latency_ms": round(tcp_latency_ms, 2),
                             "tg_latency_ms": round(tg_latency_ms, 2)
                         })
                     else:
                         logger.warning(f"⚠️ Telegram访问HTTP错误: {response.status_code}")
+                        message = (
+                            f"⚠️ 代理连接成功，但无法访问Telegram\n\n"
+                            f"━━━━━━━━━━━━━━━━━━\n"
+                            f"📊 测试结果\n"
+                            f"  • TCP连接: ✅ 成功 ({tcp_latency_ms:.0f}ms)\n"
+                            f"  • HTTP状态: ❌ {response.status_code}\n\n"
+                            f"💡 可能原因\n"
+                            f"  1. 代理不支持HTTPS\n"
+                            f"  2. 代理限制了Telegram访问\n"
+                            f"  3. 网络环境问题\n"
+                            f"━━━━━━━━━━━━━━━━━━"
+                        )
                         return JSONResponse(content={
                             "success": False,
-                            "message": f"⚠️ 代理连接成功,但访问Telegram失败\n\nTCP延迟: {tcp_latency_ms:.0f}ms\nHTTP状态: {response.status_code}\n\n可能原因:\n1. 代理不支持HTTPS\n2. 代理限制了Telegram访问\n3. 网络环境问题"
+                            "message": message
                         }, status_code=400)
                         
             except httpx.ProxyError as proxy_err:
                 logger.error(f"❌ 代理协议错误: {proxy_err}")
+                message = (
+                    f"❌ 代理配置错误\n\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 测试结果\n"
+                    f"  • TCP连接: ✅ 成功 ({tcp_latency_ms:.0f}ms)\n"
+                    f"  • Telegram: ❌ 失败\n\n"
+                    f"💡 可能原因\n"
+                    f"  1. 代理类型选择错误\n"
+                    f"  2. 需要用户名密码认证\n"
+                    f"  3. 代理协议不兼容\n"
+                    f"━━━━━━━━━━━━━━━━━━\n\n"
+                    f"🔍 错误详情: {str(proxy_err)}"
+                )
                 return JSONResponse(content={
                     "success": False,
-                    "message": f"❌ 代理配置错误\n\nTCP连接: ✅ 成功 ({tcp_latency_ms:.0f}ms)\nTelegram访问: ❌ 失败\n\n错误: {str(proxy_err)}\n\n可能原因:\n1. 代理类型选择错误\n2. 需要用户名密码认证\n3. 代理协议不兼容"
+                    "message": message
                 }, status_code=400)
                 
             except httpx.TimeoutException:
                 logger.error(f"❌ Telegram访问超时")
+                message = (
+                    f"⏱️ 访问Telegram超时\n\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 测试结果\n"
+                    f"  • TCP连接: ✅ 成功 ({tcp_latency_ms:.0f}ms)\n"
+                    f"  • Telegram: ❌ 超时 (>10秒)\n\n"
+                    f"💡 可能原因\n"
+                    f"  1. 代理速度太慢\n"
+                    f"  2. 代理不稳定\n"
+                    f"  3. 网络环境差\n"
+                    f"━━━━━━━━━━━━━━━━━━"
+                )
                 return JSONResponse(content={
                     "success": False,
-                    "message": f"❌ 访问Telegram超时\n\nTCP连接: ✅ 成功 ({tcp_latency_ms:.0f}ms)\nTelegram访问: ❌ 超时(>10秒)\n\n可能原因:\n1. 代理速度太慢\n2. 代理不稳定\n3. 网络环境差"
+                    "message": message
                 }, status_code=400)
                 
             except Exception as http_err:
                 logger.error(f"❌ HTTP请求异常: {http_err}")
+                message = (
+                    f"❌ 代理测试失败\n\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 测试结果\n"
+                    f"  • TCP连接: ✅ 成功 ({tcp_latency_ms:.0f}ms)\n"
+                    f"  • Telegram: ❌ 失败\n"
+                    f"━━━━━━━━━━━━━━━━━━\n\n"
+                    f"🔍 错误详情: {str(http_err)}"
+                )
                 return JSONResponse(content={
                     "success": False,
-                    "message": f"❌ 代理测试失败\n\nTCP连接: ✅ 成功 ({tcp_latency_ms:.0f}ms)\nTelegram访问: ❌ 失败\n\n错误: {str(http_err)}"
+                    "message": message
                 }, status_code=400)
                 
         except socket.gaierror as e:
             logger.error(f"❌ DNS解析失败: {e}")
+            message = (
+                f"❌ 无法解析主机名\n\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"📡 代理信息\n"
+                f"  • 主机: {proxy_host}\n"
+                f"  • 错误: DNS解析失败\n\n"
+                f"💡 请检查\n"
+                f"  • 主机名拼写是否正确\n"
+                f"  • 网络DNS设置\n"
+                f"━━━━━━━━━━━━━━━━━━"
+            )
             return JSONResponse(content={
                 "success": False,
-                "message": f"❌ 无法解析主机名: {proxy_host}\n请检查主机名是否正确"
+                "message": message
             }, status_code=400)
             
         except ValueError as e:
             logger.error(f"❌ 端口格式错误: {e}")
+            message = (
+                f"❌ 端口格式错误\n\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"📡 代理信息\n"
+                f"  • 端口: {proxy_port}\n"
+                f"  • 错误: 端口格式无效\n\n"
+                f"💡 要求\n"
+                f"  • 必须是数字\n"
+                f"  • 范围: 1-65535\n"
+                f"━━━━━━━━━━━━━━━━━━"
+            )
             return JSONResponse(content={
                 "success": False,
-                "message": f"❌ 端口格式错误: {proxy_port}\n请输入1-65535之间的数字"
+                "message": message
             }, status_code=400)
             
         except Exception as e:
             logger.error(f"❌ 代理连接测试异常: {e}")
+            message = (
+                f"❌ 测试失败\n\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"🔍 错误详情\n"
+                f"  {str(e)}\n"
+                f"━━━━━━━━━━━━━━━━━━"
+            )
             return JSONResponse(content={
                 "success": False,
-                "message": f"❌ 测试失败: {str(e)}"
+                "message": message
             }, status_code=500)
             
     except Exception as e:
         logger.error(f"❌ 测试代理失败: {e}", exc_info=True)
+        message = (
+            f"❌ 系统错误\n\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"🔍 错误详情\n"
+            f"  {str(e)}\n"
+            f"━━━━━━━━━━━━━━━━━━"
+        )
         return JSONResponse(content={
             "success": False,
-            "message": f"测试失败: {str(e)}"
+            "message": message
         }, status_code=500)
 
 
