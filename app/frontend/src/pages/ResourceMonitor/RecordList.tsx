@@ -12,7 +12,10 @@ import {
   Drawer,
   Descriptions,
   Typography,
-  Badge
+  Badge,
+  Modal,
+  Popconfirm,
+  Dropdown
 } from 'antd';
 import { 
   ReloadOutlined,
@@ -23,8 +26,13 @@ import {
   CloseCircleOutlined,
   ClockCircleOutlined,
   EyeOutlined,
-  CloudUploadOutlined
+  CloudUploadOutlined,
+  DeleteOutlined,
+  ClearOutlined,
+  ExclamationCircleOutlined,
+  DownOutlined
 } from '@ant-design/icons';
+import type { MenuProps } from 'antd';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { resourceMonitorService } from '../../services/resourceMonitor';
 import type { ResourceRecord, RecordQueryParams } from '../../services/resourceMonitor';
@@ -48,6 +56,7 @@ const RecordList: React.FC<RecordListProps> = ({ ruleId }) => {
   const [dateRange, setDateRange] = useState<[Dayjs, Dayjs] | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<ResourceRecord | null>(null);
   const [drawerVisible, setDrawerVisible] = useState(false);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
   // 构建查询参数
   const queryParams: RecordQueryParams = {
@@ -86,6 +95,44 @@ const RecordList: React.FC<RecordListProps> = ({ ruleId }) => {
     },
     onError: (error: any) => {
       message.error(error.response?.data?.detail || '重试失败');
+    },
+  });
+
+  // 删除单个记录
+  const deleteRecordMutation = useMutation({
+    mutationFn: (recordId: number) => resourceMonitorService.deleteRecord(recordId),
+    onSuccess: () => {
+      message.success('记录删除成功');
+      queryClient.invalidateQueries({ queryKey: ['resource-monitor-records'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.detail || '删除失败');
+    },
+  });
+
+  // 批量删除记录
+  const batchDeleteMutation = useMutation({
+    mutationFn: (recordIds: number[]) => resourceMonitorService.batchDeleteRecords(recordIds),
+    onSuccess: (data) => {
+      message.success(`成功删除 ${data.deleted_count} 条记录`);
+      setSelectedRowKeys([]);
+      queryClient.invalidateQueries({ queryKey: ['resource-monitor-records'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.detail || '批量删除失败');
+    },
+  });
+
+  // 清空记录
+  const clearRecordsMutation = useMutation({
+    mutationFn: (params?: { rule_id?: number; save_status?: string }) => 
+      resourceMonitorService.clearRecords(params),
+    onSuccess: (data) => {
+      message.success(`成功清空 ${data.deleted_count} 条记录`);
+      queryClient.invalidateQueries({ queryKey: ['resource-monitor-records'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.detail || '清空失败');
     },
   });
 
@@ -139,6 +186,96 @@ const RecordList: React.FC<RecordListProps> = ({ ruleId }) => {
     setSelectedRecord(record);
     setDrawerVisible(true);
   };
+
+  // 删除单个记录
+  const handleDeleteRecord = (recordId: number) => {
+    deleteRecordMutation.mutate(recordId);
+  };
+
+  // 批量删除
+  const handleBatchDelete = () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请选择要删除的记录');
+      return;
+    }
+
+    Modal.confirm({
+      title: '确认删除',
+      icon: <ExclamationCircleOutlined />,
+      content: `确定要删除选中的 ${selectedRowKeys.length} 条记录吗？此操作不可恢复。`,
+      okText: '确定',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: () => {
+        batchDeleteMutation.mutate(selectedRowKeys.map(key => Number(key)));
+      },
+    });
+  };
+
+  // 清空记录菜单
+  const clearMenuItems: MenuProps['items'] = [
+    {
+      key: 'clear-all',
+      label: '清空全部记录',
+      icon: <ClearOutlined />,
+      danger: true,
+      onClick: () => {
+        Modal.confirm({
+          title: '确认清空',
+          icon: <ExclamationCircleOutlined />,
+          content: '确定要清空全部记录吗？此操作不可恢复。',
+          okText: '确定',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: () => {
+            clearRecordsMutation.mutate(ruleId ? { rule_id: ruleId } : undefined);
+          },
+        });
+      },
+    },
+    {
+      key: 'clear-failed',
+      label: '清空失败记录',
+      icon: <CloseCircleOutlined />,
+      onClick: () => {
+        Modal.confirm({
+          title: '确认清空',
+          icon: <ExclamationCircleOutlined />,
+          content: '确定要清空所有失败记录吗？',
+          okText: '确定',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: () => {
+            clearRecordsMutation.mutate({ 
+              ...(ruleId && { rule_id: ruleId }), 
+              save_status: 'failed' 
+            });
+          },
+        });
+      },
+    },
+    {
+      key: 'clear-success',
+      label: '清空成功记录',
+      icon: <CheckCircleOutlined />,
+      onClick: () => {
+        Modal.confirm({
+          title: '确认清空',
+          icon: <ExclamationCircleOutlined />,
+          content: '确定要清空所有成功记录吗？',
+          okText: '确定',
+          okType: 'danger',
+          cancelText: '取消',
+          onOk: () => {
+            clearRecordsMutation.mutate({ 
+              ...(ruleId && { rule_id: ruleId }), 
+              save_status: 'success' 
+            });
+          },
+        });
+      },
+    },
+  ];
 
   // 表格列定义
   const columns: ColumnsType<ResourceRecord> = [
@@ -221,7 +358,7 @@ const RecordList: React.FC<RecordListProps> = ({ ruleId }) => {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 150,
       fixed: 'right',
       render: (_, record) => (
         <Space size="small">
@@ -244,6 +381,24 @@ const RecordList: React.FC<RecordListProps> = ({ ruleId }) => {
               />
             </Tooltip>
           )}
+          <Popconfirm
+            title="确定要删除这条记录吗？"
+            description="此操作不可恢复"
+            onConfirm={() => handleDeleteRecord(record.id)}
+            okText="确定"
+            cancelText="取消"
+            okType="danger"
+          >
+            <Tooltip title="删除">
+              <Button
+                type="link"
+                size="small"
+                danger
+                icon={<DeleteOutlined />}
+                loading={deleteRecordMutation.isPending}
+              />
+            </Tooltip>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -302,12 +457,52 @@ const RecordList: React.FC<RecordListProps> = ({ ruleId }) => {
         </Space>
       </Space>
 
+      {/* 批量操作工具栏 */}
+      {selectedRowKeys.length > 0 && (
+        <Space style={{ marginBottom: 16 }}>
+          <Text>已选择 {selectedRowKeys.length} 条记录</Text>
+          <Button
+            type="primary"
+            danger
+            icon={<DeleteOutlined />}
+            onClick={handleBatchDelete}
+            loading={batchDeleteMutation.isPending}
+          >
+            批量删除
+          </Button>
+          <Button onClick={() => setSelectedRowKeys([])}>取消选择</Button>
+        </Space>
+      )}
+
+      {/* 清空操作按钮 */}
+      <Space style={{ marginBottom: 16, float: 'right' }}>
+        <Dropdown menu={{ items: clearMenuItems }} trigger={['click']}>
+          <Button 
+            danger
+            icon={<ClearOutlined />}
+            loading={clearRecordsMutation.isPending}
+          >
+            清空记录 <DownOutlined />
+          </Button>
+        </Dropdown>
+      </Space>
+      <div style={{ clear: 'both' }} />
+
       {/* 表格 */}
       <Table
         rowKey="id"
         columns={columns}
         dataSource={filteredRecords}
         loading={isLoading}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: setSelectedRowKeys,
+          selections: [
+            Table.SELECTION_ALL,
+            Table.SELECTION_INVERT,
+            Table.SELECTION_NONE,
+          ],
+        }}
         pagination={{
           total: filteredRecords.length,
           pageSize: 50,

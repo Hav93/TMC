@@ -201,6 +201,35 @@ class ResourceMonitorService {
     await api.post(`${this.baseUrl}/records/${recordId}/retry`);
   }
 
+  /**
+   * 删除单个记录
+   */
+  async deleteRecord(recordId: number): Promise<void> {
+    await api.delete(`${this.baseUrl}/records/${recordId}`);
+  }
+
+  /**
+   * 批量删除记录
+   */
+  async batchDeleteRecords(recordIds: number[]): Promise<{ deleted_count: number }> {
+    const response = await api.post<{ success: boolean; deleted_count: number }>(
+      `${this.baseUrl}/records/batch-delete`,
+      { record_ids: recordIds }
+    );
+    return { deleted_count: response.deleted_count };
+  }
+
+  /**
+   * 清空记录（支持过滤）
+   */
+  async clearRecords(params?: { rule_id?: number; save_status?: string }): Promise<{ deleted_count: number }> {
+    const response = await api.delete<{ success: boolean; deleted_count: number }>(
+      `${this.baseUrl}/records/clear`,
+      { params }
+    );
+    return { deleted_count: response.deleted_count };
+  }
+
   // ==================== 统计信息 ====================
 
   /**
@@ -242,6 +271,9 @@ export const {
   getRecords,
   getRecord,
   retryRecord,
+  deleteRecord,
+  batchDeleteRecords,
+  clearRecords,
   getStats,
   batchDeleteRules,
   batchToggleRules
