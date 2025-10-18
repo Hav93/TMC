@@ -868,7 +868,12 @@ class Pan115Client:
         try:
             import time
             
-            # 参考fake115uploader的fast.go，使用get_upload_info接口
+            # 参考fake115uploader - 使用uplb.115.com上传域名
+            # README提到可以运行: curl https://uplb.115.com/3.0/getuploadinfo.php
+            upload_url = "https://uplb.115.com/3.0/getuploadinfo.php"
+            
+            logger.info(f"📤 获取上传信息: {upload_url}")
+            
             params = {
                 'isp': '0',
                 'filename': file_name,
@@ -879,7 +884,7 @@ class Pan115Client:
             
             async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.get(
-                    f"{self.webapi_url}/files/get_upload_info",
+                    upload_url,
                     params=params,
                     headers=headers
                 )
