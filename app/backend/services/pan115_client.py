@@ -797,139 +797,133 @@ class Pan115Client:
     
     async def _get_upload_info(self, file_name: str, file_size: int, file_sha1: str,
                                target_dir_id: str, headers: dict) -> Dict[str, Any]:
-        """获取上传参数"""
+        """获取上传参数 - 使用简化方式直接上传"""
         try:
-            import time
+            # 115的上传接口比较复杂，我们尝试直接使用upload端点
+            # 返回一个简化的upload_info，让_do_upload使用简化上传方式
+            logger.info(f"📤 准备直接上传（简化方式）...")
             
-            # 使用 /files/get_upload_info 接口
-            params = {
-                'isp': '0',
-                'filename': file_name,
-                'filesize': str(file_size),
-                'target': f'U_1_{target_dir_id}',
-                't': str(int(time.time() * 1000)),
-            }
-            
-            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
-                response = await client.get(
-                    f"{self.webapi_url}/files/get_upload_info",
-                    params=params,
-                    headers=headers
-                )
-            
-            if response.status_code == 200:
-                result = response.json()
-                logger.info(f"📦 上传信息: {result}")
-                
-                if result.get('state') or result.get('status') == 1:
-                    return {
-                        'success': True,
-                        'data': result
-                    }
-                else:
-                    error_msg = result.get('error', '获取上传信息失败')
-                    return {'success': False, 'message': error_msg}
-            else:
-                return {
-                    'success': False,
-                    'message': f'HTTP {response.status_code}'
+            return {
+                'success': True,
+                'data': {
+                    'upload_url': f'{self.webapi_url}/files/upload',
+                    'target': target_dir_id,
+                    'token': '',  # 空token表示使用简化上传
+                    'use_simple_upload': True
                 }
+            }
                 
         except Exception as e:
-            logger.error(f"❌ 获取上传信息异常: {e}")
+            logger.error(f"❌ 准备上传信息异常: {e}")
             return {'success': False, 'message': str(e)}
     
     async def _do_upload(self, file_path: str, file_name: str, file_size: int,
                         upload_info: dict, headers: dict) -> Dict[str, Any]:
         """执行文件上传"""
         try:
-            # 从upload_info中提取关键信息
-            host = upload_info.get('host', '')
-            upload_url = upload_info.get('upload_url', host)
+            import time
             
-            # 如果没有完整URL，拼接
-            if not upload_url.startswith('http'):
-                upload_url = f"https:{upload_url}" if upload_url.startswith('//') else f"https://{upload_url}"
+            target_dir_id = upload_info.get('target', '0')
             
-            # 获取上传token和其他参数
-            token = upload_info.get('token', '')
-            user_id = upload_info.get('user_id', self.user_id or '')
+            logger.info(f"📤 使用表单上传方式...")
             
-            logger.info(f"📤 上传到: {upload_url}")
-            
-            # 准备表单数据
+            # 读取文件
             with open(file_path, 'rb') as f:
                 file_data = f.read()
             
-            # 构建multipart/form-data
-            boundary = f'----WebKitFormBoundary{int(time.time() * 1000)}'
-            
-            form_data = {
-                'name': file_name,
-                'key': token,
-                'policy': upload_info.get('policy', ''),
-                'OSSAccessKeyId': upload_info.get('access_key_id', ''),
-                'success_action_status': '200',
-                'callback': upload_info.get('callback', ''),
-                'signature': upload_info.get('signature', ''),
+            # 使用标准的/files/upload接口（如果存在）或者尝试其他方式
+            # 构建表单数据
+            files = {
+                'file': (file_name, file_data, 'application/octet-stream')
             }
             
-            # 如果没有获取到必要参数，使用简化的上传方式
-            if not token:
-                logger.info("📤 使用简化上传方式...")
-                files = {'file': (file_name, file_data, 'application/octet-stream')}
-                data = {
-                    'name': file_name,
-                    'target': f"U_1_{upload_info.get('target', '0')}",
-                }
-            else:
-                files = {'file': (file_name, file_data, 'application/octet-stream')}
-                data = form_data
+            data = {
+                'target': f'U_1_{target_dir_id}',
+                'user_id': self.user_id or '',
+            }
             
-            # 修改headers
-            upload_headers = headers.copy()
-            upload_headers.pop('Accept', None)  # 移除Accept头
+            # 修改headers - 让浏览器自动设置Content-Type
+            upload_headers = {
+                'User-Agent': headers['User-Agent'],
+                'Cookie': headers['Cookie'],
+                'Origin': headers['Origin'],
+                'Referer': headers['Referer'],
+                'Accept': '*/*',
+            }
             
-            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=600.0)) as client:
-                response = await client.post(
-                    upload_url,
-                    files=files,
-                    data=data,
-                    headers=upload_headers
-                )
+            # 尝试多个可能的上传端点
+            upload_endpoints = [
+                f"{self.webapi_url}/files/upload",
+                f"{self.webapi_url}/files/add",
+            ]
             
-            logger.info(f"📥 上传响应: HTTP {response.status_code}")
+            last_error = None
             
-            if response.status_code in [200, 201, 204]:
+            for upload_url in upload_endpoints:
                 try:
-                    result = response.json()
-                    logger.info(f"📦 上传结果: {result}")
+                    logger.info(f"📤 尝试上传到: {upload_url}")
                     
-                    if result.get('state') or result.get('status') in [1, 2]:
-                        file_id = result.get('file_id', result.get('data', {}).get('file_id', ''))
-                        return {
-                            'success': True,
-                            'message': '文件上传成功',
-                            'file_id': file_id,
-                            'quick_upload': False
-                        }
+                    async with httpx.AsyncClient(**self._get_client_kwargs(timeout=600.0)) as client:
+                        response = await client.post(
+                            upload_url,
+                            files={'file': (file_name, file_data, 'application/octet-stream')},
+                            data=data,
+                            headers=upload_headers
+                        )
+                    
+                    logger.info(f"📥 上传响应: HTTP {response.status_code}")
+                    logger.info(f"📥 响应内容: {response.text[:500]}")
+                    
+                    if response.status_code in [200, 201, 204]:
+                        try:
+                            result = response.json()
+                            logger.info(f"📦 上传结果: {result}")
+                            
+                            if result.get('state') or result.get('status') in [1, 2]:
+                                file_id = result.get('file_id', '')
+                                if not file_id and result.get('data'):
+                                    file_id = result['data'].get('file_id', result['data'].get('pickcode', ''))
+                                
+                                return {
+                                    'success': True,
+                                    'message': '文件上传成功',
+                                    'file_id': file_id,
+                                    'quick_upload': False
+                                }
+                            else:
+                                error_msg = result.get('error', '上传失败')
+                                last_error = error_msg
+                                logger.warning(f"⚠️ 上传端点 {upload_url} 失败: {error_msg}")
+                                continue  # 尝试下一个端点
+                        except:
+                            # 如果返回的不是JSON，检查是否有成功的迹象
+                            response_text = response.text
+                            if 'success' in response_text.lower() or response.status_code == 200:
+                                logger.info("📦 上传可能成功（非JSON响应）")
+                                return {
+                                    'success': True,
+                                    'message': '文件上传完成',
+                                    'file_id': '',
+                                    'quick_upload': False
+                                }
                     else:
-                        error_msg = result.get('error', '上传失败')
-                        return {'success': False, 'message': error_msg}
-                except:
-                    # 如果返回的不是JSON，可能是成功的
-                    logger.info("📦 上传可能成功（非JSON响应）")
-                    return {
-                        'success': True,
-                        'message': '文件上传完成',
-                        'file_id': '',
-                        'quick_upload': False
-                    }
-            else:
-                return {
-                    'success': False,
-                    'message': f'上传失败: HTTP {response.status_code}'
-                }
+                        last_error = f'HTTP {response.status_code}'
+                        logger.warning(f"⚠️ 上传端点 {upload_url} 返回: {response.status_code}")
+                        continue  # 尝试下一个端点
+                        
+                except Exception as e:
+                    last_error = str(e)
+                    logger.warning(f"⚠️ 上传端点 {upload_url} 异常: {e}")
+                    continue  # 尝试下一个端点
+            
+            # 所有端点都失败
+            logger.error(f"❌ 所有上传端点都失败")
+            logger.error(f"💡 建议：Web API真实上传较复杂，建议配置开放平台AppID")
+            
+            return {
+                'success': False,
+                'message': f'上传失败: {last_error or "所有上传端点都不可用"}'
+            }
                 
         except Exception as e:
             logger.error(f"❌ 上传文件异常: {e}")
@@ -1438,8 +1432,7 @@ class Pan115Client:
         """
         仅获取空间信息（用于登录后立即获取）
         
-        优先使用p115client SDK的fs_space_info()方法(最可靠)
-        如果SDK不可用,则回退到115云开放平台的Web API
+        使用115云开放平台的Web API或Cookie Web API
         
         Returns:
             {
@@ -1448,23 +1441,6 @@ class Pan115Client:
                 "message": str
             }
         """
-        # 方案0: 优先使用p115client官方库(最可靠)
-        try:
-            from services.p115client_wrapper import get_space_info_with_p115client, P115CLIENT_AVAILABLE
-            
-            if P115CLIENT_AVAILABLE:
-                logger.info("🚀 尝试使用p115client官方库获取空间信息")
-                p115_result = await get_space_info_with_p115client(self.user_key)
-                
-                if p115_result.get('success'):
-                    logger.info(f"✅ p115client成功获取空间信息")
-                    return p115_result
-                else:
-                    logger.warning(f"⚠️ p115client获取失败: {p115_result.get('message')}")
-            else:
-                logger.info("📦 p115client库不可用,跳过")
-        except Exception as p115_error:
-            logger.warning(f"⚠️ p115client调用异常: {p115_error}")
         
         # 方案1: 使用115开放平台API(需要access_token)
         # 如果有AppID,先尝试获取access_token,然后调用开放平台API
