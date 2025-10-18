@@ -13,9 +13,15 @@ from pathlib import Path
 import httpx
 from log_manager import get_logger
 
-from .ecdh_cipher import create_ecdh_cipher, EcdhCipher
-from .file_hash import calculate_sha1, calculate_range_sha1
-from .upload_signature import create_signature_calculator, UploadSignature
+# 尝试相对导入，如果失败则使用绝对导入
+try:
+    from .ecdh_cipher import create_ecdh_cipher, EcdhCipher
+    from .file_hash import calculate_sha1, calculate_range_sha1
+    from .upload_signature import create_signature_calculator, UploadSignature
+except ImportError:
+    from ecdh_cipher import create_ecdh_cipher, EcdhCipher
+    from file_hash import calculate_sha1, calculate_range_sha1
+    from upload_signature import create_signature_calculator, UploadSignature
 
 logger = get_logger('upload115')
 
