@@ -1216,15 +1216,35 @@ class Pan115Client:
             # 计算Content-MD5
             content_md5 = base64.b64encode(hashlib.md5(file_data).digest()).decode()
             
+            # 115使用的bucket名称（需要从真实API响应中获取，或使用默认）
+            # 从endpoint中提取bucket信息
+            # 通常格式: http://bucket.oss-cn-shenzhen.aliyuncs.com 或 http://oss-cn-shenzhen.aliyuncs.com
+            bucket = 'lx-noreply'  # 115的默认bucket
+            
+            # 构建正确的OSS URL：http://bucket.endpoint/object
+            # 检查endpoint是否已包含bucket
+            if bucket in endpoint:
+                upload_url = f"{endpoint}/{object_key}"
+                host = endpoint.replace('http://', '').replace('https://', '')
+            else:
+                # 需要将bucket添加到域名前
+                # http://oss-cn-shenzhen.aliyuncs.com -> http://lx-noreply.oss-cn-shenzhen.aliyuncs.com
+                base_endpoint = endpoint.replace('http://', '').replace('https://', '')
+                host = f"{bucket}.{base_endpoint}"
+                upload_url = f"http://{host}/{object_key}"
+            
+            logger.info(f"📤 Bucket: {bucket}")
+            logger.info(f"📤 Host: {host}")
+            logger.info(f"📤 上传URL: {upload_url}")
+            
             # 构建签名字符串
             # PUT\nContent-MD5\nContent-Type\nDate\nx-oss-security-token:token\n/bucket/object
-            bucket = 'lx-noreply'  # 115的默认bucket
             canonicalized_resource = f"/{bucket}/{object_key}"
             canonicalized_oss_headers = f"x-oss-security-token:{security_token}"
             
             string_to_sign = f"PUT\n{content_md5}\n{content_type}\n{date_gmt}\n{canonicalized_oss_headers}\n{canonicalized_resource}"
             
-            logger.debug(f"📝 String to sign: {string_to_sign}")
+            logger.info(f"📝 String to sign: {string_to_sign[:200]}...")
             
             # 计算签名
             signature = base64.b64encode(
@@ -1233,7 +1253,7 @@ class Pan115Client:
             
             # 构建请求头
             oss_headers = {
-                'Host': endpoint.replace('http://', '').replace('https://', ''),
+                'Host': host,
                 'Date': date_gmt,
                 'Content-Type': content_type,
                 'Content-MD5': content_md5,
@@ -1241,10 +1261,6 @@ class Pan115Client:
                 'x-oss-security-token': security_token,
                 'Content-Length': str(file_size),
             }
-            
-            # 上传文件
-            upload_url = f"{endpoint}/{object_key}"
-            logger.info(f"📤 上传URL: {upload_url}")
             
             async with httpx.AsyncClient(**self._get_client_kwargs(timeout=600.0)) as client:
                 response = await client.put(
