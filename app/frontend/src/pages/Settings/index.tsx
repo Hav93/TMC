@@ -69,27 +69,15 @@ const SettingsPage: React.FC = () => {
     mutationFn: settingsApi.testProxy,
     onSuccess: (result) => {
       if (result.success) {
-        // 根据延迟显示不同的提示
-        const latency = result.latency_ms;
-        let duration = 4;
-        
-        if (latency && latency < 100) {
-          // 延迟很低,显示时间短一些
-          duration = 3;
-        } else if (latency && latency > 500) {
-          // 延迟高,显示时间长一些并加提示
-          duration = 5;
-        }
-        
         message.success({
           content: result.message || '✅ 代理连接测试成功！',
-          duration,
+          duration: 3,  // 3秒后自动关闭
           style: { whiteSpace: 'pre-line', fontSize: '14px' }
         });
       } else {
         message.error({
           content: result.message || '❌ 代理测试失败',
-          duration: 5,
+          duration: 5,  // 失败消息显示5秒，方便查看详情
           style: { whiteSpace: 'pre-line' }
         });
       }
