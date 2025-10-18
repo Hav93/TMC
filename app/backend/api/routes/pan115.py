@@ -1,10 +1,10 @@
 """
 115网盘配置和登录API
 """
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 
@@ -1148,5 +1148,194 @@ async def check_regular_qrcode_status(
         raise
     except Exception as e:
         logger.error(f"❌ 检查常规115登录二维码状态失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==================== 离线下载相关接口 ====================
+
+@router.post("/offline/add")
+async def add_offline_task(
+    url: str = Body(..., description="下载链接（HTTP/磁力/BT）"),
+    target_dir_id: str = Body("0", description="目标目录ID"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    添加离线下载任务
+    
+    支持的链接类型：
+    - HTTP/HTTPS 直链
+    - 磁力链接 (magnet:)
+    - BT种子 URL
+    """
+    try:
+        # 获取115网盘配置
+        config = await get_pan115_config(db)
+        if not config:
+            raise HTTPException(status_code=404, detail="115网盘未配置")
+        
+        if not config.enabled:
+            raise HTTPException(status_code=400, detail="115网盘未启用")
+        
+        # 创建客户端
+        client = Pan115Client(
+            app_id=config.app_id,
+            app_secret=config.app_secret,
+            user_id=config.user_id,
+            user_key=config.user_key,
+            use_proxy=config.use_proxy
+        )
+        
+        # 添加离线任务
+        result = await client.add_offline_task(url, target_dir_id)
+        
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['message'])
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 添加离线任务失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/offline/tasks")
+async def get_offline_tasks(
+    page: int = Query(1, ge=1, description="页码"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取离线任务列表
+    
+    返回任务信息：
+    - task_id: 任务ID
+    - name: 任务名称
+    - status: 状态码 (-1=等待, 0=下载中, 1=已完成, 2=失败, 4=已删除)
+    - status_text: 状态文本
+    - size: 文件大小
+    - percentDone: 完成百分比
+    - add_time: 添加时间
+    - file_id: 完成后的文件ID
+    """
+    try:
+        # 获取115网盘配置
+        config = await get_pan115_config(db)
+        if not config:
+            raise HTTPException(status_code=404, detail="115网盘未配置")
+        
+        if not config.enabled:
+            raise HTTPException(status_code=400, detail="115网盘未启用")
+        
+        # 创建客户端
+        client = Pan115Client(
+            app_id=config.app_id,
+            app_secret=config.app_secret,
+            user_id=config.user_id,
+            user_key=config.user_key,
+            use_proxy=config.use_proxy
+        )
+        
+        # 获取离线任务列表
+        result = await client.get_offline_tasks(page)
+        
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['message'])
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 获取离线任务列表失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/offline/tasks")
+async def delete_offline_tasks(
+    task_ids: List[str] = Body(..., description="要删除的任务ID列表"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    删除离线任务
+    
+    支持批量删除多个任务
+    """
+    try:
+        # 获取115网盘配置
+        config = await get_pan115_config(db)
+        if not config:
+            raise HTTPException(status_code=404, detail="115网盘未配置")
+        
+        if not config.enabled:
+            raise HTTPException(status_code=400, detail="115网盘未启用")
+        
+        # 创建客户端
+        client = Pan115Client(
+            app_id=config.app_id,
+            app_secret=config.app_secret,
+            user_id=config.user_id,
+            user_key=config.user_key,
+            use_proxy=config.use_proxy
+        )
+        
+        # 删除离线任务
+        result = await client.delete_offline_task(task_ids)
+        
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['message'])
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 删除离线任务失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/offline/clear")
+async def clear_offline_tasks(
+    flag: int = Body(1, ge=0, le=2, description="清空标志：0=所有，1=已完成，2=失败"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    清空离线任务
+    
+    flag 参数：
+    - 0: 清空所有任务（慎用）
+    - 1: 清空已完成任务（推荐）
+    - 2: 清空失败任务
+    """
+    try:
+        # 获取115网盘配置
+        config = await get_pan115_config(db)
+        if not config:
+            raise HTTPException(status_code=404, detail="115网盘未配置")
+        
+        if not config.enabled:
+            raise HTTPException(status_code=400, detail="115网盘未启用")
+        
+        # 创建客户端
+        client = Pan115Client(
+            app_id=config.app_id,
+            app_secret=config.app_secret,
+            user_id=config.user_id,
+            user_key=config.user_key,
+            use_proxy=config.use_proxy
+        )
+        
+        # 清空离线任务
+        result = await client.clear_offline_tasks(flag)
+        
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['message'])
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 清空离线任务失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 

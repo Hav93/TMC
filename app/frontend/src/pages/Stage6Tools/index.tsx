@@ -8,11 +8,13 @@ import {
   ThunderboltOutlined,
   EditOutlined,
   PlayCircleOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import AdFilterPanel from './AdFilterPanel';
 import QuickUploadPanel from './QuickUploadPanel';
 import SmartRenamePanel from './SmartRenamePanel';
 import StrmGeneratorPanel from './StrmGeneratorPanel';
+import OfflineDownload from './OfflineDownload';
 
 const { Title, Paragraph } = Typography;
 
@@ -59,6 +61,16 @@ const Stage6Tools: React.FC = () => {
         </span>
       ),
       children: <StrmGeneratorPanel />,
+    },
+    {
+      key: 'offline-download',
+      label: (
+        <span>
+          <DownloadOutlined />
+          离线下载
+        </span>
+      ),
+      children: <OfflineDownload />,
     },
   ];
 

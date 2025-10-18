@@ -562,21 +562,19 @@ class Pan115Client:
         """
         上传文件到115网盘
         
+        自动检测使用开放平台API或Web API
+        
         Args:
             file_path: 本地文件路径
             target_dir_id: 目标目录ID，0表示根目录
             target_path: 目标路径（如果提供，会先创建目录）
             
         Returns:
-            {"success": bool, "message": str, "file_id": str}
+            {"success": bool, "message": str, "file_id": str, "quick_upload": bool}
         """
         try:
-            # 检查是否配置了开放平台
-            if not self.app_id:
-                return {
-                    'success': False,
-                    'message': '115文件上传功能需要开放平台AppID。请在【系统设置 → 115网盘配置】中填写AppID并激活开放平台API。'
-                }
+            # 判断是否为Cookie认证
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
             
             # 如果提供了路径，先创建目录
             if target_path and target_path != '/':
@@ -586,6 +584,11 @@ class Pan115Client:
                 else:
                     logger.warning(f"⚠️ 创建目录失败: {dir_result['message']}")
             
+            if is_cookie_auth and not self.app_id:
+                # 使用Web API上传
+                return await self._upload_file_web_api(file_path, target_dir_id)
+            
+            # 使用开放平台API上传
             # 获取上传信息
             upload_info = await self.get_upload_info(file_path, target_dir_id)
             
@@ -678,6 +681,84 @@ class Pan115Client:
             traceback.print_exc()
             return {'success': False, 'message': str(e)}
     
+    async def _upload_file_web_api(self, file_path: str, target_dir_id: str = "0") -> Dict[str, Any]:
+        """
+        使用Web API上传文件（Cookie认证）
+        
+        适用于没有开放平台AppID的场景
+        注意：Web API上传较复杂，这里提供基础实现
+        """
+        try:
+            import hashlib
+            
+            # 计算文件SHA1
+            sha1 = hashlib.sha1()
+            file_size = 0
+            file_name = os.path.basename(file_path)
+            
+            with open(file_path, 'rb') as f:
+                while True:
+                    chunk = f.read(8192)
+                    if not chunk:
+                        break
+                    sha1.update(chunk)
+                    file_size += len(chunk)
+            
+            file_sha1 = sha1.hexdigest().upper()
+            logger.info(f"📝 文件信息: {file_name}, size={file_size}, sha1={file_sha1}")
+            
+            # 先尝试秒传
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+            }
+            
+            # 检查文件是否已存在（秒传）
+            check_data = {
+                'file_id': target_dir_id,
+                'file_name': file_name,
+                'file_size': file_size,
+                'file_sha1': file_sha1,
+            }
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                check_response = await client.post(
+                    f"{self.webapi_url}/files/add",
+                    data=check_data,
+                    headers=headers
+                )
+            
+            if check_response.status_code == 200:
+                result = check_response.json()
+                logger.info(f"📦 Web API检查响应: {result}")
+                
+                if result.get('state'):
+                    # 秒传成功
+                    file_id = result.get('file_id', result.get('data', {}).get('file_id', ''))
+                    logger.info(f"✅ Web API秒传成功")
+                    return {
+                        'success': True,
+                        'message': '文件秒传成功',
+                        'file_id': file_id,
+                        'quick_upload': True
+                    }
+            
+            # 需要真实上传
+            logger.warning("⚠️ Web API真实上传功能尚未完整实现")
+            logger.warning("⚠️ 建议配置开放平台AppID以使用完整上传功能")
+            
+            return {
+                'success': False,
+                'message': 'Web API上传需要更复杂的实现，建议配置开放平台AppID'
+            }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API上传文件异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
     async def create_directory_path(self, path: str, parent_id: str = "0") -> Dict[str, Any]:
         """
         创建目录路径（递归创建）
@@ -731,6 +812,8 @@ class Pan115Client:
         """
         创建单个目录
         
+        自动检测使用开放平台API或Web API
+        
         Args:
             dir_name: 目录名称
             parent_id: 父目录ID，0表示根目录
@@ -739,6 +822,14 @@ class Pan115Client:
             {"success": bool, "dir_id": str}
         """
         try:
+            # 判断是否为Cookie认证
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
+            
+            if is_cookie_auth and not self.app_id:
+                # 使用Web API
+                return await self._create_directory_web_api(dir_name, parent_id)
+            
+            # 使用开放平台API
             params = {
                 'app_id': self.app_id,
                 'user_id': self.user_id,
@@ -767,12 +858,19 @@ class Pan115Client:
                         'dir_id': str(dir_id)
                     }
                 elif '已存在' in result.get('message', '') or result.get('code') == 20004:
-                    # 目录已存在，尝试获取目录ID
+                    # 目录已存在，查询目录ID
                     logger.info(f"📁 目录已存在: {dir_name}")
-                    # TODO: 查询目录获取ID
+                    list_result = await self.list_files(parent_id, limit=100)
+                    if list_result['success']:
+                        for item in list_result['files']:
+                            if item['is_dir'] and item['name'] == dir_name:
+                                return {
+                                    'success': True,
+                                    'dir_id': item['id']
+                                }
                     return {
                         'success': True,
-                        'dir_id': parent_id  # 暂时返回父目录ID
+                        'dir_id': parent_id  # 返回父目录ID
                     }
                 else:
                     error_msg = result.get('message', '未知错误')
@@ -790,6 +888,77 @@ class Pan115Client:
                 
         except Exception as e:
             logger.error(f"❌ 创建目录异常: {e}")
+            return {'success': False, 'dir_id': parent_id, 'message': str(e)}
+    
+    async def _create_directory_web_api(self, dir_name: str, parent_id: str = "0") -> Dict[str, Any]:
+        """
+        使用Web API创建目录（Cookie认证）
+        
+        适用于没有开放平台AppID的场景
+        """
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+            }
+            
+            data = {
+                'pid': parent_id,
+                'cname': dir_name,
+            }
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                response = await client.post(
+                    f"{self.webapi_url}/files/add",
+                    data=data,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API创建目录响应: {result}")
+                
+                if result.get('state'):
+                    dir_id = result.get('cid', result.get('data', {}).get('cid', parent_id))
+                    logger.info(f"✅ Web API目录创建成功: {dir_name} (ID: {dir_id})")
+                    return {
+                        'success': True,
+                        'dir_id': str(dir_id)
+                    }
+                elif '已存在' in str(result.get('error', '')):
+                    # 目录已存在，查询目录ID
+                    logger.info(f"📁 目录已存在: {dir_name}")
+                    list_result = await self._list_files_web_api(parent_id, limit=100)
+                    if list_result['success']:
+                        for item in list_result['files']:
+                            if item['is_dir'] and item['name'] == dir_name:
+                                return {
+                                    'success': True,
+                                    'dir_id': item['id']
+                                }
+                    return {
+                        'success': True,
+                        'dir_id': parent_id
+                    }
+                else:
+                    error_msg = result.get('error', '未知错误')
+                    return {
+                        'success': False,
+                        'dir_id': parent_id,
+                        'message': f"创建目录失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'dir_id': parent_id,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API创建目录异常: {e}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'dir_id': parent_id, 'message': str(e)}
     
     async def get_qrcode_token(self) -> Dict[str, Any]:
@@ -1349,6 +1518,8 @@ class Pan115Client:
         """
         列出目录下的文件和文件夹
         
+        自动检测使用开放平台API或Web API
+        
         Args:
             parent_id: 父目录ID，0表示根目录
             limit: 返回数量限制
@@ -1373,6 +1544,14 @@ class Pan115Client:
             }
         """
         try:
+            # 判断是否为Cookie认证
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
+            
+            if is_cookie_auth and not self.app_id:
+                # 使用Web API
+                return await self._list_files_web_api(parent_id, limit, offset, show_dir)
+            
+            # 使用开放平台API
             params = {
                 'app_id': self.app_id,
                 'user_id': self.user_id,
@@ -1442,9 +1621,95 @@ class Pan115Client:
                 'message': str(e)
             }
     
+    async def _list_files_web_api(self, parent_id: str = "0", limit: int = 1150,
+                                  offset: int = 0, show_dir: int = 1) -> Dict[str, Any]:
+        """
+        使用Web API列出文件（Cookie认证）
+        
+        适用于没有开放平台AppID的场景
+        """
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+            }
+            
+            params = {
+                'cid': parent_id,
+                'limit': limit,
+                'offset': offset,
+                'show_dir': show_dir,
+                'o': 'user_ptime',  # 排序方式
+                'asc': 0,  # 降序
+            }
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                response = await client.get(
+                    f"{self.webapi_url}/files",
+                    params=params,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API文件列表: state={result.get('state')}, count={result.get('count', 0)}")
+                
+                if result.get('state'):
+                    data = result.get('data', [])
+                    
+                    files = []
+                    for item in data:
+                        file_info = {
+                            'id': item.get('fid') or item.get('cid', ''),
+                            'name': item.get('n', ''),
+                            'size': int(item.get('s', 0)),
+                            'is_dir': bool(item.get('cid') and not item.get('fid')),
+                            'ctime': int(item.get('te', 0)),
+                            'utime': int(item.get('tu', 0)),
+                            'pick_code': item.get('pc', ''),  # 提取码
+                            'sha1': item.get('sha', ''),  # 文件SHA1
+                        }
+                        files.append(file_info)
+                    
+                    return {
+                        'success': True,
+                        'files': files,
+                        'count': result.get('count', len(files)),
+                        'message': f'获取文件列表成功，共 {len(files)} 项'
+                    }
+                else:
+                    error_msg = result.get('error', '未知错误')
+                    return {
+                        'success': False,
+                        'files': [],
+                        'count': 0,
+                        'message': f"获取文件列表失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'files': [],
+                    'count': 0,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API列出文件异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'files': [],
+                'count': 0,
+                'message': str(e)
+            }
+    
     async def delete_files(self, file_ids: List[str]) -> Dict[str, Any]:
         """
         删除文件或文件夹
+        
+        自动检测使用开放平台API或Web API
         
         Args:
             file_ids: 文件ID列表（支持批量删除）
@@ -1453,7 +1718,14 @@ class Pan115Client:
             {"success": bool, "message": str}
         """
         try:
-            # 115 Open API 删除接口支持批量删除
+            # 判断是否为Cookie认证
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
+            
+            if is_cookie_auth and not self.app_id:
+                # 使用Web API
+                return await self._delete_files_web_api(file_ids)
+            
+            # 使用开放平台API
             fid_str = ','.join(file_ids)
             
             params = {
@@ -1497,9 +1769,64 @@ class Pan115Client:
             logger.error(f"❌ 删除文件异常: {e}")
             return {'success': False, 'message': str(e)}
     
+    async def _delete_files_web_api(self, file_ids: List[str]) -> Dict[str, Any]:
+        """
+        使用Web API删除文件（Cookie认证）
+        
+        适用于没有开放平台AppID的场景
+        """
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+            }
+            
+            # Web API使用 fid[0]=xxx&fid[1]=yyy 格式
+            data = {}
+            for idx, fid in enumerate(file_ids):
+                data[f'fid[{idx}]'] = fid
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                response = await client.post(
+                    f"{self.webapi_url}/rb/delete",
+                    data=data,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API删除响应: {result}")
+                
+                if result.get('state'):
+                    logger.info(f"✅ Web API删除成功: {len(file_ids)} 个文件/文件夹")
+                    return {
+                        'success': True,
+                        'message': f'成功删除 {len(file_ids)} 个文件/文件夹'
+                    }
+                else:
+                    error_msg = result.get('error', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"删除失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API删除文件异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
     async def move_files(self, file_ids: List[str], target_dir_id: str) -> Dict[str, Any]:
         """
         移动文件或文件夹
+        
+        自动检测使用开放平台API或Web API
         
         Args:
             file_ids: 要移动的文件ID列表
@@ -1509,6 +1836,14 @@ class Pan115Client:
             {"success": bool, "message": str}
         """
         try:
+            # 判断是否为Cookie认证
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
+            
+            if is_cookie_auth and not self.app_id:
+                # 使用Web API
+                return await self._move_files_web_api(file_ids, target_dir_id)
+            
+            # 使用开放平台API
             fid_str = ','.join(file_ids)
             
             params = {
@@ -1553,9 +1888,64 @@ class Pan115Client:
             logger.error(f"❌ 移动文件异常: {e}")
             return {'success': False, 'message': str(e)}
     
+    async def _move_files_web_api(self, file_ids: List[str], target_dir_id: str) -> Dict[str, Any]:
+        """
+        使用Web API移动文件（Cookie认证）
+        
+        适用于没有开放平台AppID的场景
+        """
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+            }
+            
+            # Web API使用 fid[0]=xxx&fid[1]=yyy 格式
+            data = {'pid': target_dir_id}
+            for idx, fid in enumerate(file_ids):
+                data[f'fid[{idx}]'] = fid
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                response = await client.post(
+                    f"{self.webapi_url}/files/move",
+                    data=data,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API移动响应: {result}")
+                
+                if result.get('state'):
+                    logger.info(f"✅ Web API移动成功: {len(file_ids)} 个文件/文件夹")
+                    return {
+                        'success': True,
+                        'message': f'成功移动 {len(file_ids)} 个文件/文件夹'
+                    }
+                else:
+                    error_msg = result.get('error', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"移动失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API移动文件异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
     async def copy_files(self, file_ids: List[str], target_dir_id: str) -> Dict[str, Any]:
         """
         复制文件或文件夹
+        
+        自动检测使用开放平台API或Web API
         
         Args:
             file_ids: 要复制的文件ID列表
@@ -1565,6 +1955,14 @@ class Pan115Client:
             {"success": bool, "message": str}
         """
         try:
+            # 判断是否为Cookie认证
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
+            
+            if is_cookie_auth and not self.app_id:
+                # 使用Web API
+                return await self._copy_files_web_api(file_ids, target_dir_id)
+            
+            # 使用开放平台API
             fid_str = ','.join(file_ids)
             
             params = {
@@ -1609,9 +2007,64 @@ class Pan115Client:
             logger.error(f"❌ 复制文件异常: {e}")
             return {'success': False, 'message': str(e)}
     
+    async def _copy_files_web_api(self, file_ids: List[str], target_dir_id: str) -> Dict[str, Any]:
+        """
+        使用Web API复制文件（Cookie认证）
+        
+        适用于没有开放平台AppID的场景
+        """
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+            }
+            
+            # Web API使用 fid[0]=xxx&fid[1]=yyy 格式
+            data = {'pid': target_dir_id}
+            for idx, fid in enumerate(file_ids):
+                data[f'fid[{idx}]'] = fid
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                response = await client.post(
+                    f"{self.webapi_url}/files/copy",
+                    data=data,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API复制响应: {result}")
+                
+                if result.get('state'):
+                    logger.info(f"✅ Web API复制成功: {len(file_ids)} 个文件/文件夹")
+                    return {
+                        'success': True,
+                        'message': f'成功复制 {len(file_ids)} 个文件/文件夹'
+                    }
+                else:
+                    error_msg = result.get('error', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"复制失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API复制文件异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
     async def rename_file(self, file_id: str, new_name: str) -> Dict[str, Any]:
         """
         重命名文件或文件夹
+        
+        自动检测使用开放平台API或Web API
         
         Args:
             file_id: 文件或文件夹ID
@@ -1621,6 +2074,14 @@ class Pan115Client:
             {"success": bool, "message": str}
         """
         try:
+            # 判断是否为Cookie认证
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
+            
+            if is_cookie_auth and not self.app_id:
+                # 使用Web API
+                return await self._rename_file_web_api(file_id, new_name)
+            
+            # 使用开放平台API
             params = {
                 'app_id': self.app_id,
                 'user_id': self.user_id,
@@ -1661,6 +2122,59 @@ class Pan115Client:
                 
         except Exception as e:
             logger.error(f"❌ 重命名文件异常: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    async def _rename_file_web_api(self, file_id: str, new_name: str) -> Dict[str, Any]:
+        """
+        使用Web API重命名文件（Cookie认证）
+        
+        适用于没有开放平台AppID的场景
+        """
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+            }
+            
+            data = {
+                'fid': file_id,
+                'file_name': new_name,
+            }
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                response = await client.post(
+                    f"{self.webapi_url}/files/edit",
+                    data=data,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API重命名响应: {result}")
+                
+                if result.get('state'):
+                    logger.info(f"✅ Web API重命名成功: {new_name}")
+                    return {
+                        'success': True,
+                        'message': f'重命名成功: {new_name}'
+                    }
+                else:
+                    error_msg = result.get('error', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"重命名失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API重命名文件异常: {e}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'message': str(e)}
     
     async def get_file_info(self, file_id: str) -> Dict[str, Any]:
@@ -1847,6 +2361,8 @@ class Pan115Client:
         """
         获取文件下载链接
         
+        自动检测使用开放平台API或Web API
+        
         Args:
             file_id: 文件ID（pickcode）
             user_agent: 自定义 User-Agent
@@ -1861,6 +2377,14 @@ class Pan115Client:
             }
         """
         try:
+            # 判断是否为Cookie认证
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
+            
+            if is_cookie_auth and not self.app_id:
+                # 使用Web API
+                return await self._get_download_url_web_api(file_id, user_agent)
+            
+            # 使用开放平台API
             params = {
                 'app_id': self.app_id,
                 'user_id': self.user_id,
@@ -1909,6 +2433,69 @@ class Pan115Client:
                 
         except Exception as e:
             logger.error(f"❌ 获取下载链接异常: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    async def _get_download_url_web_api(self, pick_code: str, user_agent: Optional[str] = None) -> Dict[str, Any]:
+        """
+        使用Web API获取文件下载链接（Cookie认证）
+        
+        适用于没有开放平台AppID的场景
+        """
+        try:
+            headers = {
+                'User-Agent': user_agent or 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+            }
+            
+            data = {
+                'pickcode': pick_code,
+            }
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
+                response = await client.post(
+                    f"{self.webapi_url}/files/download",
+                    data=data,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API下载链接响应: {result}")
+                
+                if result.get('state'):
+                    data = result.get('data', result)
+                    file_url = data.get('url', {})
+                    
+                    # url可能是字典或字符串
+                    if isinstance(file_url, dict):
+                        download_url = file_url.get('url', '')
+                    else:
+                        download_url = file_url
+                    
+                    return {
+                        'success': True,
+                        'download_url': download_url,
+                        'file_name': data.get('file_name', ''),
+                        'file_size': int(data.get('file_size', 0)),
+                        'message': '获取下载链接成功'
+                    }
+                else:
+                    error_msg = result.get('error', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"获取下载链接失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API获取下载链接异常: {e}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'message': str(e)}
     
     async def save_share(self, share_code: str, receive_code: Optional[str] = None, 
@@ -2085,6 +2672,600 @@ class Pan115Client:
                 
         except Exception as e:
             logger.error(f"❌ 获取分享信息异常: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    # ==================== 离线下载功能 ====================
+    
+    async def add_offline_task(self, url: str, target_dir_id: str = "0") -> Dict[str, Any]:
+        """
+        添加离线下载任务
+        
+        自动检测使用开放平台API或Web API
+        
+        Args:
+            url: 下载链接（支持HTTP/HTTPS/磁力链接/BT种子URL）
+            target_dir_id: 目标目录ID，默认为根目录
+            
+        Returns:
+            {
+                "success": bool,
+                "task_id": str,  # 任务ID
+                "message": str
+            }
+        """
+        try:
+            # 判断是否为Cookie认证
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
+            
+            if is_cookie_auth and not self.app_id:
+                # 使用Web API
+                return await self._add_offline_task_web_api(url, target_dir_id)
+            
+            # 使用开放平台API
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'url': url,
+                'wp_path_id': target_dir_id,
+            }
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                response = await client.post(
+                    f"{self.base_url}/2.0/offline/add_task",
+                    data=params
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 添加离线任务响应: {result}")
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    data = result.get('data', {})
+                    task_id = data.get('info_hash', '') or data.get('task_id', '')
+                    
+                    logger.info(f"✅ 离线任务添加成功: task_id={task_id}")
+                    return {
+                        'success': True,
+                        'task_id': task_id,
+                        'message': '离线任务添加成功'
+                    }
+                else:
+                    error_msg = result.get('message', result.get('error', '未知错误'))
+                    error_code = result.get('code', 'unknown')
+                    
+                    # 处理常见错误
+                    if 'url' in error_msg.lower() or error_code == 911:
+                        error_msg = "下载链接无效或不支持"
+                    elif 'quota' in error_msg.lower() or error_code == 10008:
+                        error_msg = "离线任务数量已达上限"
+                    elif 'exists' in error_msg.lower():
+                        error_msg = "任务已存在"
+                    
+                    logger.error(f"❌ 添加离线任务失败: {error_msg} (code={error_code})")
+                    return {
+                        'success': False,
+                        'message': error_msg
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 添加离线任务异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
+    async def _add_offline_task_web_api(self, url: str, target_dir_id: str = "0") -> Dict[str, Any]:
+        """
+        使用Web API添加离线下载任务（Cookie认证）
+        
+        适用于没有开放平台AppID的场景
+        """
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+            }
+            
+            data = {
+                'url': url,
+                'wp_path_id': target_dir_id,
+            }
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                response = await client.post(
+                    f"{self.webapi_url}/lixian/add",
+                    data=data,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API添加离线任务响应: {result}")
+                
+                if result.get('state'):
+                    task_id = result.get('info_hash', '') or result.get('id', '')
+                    logger.info(f"✅ Web API离线任务添加成功: task_id={task_id}")
+                    return {
+                        'success': True,
+                        'task_id': task_id,
+                        'message': '离线任务添加成功'
+                    }
+                else:
+                    error_msg = result.get('error', result.get('error_msg', '未知错误'))
+                    return {
+                        'success': False,
+                        'message': f"添加离线任务失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API添加离线任务异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
+    async def get_offline_tasks(self, page: int = 1) -> Dict[str, Any]:
+        """
+        获取离线任务列表
+        
+        自动检测使用开放平台API或Web API
+        
+        Args:
+            page: 页码，从1开始
+            
+        Returns:
+            {
+                "success": bool,
+                "tasks": [
+                    {
+                        "task_id": str,
+                        "name": str,
+                        "status": int,  # 0=下载中, 1=已完成, 2=失败, -1=等待中
+                        "status_text": str,
+                        "size": int,
+                        "percentDone": float,
+                        "add_time": int,
+                        "file_id": str,
+                    }
+                ],
+                "count": int,
+                "message": str
+            }
+        """
+        try:
+            # 判断是否为Cookie认证
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
+            
+            if is_cookie_auth and not self.app_id:
+                # 使用Web API
+                return await self._get_offline_tasks_web_api(page)
+            
+            # 使用开放平台API
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'page': str(page),
+            }
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
+                response = await client.get(
+                    f"{self.base_url}/2.0/offline/list",
+                    params=params
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 离线任务列表响应: count={result.get('data', {}).get('count', 0)}")
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    data = result.get('data', {})
+                    tasks_raw = data.get('tasks', [])
+                    
+                    # 格式化任务信息
+                    tasks = []
+                    for task in tasks_raw:
+                        status = task.get('status', 0)
+                        status_text_map = {
+                            -1: '等待中',
+                            0: '下载中',
+                            1: '已完成',
+                            2: '失败',
+                            4: '已删除'
+                        }
+                        
+                        tasks.append({
+                            'task_id': task.get('info_hash', '') or task.get('id', ''),
+                            'name': task.get('name', ''),
+                            'status': status,
+                            'status_text': status_text_map.get(status, '未知'),
+                            'size': int(task.get('size', 0)),
+                            'percentDone': float(task.get('percentDone', 0)),
+                            'add_time': int(task.get('add_time', 0)),
+                            'file_id': task.get('file_id', ''),
+                        })
+                    
+                    return {
+                        'success': True,
+                        'tasks': tasks,
+                        'count': len(tasks),
+                        'message': f'获取到 {len(tasks)} 个离线任务'
+                    }
+                else:
+                    error_msg = result.get('message', '未知错误')
+                    return {
+                        'success': False,
+                        'tasks': [],
+                        'count': 0,
+                        'message': f"获取离线任务失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'tasks': [],
+                    'count': 0,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 获取离线任务异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'tasks': [],
+                'count': 0,
+                'message': str(e)
+            }
+    
+    async def _get_offline_tasks_web_api(self, page: int = 1) -> Dict[str, Any]:
+        """
+        使用Web API获取离线任务列表（Cookie认证）
+        
+        适用于没有开放平台AppID的场景
+        """
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+            }
+            
+            params = {
+                'page': page,
+            }
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
+                response = await client.get(
+                    f"{self.webapi_url}/lixian/task",
+                    params=params,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API离线任务列表响应: {result}")
+                
+                if result.get('state'):
+                    tasks_raw = result.get('tasks', result.get('data', []))
+                    
+                    # 格式化任务信息
+                    tasks = []
+                    for task in tasks_raw:
+                        status = task.get('status', 0)
+                        status_text_map = {
+                            -1: '等待中',
+                            0: '下载中',
+                            1: '已完成',
+                            2: '失败',
+                            4: '已删除'
+                        }
+                        
+                        tasks.append({
+                            'task_id': task.get('info_hash', '') or task.get('id', ''),
+                            'name': task.get('name', ''),
+                            'status': status,
+                            'status_text': status_text_map.get(status, '未知'),
+                            'size': int(task.get('size', 0)),
+                            'percentDone': float(task.get('percentDone', 0)),
+                            'add_time': int(task.get('add_time', 0)),
+                            'file_id': task.get('file_id', ''),
+                        })
+                    
+                    logger.info(f"✅ Web API获取到 {len(tasks)} 个离线任务")
+                    return {
+                        'success': True,
+                        'tasks': tasks,
+                        'count': len(tasks),
+                        'message': f'获取到 {len(tasks)} 个离线任务'
+                    }
+                else:
+                    error_msg = result.get('error', '未知错误')
+                    return {
+                        'success': False,
+                        'tasks': [],
+                        'count': 0,
+                        'message': f"获取离线任务失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'tasks': [],
+                    'count': 0,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API获取离线任务异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'tasks': [],
+                'count': 0,
+                'message': str(e)
+            }
+    
+    async def delete_offline_task(self, task_ids: List[str]) -> Dict[str, Any]:
+        """
+        删除离线任务
+        
+        自动检测使用开放平台API或Web API
+        
+        Args:
+            task_ids: 任务ID列表
+            
+        Returns:
+            {"success": bool, "message": str}
+        """
+        try:
+            # 判断是否为Cookie认证
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
+            
+            if is_cookie_auth and not self.app_id:
+                # 使用Web API
+                return await self._delete_offline_task_web_api(task_ids)
+            
+            # 使用开放平台API
+            task_ids_str = ','.join(task_ids)
+            
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'hash': task_ids_str,
+            }
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                response = await client.post(
+                    f"{self.base_url}/2.0/offline/delete",
+                    data=params
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 删除离线任务响应: {result}")
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    logger.info(f"✅ 成功删除 {len(task_ids)} 个离线任务")
+                    return {
+                        'success': True,
+                        'message': f'成功删除 {len(task_ids)} 个离线任务'
+                    }
+                else:
+                    error_msg = result.get('message', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"删除离线任务失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 删除离线任务异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
+    async def _delete_offline_task_web_api(self, task_ids: List[str]) -> Dict[str, Any]:
+        """
+        使用Web API删除离线任务（Cookie认证）
+        
+        适用于没有开放平台AppID的场景
+        """
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+            }
+            
+            # Web API使用 hash[0]=xxx&hash[1]=yyy 格式
+            data = {}
+            for idx, task_id in enumerate(task_ids):
+                data[f'hash[{idx}]'] = task_id
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                response = await client.post(
+                    f"{self.webapi_url}/lixian/task_del",
+                    data=data,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API删除离线任务响应: {result}")
+                
+                if result.get('state'):
+                    logger.info(f"✅ Web API成功删除 {len(task_ids)} 个离线任务")
+                    return {
+                        'success': True,
+                        'message': f'成功删除 {len(task_ids)} 个离线任务'
+                    }
+                else:
+                    error_msg = result.get('error', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"删除离线任务失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API删除离线任务异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
+    async def clear_offline_tasks(self, flag: int = 1) -> Dict[str, Any]:
+        """
+        清空离线任务
+        
+        自动检测使用开放平台API或Web API
+        
+        Args:
+            flag: 清空标志
+                - 0: 清空所有任务
+                - 1: 清空已完成任务（默认）
+                - 2: 清空失败任务
+            
+        Returns:
+            {"success": bool, "message": str}
+        """
+        try:
+            # 判断是否为Cookie认证
+            is_cookie_auth = self.user_key and ('UID=' in self.user_key or 'CID=' in self.user_key)
+            
+            if is_cookie_auth and not self.app_id:
+                # 使用Web API
+                return await self._clear_offline_tasks_web_api(flag)
+            
+            # 使用开放平台API
+            params = {
+                'app_id': self.app_id,
+                'user_id': self.user_id,
+                'user_key': self.user_key,
+                'timestamp': str(int(time.time())),
+                'flag': str(flag),
+            }
+            
+            params['sign'] = self._generate_signature(params)
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                response = await client.post(
+                    f"{self.base_url}/2.0/offline/clear",
+                    data=params
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 清空离线任务响应: {result}")
+                
+                if result.get('state') == True or result.get('code') == 0:
+                    flag_text_map = {0: '所有', 1: '已完成', 2: '失败'}
+                    flag_text = flag_text_map.get(flag, '指定')
+                    
+                    logger.info(f"✅ 成功清空{flag_text}离线任务")
+                    return {
+                        'success': True,
+                        'message': f'成功清空{flag_text}离线任务'
+                    }
+                else:
+                    error_msg = result.get('message', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"清空离线任务失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ 清空离线任务异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
+    async def _clear_offline_tasks_web_api(self, flag: int = 1) -> Dict[str, Any]:
+        """
+        使用Web API清空离线任务（Cookie认证）
+        
+        适用于没有开放平台AppID的场景
+        """
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+            }
+            
+            data = {
+                'flag': flag,
+            }
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                response = await client.post(
+                    f"{self.webapi_url}/lixian/task_clear",
+                    data=data,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API清空离线任务响应: {result}")
+                
+                if result.get('state'):
+                    flag_text_map = {0: '所有', 1: '已完成', 2: '失败'}
+                    flag_text = flag_text_map.get(flag, '指定')
+                    
+                    logger.info(f"✅ Web API成功清空{flag_text}离线任务")
+                    return {
+                        'success': True,
+                        'message': f'成功清空{flag_text}离线任务'
+                    }
+                else:
+                    error_msg = result.get('error', '未知错误')
+                    return {
+                        'success': False,
+                        'message': f"清空离线任务失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API清空离线任务异常: {e}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'message': str(e)}
     
     async def test_connection(self) -> Dict[str, Any]:
