@@ -302,6 +302,56 @@ async def get_record(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/records/clear")
+async def clear_records(
+    rule_id: Optional[int] = Query(None, description="规则ID，如果指定则只清空该规则的记录"),
+    save_status: Optional[str] = Query(None, description="转存状态过滤(pending/success/failed)"),
+    db: AsyncSession = Depends(get_db)
+):
+    """清空资源记录（支持按规则或状态过滤）"""
+    try:
+        # 构建删除查询
+        query = select(ResourceRecord)
+        
+        if rule_id is not None:
+            query = query.where(ResourceRecord.rule_id == rule_id)
+        
+        if save_status:
+            query = query.where(ResourceRecord.save_status == save_status)
+        
+        # 获取要删除的记录
+        result = await db.execute(query)
+        records = result.scalars().all()
+        
+        deleted_count = len(records)
+        
+        # 删除记录
+        for record in records:
+            await db.delete(record)
+        
+        await db.commit()
+        
+        filter_info = []
+        if rule_id:
+            filter_info.append(f"规则ID={rule_id}")
+        if save_status:
+            filter_info.append(f"状态={save_status}")
+        
+        filter_str = f" ({', '.join(filter_info)})" if filter_info else ""
+        
+        logger.info(f"✅ 清空资源记录成功{filter_str}: 删除了 {deleted_count} 条记录")
+        
+        return {
+            "success": True,
+            "message": f"成功清空 {deleted_count} 条记录{filter_str}",
+            "deleted_count": deleted_count
+        }
+    except Exception as e:
+        logger.error(f"清空记录失败: {e}", exc_info=True)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.delete("/records/{record_id}")
 async def delete_record(
     record_id: int,
@@ -428,55 +478,7 @@ async def batch_delete_records(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/records/clear")
-async def clear_records(
-    rule_id: Optional[int] = Query(None, description="规则ID，如果指定则只清空该规则的记录"),
-    save_status: Optional[str] = Query(None, description="转存状态过滤(pending/success/failed)"),
-    db: AsyncSession = Depends(get_db)
-):
-    """清空资源记录（支持按规则或状态过滤）"""
-    try:
-        # 构建删除查询
-        query = select(ResourceRecord)
-        
-        if rule_id is not None:
-            query = query.where(ResourceRecord.rule_id == rule_id)
-        
-        if save_status:
-            query = query.where(ResourceRecord.save_status == save_status)
-        
-        # 获取要删除的记录
-        result = await db.execute(query)
-        records = result.scalars().all()
-        
-        deleted_count = len(records)
-        
-        # 删除记录
-        for record in records:
-            await db.delete(record)
-        
-        await db.commit()
-        
-        filter_info = []
-        if rule_id:
-            filter_info.append(f"规则ID={rule_id}")
-        if save_status:
-            filter_info.append(f"状态={save_status}")
-        
-        filter_str = f" ({', '.join(filter_info)})" if filter_info else ""
-        
-        logger.info(f"✅ 清空资源记录成功{filter_str}: 删除了 {deleted_count} 条记录")
-        
-        return {
-            "success": True,
-            "message": f"成功清空 {deleted_count} 条记录{filter_str}",
-            "deleted_count": deleted_count
-        }
-    except Exception as e:
-        logger.error(f"清空记录失败: {e}", exc_info=True)
-        await db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
+# ==================== 统计信息 ====================
 
 @router.get("/stats")
 async def get_stats(
