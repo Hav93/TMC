@@ -123,7 +123,7 @@ export const API_ROUTES = {
     base: `${API_BASE}/settings`,
     get: `${API_BASE}/settings`,
     save: `${API_BASE}/settings`,
-    testProxy: `${API_BASE}/test-proxy`,
+    testProxy: `${API_BASE}/settings/test-proxy`,
     telegram: {
       login: `${API_BASE}/telegram/login`,
       logout: `${API_BASE}/telegram/logout`,
