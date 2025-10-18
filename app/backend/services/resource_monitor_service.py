@@ -260,17 +260,56 @@ class ResourceMonitorService:
             password_match = re.search(r'password=([a-zA-Z0-9]+)', record.link_url)
             receive_code = password_match.group(1) if password_match else None
             
-            # TODO: 调用115转存API
-            # 这里需要集成115服务
-            # result = await pan115_service.save_share(...)
+            logger.info(f"📋 转存参数: share_code={share_code}, receive_code={receive_code}, target_path={rule.target_path}")
             
-            # 暂时标记为成功（实际需要调用115 API）
-            record.save_status = 'success'
-            record.save_path = rule.target_path or "/"
-            record.save_time = get_user_now()
-            await self.db.commit()
+            # 调用115转存API
+            from services.pan115_client import Pan115Client
+            from models import MediaSettings
+            from sqlalchemy import select
             
-            logger.info(f"✅ 115转存成功: record_id={record.id}")
+            # 获取115配置
+            settings_result = await self.db.execute(select(MediaSettings))
+            settings = settings_result.scalars().first()
+            
+            if not settings:
+                raise ValueError("未找到115网盘配置")
+            
+            app_id = getattr(settings, 'pan115_app_id', None) or ""
+            app_secret = getattr(settings, 'pan115_app_secret', None) or ""
+            user_id = getattr(settings, 'pan115_user_id', None)
+            user_key = getattr(settings, 'pan115_user_key', None)
+            
+            if not user_id or not user_key:
+                raise ValueError("请先登录115网盘")
+            
+            # 创建115客户端
+            client = Pan115Client(
+                app_id=app_id,
+                app_key=app_secret,
+                user_id=user_id,
+                user_key=user_key,
+                use_proxy=getattr(settings, 'pan115_use_proxy', False)
+            )
+            
+            # 调用转存API
+            save_result = await client.save_share(
+                share_code=share_code,
+                receive_code=receive_code,
+                target_dir_id="0"  # 默认转存到根目录，后续可以根据target_path创建目录
+            )
+            
+            if save_result.get('success'):
+                saved_count = save_result.get('saved_count', 0)
+                logger.info(f"✅ 115转存成功: record_id={record.id}, 转存了{saved_count}个文件")
+                
+                # 标记为成功
+                record.save_status = 'success'
+                record.save_path = rule.target_path or "/"
+                record.save_time = get_user_now()
+                await self.db.commit()
+            else:
+                error_msg = save_result.get('message', '转存失败')
+                raise ValueError(error_msg)
             
         except Exception as e:
             logger.error(f"115转存失败: {e}", exc_info=True)
