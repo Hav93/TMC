@@ -3101,9 +3101,12 @@ class Pan115Client:
                 'wp_path_id': target_dir_id,
             }
             
+            # 115 Web API 的正确格式
+            api_url = f"https://115.com/lixian/?ct=lixian&ac=add_task_url"
+            
             async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.post(
-                    f"{self.webapi_url}/lixian/?ct=lixian&ac=add_task_url",
+                    api_url,
                     data=data,
                     headers=headers
                 )
@@ -3272,9 +3275,12 @@ class Pan115Client:
                 'page': page,
             }
             
+            # 115 Web API 的正确格式
+            url = f"https://115.com/lixian/?ct=lixian&ac=task_lists"
+            
             async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
                 response = await client.get(
-                    f"{self.webapi_url}/lixian/?ct=lixian&ac=task_lists",
+                    url,
                     params=params,
                     headers=headers
                 )
@@ -3428,9 +3434,12 @@ class Pan115Client:
             for idx, task_id in enumerate(task_ids):
                 data[f'hash[{idx}]'] = task_id
             
+            # 115 Web API 的正确格式
+            api_url = f"https://115.com/lixian/?ct=lixian&ac=task_del"
+            
             async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.post(
-                    f"{self.webapi_url}/lixian/?ct=lixian&ac=task_del",
+                    api_url,
                     data=data,
                     headers=headers
                 )
@@ -3551,9 +3560,12 @@ class Pan115Client:
                 'flag': flag,
             }
             
+            # 115 Web API 的正确格式
+            api_url = f"https://115.com/lixian/?ct=lixian&ac=task_clear"
+            
             async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.post(
-                    f"{self.webapi_url}/lixian/?ct=lixian&ac=task_clear",
+                    api_url,
                     data=data,
                     headers=headers
                 )
