@@ -2802,14 +2802,15 @@ class Pan115Client:
             }
             
             # Web API转存接口
+            # 注意：115 API使用cid（category id）表示目标目录
             data = {
                 'share_code': share_code,
                 'receive_code': receive_code or '',
                 'user_id': self.user_id or '',
-                'file_id': target_dir_id,
+                'cid': target_dir_id,  # 目标目录ID
             }
             
-            logger.info(f"📦 转存请求参数: file_id={target_dir_id}, share_code={share_code}")
+            logger.info(f"📦 转存请求参数: cid={target_dir_id}, share_code={share_code}")
             
             # 如果指定了要转存的文件
             if file_ids:
