@@ -151,6 +151,20 @@ def main():
                 changes_made += 1
         print()
         
+        # 6. 修复 media_monitor_rules 表
+        print("🔧 修复 media_monitor_rules 表...")
+        media_monitor_fields = [
+            ("pan115_remote_path", "VARCHAR(500)"),
+            ("organize_enabled", "BOOLEAN DEFAULT 0"),
+            ("organize_target_type", "VARCHAR(20)"),
+            ("organize_local_path", "VARCHAR(500)"),
+        ]
+        
+        for field_name, field_def in media_monitor_fields:
+            if add_column_if_not_exists(cursor, "media_monitor_rules", field_name, field_def):
+                changes_made += 1
+        print()
+        
         # 提交更改
         conn.commit()
         
