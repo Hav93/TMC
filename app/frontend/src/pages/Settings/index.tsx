@@ -67,24 +67,7 @@ const SettingsPage: React.FC = () => {
 
   // 测试代理连接
   const testProxyMutation = useMutation({
-    mutationFn: async (values: any) => {
-      // 调用后端API测试代理连接
-      const baseURL = (import.meta as any)?.env?.VITE_API_URL || ((import.meta as any)?.env?.PROD ? '' : 'http://localhost:9393');
-      const response = await fetch(`${baseURL}/api/settings/test-proxy`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-        },
-        body: JSON.stringify(values)
-      });
-      
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || '测试失败');
-      }
-      return data;
-    },
+    mutationFn: settingsApi.testProxy,
     onSuccess: (result) => {
       if (result.success) {
         // 根据延迟显示不同的提示
