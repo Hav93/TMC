@@ -16,6 +16,7 @@ import time
 from database import get_db
 from models import ForwardRule, Keyword, ReplaceRule, MessageLog, UserSession, BotSettings
 from filters import KeywordFilter, RegexReplacer, MessageProcessor
+from timezone_utils import get_user_now
 
 # 性能优化：缓存装饰器
 def cache_result(ttl: int = 300):
@@ -691,7 +692,6 @@ class HistoryMessageService:
             
             # 确定时间范围（最近24小时）
             from models import get_local_now
-from timezone_utils import get_user_now
             now = get_local_now()
             time_filter = {
                 'offset_date': now,
