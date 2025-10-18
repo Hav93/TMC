@@ -44,7 +44,28 @@ except:
     MIGRATION_EXIT=$?
     
     if [ $MIGRATION_EXIT -eq 0 ]; then
-        echo "   └─ ✅ 数据库迁移成功"
+        echo "   ├─ ✅ 数据库迁移成功"
+        
+        # 执行数据库表结构修复（兜底方案，用于修复旧数据库的缺失字段）
+        echo "   ├─ 🔧 验证数据库表结构..."
+        if [ -f "/app/scripts/fix-database-schema.py" ]; then
+            REPAIR_OUTPUT=$(python3 /app/scripts/fix-database-schema.py 2>&1)
+            REPAIR_EXIT=$?
+            
+            if [ $REPAIR_EXIT -eq 0 ]; then
+                # 检查是否有实际修复
+                CHANGES=$(echo "$REPAIR_OUTPUT" | grep -oP '共修复 \K\d+')
+                if [ -n "$CHANGES" ] && [ "$CHANGES" -gt 0 ]; then
+                    echo "   ├─ 🔧 修复了 $CHANGES 个缺失字段（兼容旧数据库）"
+                else
+                    echo "   ├─ ✅ 表结构完整"
+                fi
+            else
+                echo "   ├─ ⚠️  表结构验证失败，但不影响启动"
+            fi
+        fi
+        
+        echo "   └─ ✅ 数据库准备完成"
     else
         # 显示完整错误信息
         echo ""
@@ -69,7 +90,7 @@ else
     MIGRATION_EXIT=$?
     
     if [ $MIGRATION_EXIT -eq 0 ]; then
-        echo "   └─ ✅ 数据库创建成功"
+        echo "   └─ ✅ 数据库创建成功（新数据库无需修复）"
     else
         echo ""
         echo "❌ 数据库创建失败！完整错误信息："
