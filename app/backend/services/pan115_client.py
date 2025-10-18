@@ -763,6 +763,8 @@ class Pan115Client:
         """
         创建目录路径（递归创建）
         
+        自动检测使用开放平台API或Web API
+        
         Args:
             path: 目录路径，如 /Media/Photos/2024
             parent_id: 父目录ID
@@ -771,13 +773,6 @@ class Pan115Client:
             {"success": bool, "dir_id": str, "message": str}
         """
         try:
-            # 检查是否配置了开放平台
-            if not self.app_id:
-                return {
-                    'success': False,
-                    'dir_id': parent_id,
-                    'message': '115文件夹创建功能需要开放平台AppID'
-                }
             # 清理路径
             path = path.strip('/')
             if not path:
@@ -791,7 +786,7 @@ class Pan115Client:
                 if not part:
                     continue
                 
-                # 创建目录
+                # 创建目录（会自动选择API）
                 result = await self.create_directory(part, current_parent_id)
                 if not result['success']:
                     return result
