@@ -116,10 +116,22 @@ multipart/form-data:
 - ✅ 已在项目中实现
 
 **使用方法**：
-```env
+```bash
+# 方式1：在Web界面配置（推荐）
+1. 访问 TMC Web 界面
+2. 进入"设置" -> "115云盘配置"
+3. 填写：
+   - AppID: 你的开放平台AppID
+   - AppSecret: 你的开放平台AppSecret
+   - 用户Cookie: 你的115 Cookie
+4. 保存配置
+
+# 方式2：环境变量配置
 PAN115_APP_ID=your_app_id
 PAN115_APP_SECRET=your_app_secret
 ```
+
+**⚠️ 重要：必须同时配置 AppID 和 AppSecret！**
 
 ### 方案B：研究签名算法 🔬
 
@@ -168,16 +180,35 @@ PAN115_APP_SECRET=your_app_secret
 
 ### 对于普通用户
 
-**最佳实践**：配置开放平台AppID
+**最佳实践**：配置开放平台AppID和AppSecret
 
 ```bash
-# 1. 访问 https://open.115.com/ 申请AppID
-# 2. 配置环境变量
+# 步骤1：访问开放平台
+打开 https://open.115.com/
+注册/登录账号
+创建应用
+获取 AppID 和 AppSecret（⚠️ 两者都必需！）
+
+# 步骤2：在TMC中配置（推荐Web界面）
+1. 访问 TMC Web 界面
+2. 进入"设置" -> "115云盘配置"
+3. 填写：
+   - AppID: 你的应用ID
+   - AppSecret: 你的应用密钥（用于签名）
+   - 用户Cookie: 你的115账号Cookie
+4. 保存并测试连接
+
+# 或者：通过环境变量配置
 PAN115_APP_ID=your_app_id
 PAN115_APP_SECRET=your_app_secret
-# 3. 重启应用
+# 然后重启应用
 docker-compose restart
 ```
+
+**⚠️ 重要说明**：
+- **AppID 和 AppSecret 必须同时配置**
+- AppSecret 用于生成访问令牌的签名
+- 缺少任何一个都无法使用开放平台API
 
 ### 对于开发者
 
