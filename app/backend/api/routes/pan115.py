@@ -1339,3 +1339,129 @@ async def clear_offline_tasks(
         logger.error(f"❌ 清空离线任务失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ==================== 分享链接功能 ====================
+
+class ShareInfoRequest(BaseModel):
+    """获取分享信息请求"""
+    share_code: str
+    receive_code: Optional[str] = None
+
+
+class SaveShareRequest(BaseModel):
+    """转存分享链接请求"""
+    share_code: str
+    receive_code: Optional[str] = None
+    target_dir_id: str = "0"
+    file_ids: Optional[List[str]] = None
+
+
+@router.post("/share/info")
+async def get_share_info(
+    payload: ShareInfoRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    获取115分享链接信息
+    
+    支持：
+    - 无密码分享
+    - 有密码分享（需要提供 receive_code）
+    """
+    try:
+        # 获取115网盘配置
+        config = await get_pan115_config(db)
+        if not config:
+            raise HTTPException(status_code=404, detail="115网盘未配置")
+        
+        if not config.enabled:
+            raise HTTPException(status_code=400, detail="115网盘未启用")
+        
+        # 创建客户端
+        client = Pan115Client(
+            app_id=config.app_id,
+            app_secret=config.app_secret,
+            user_id=config.user_id,
+            user_key=config.user_key,
+            use_proxy=config.use_proxy
+        )
+        
+        # 获取分享信息
+        result = await client.get_share_info(
+            share_code=payload.share_code,
+            receive_code=payload.receive_code
+        )
+        
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['message'])
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 获取分享信息失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/share/save")
+async def save_share(
+    payload: SaveShareRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    转存115分享链接到我的网盘
+    
+    参数：
+    - share_code: 分享码（从链接提取，如 sw1abc123）
+    - receive_code: 提取码（如果分享有密码）
+    - target_dir_id: 目标目录ID（默认根目录）
+    - file_ids: 要转存的文件ID列表（可选，为空则转存全部）
+    
+    支持：
+    - 开放平台API（有AppID时）
+    - Web API（无AppID时，仅需Cookie）
+    """
+    try:
+        # 获取115网盘配置
+        config = await get_pan115_config(db)
+        if not config:
+            raise HTTPException(status_code=404, detail="115网盘未配置")
+        
+        if not config.enabled:
+            raise HTTPException(status_code=400, detail="115网盘未启用")
+        
+        # 创建客户端
+        client = Pan115Client(
+            app_id=config.app_id,
+            app_secret=config.app_secret,
+            user_id=config.user_id,
+            user_key=config.user_key,
+            use_proxy=config.use_proxy
+        )
+        
+        logger.info(f"📥 转存分享链接: share_code={payload.share_code}, target_dir={payload.target_dir_id}")
+        
+        # 转存分享
+        result = await client.save_share(
+            share_code=payload.share_code,
+            receive_code=payload.receive_code,
+            target_dir_id=payload.target_dir_id,
+            file_ids=payload.file_ids
+        )
+        
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['message'])
+        
+        logger.info(f"✅ 转存成功: {result['saved_count']} 个文件")
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 转存分享链接失败: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+

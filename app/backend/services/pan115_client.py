@@ -2651,6 +2651,7 @@ class Pan115Client:
                         target_dir_id: str = "0", file_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         转存115分享链接到我的网盘
+        自动选择开放平台API或Web API
         
         Args:
             share_code: 分享码（从分享链接中提取，如 https://115.com/s/sw1abc123 中的 sw1abc123）
@@ -2666,8 +2667,19 @@ class Pan115Client:
                 "file_list": [...]   # 转存的文件列表
             }
         """
+        # 自动选择API方式
+        if self.app_id:
+            logger.info("🔑 使用开放平台API转存分享")
+            return await self._save_share_open_api(share_code, receive_code, target_dir_id, file_ids)
+        else:
+            logger.info("🍪 使用Web API转存分享")
+            return await self._save_share_web_api(share_code, receive_code, target_dir_id, file_ids)
+    
+    async def _save_share_open_api(self, share_code: str, receive_code: Optional[str] = None,
+                                   target_dir_id: str = "0", file_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+        """使用开放平台API转存分享（需要AppID）"""
         try:
-            logger.info(f"📥 开始转存分享: share_code={share_code}, receive_code={'***' if receive_code else None}")
+            logger.info(f"📥 开始转存分享(Open API): share_code={share_code}, receive_code={'***' if receive_code else None}")
             
             # 构建请求参数
             params = {
@@ -2752,9 +2764,101 @@ class Pan115Client:
                 'file_list': []
             }
     
+    async def _save_share_web_api(self, share_code: str, receive_code: Optional[str] = None,
+                                  target_dir_id: str = "0", file_ids: Optional[List[str]] = None) -> Dict[str, Any]:
+        """使用Web API转存分享（Cookie认证）"""
+        try:
+            logger.info(f"📥 开始转存分享(Web API): share_code={share_code}")
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'Origin': 'https://115.com',
+                'Referer': f'https://115.com/s/{share_code}',
+            }
+            
+            # Web API转存接口
+            data = {
+                'share_code': share_code,
+                'receive_code': receive_code or '',
+                'user_id': self.user_id or '',
+                'file_id': target_dir_id,
+            }
+            
+            # 如果指定了要转存的文件
+            if file_ids:
+                data['fid[]'] = file_ids
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=60.0)) as client:
+                response = await client.post(
+                    f"{self.webapi_url}/share/receive",
+                    data=data,
+                    headers=headers
+                )
+            
+            logger.info(f"📥 Web API转存响应: HTTP {response.status_code}")
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API转存结果: {result}")
+                
+                if result.get('state'):
+                    # 转存成功
+                    data = result.get('data', {})
+                    saved_count = len(file_ids) if file_ids else 1
+                    
+                    logger.info(f"✅ Web API转存成功")
+                    
+                    return {
+                        'success': True,
+                        'message': '转存成功',
+                        'saved_count': saved_count,
+                        'file_list': []
+                    }
+                else:
+                    error_msg = result.get('error', result.get('msg', '未知错误'))
+                    errno = result.get('errno', result.get('errNo', 0))
+                    
+                    # 处理常见错误
+                    if errno == 20009 or 'password' in error_msg.lower():
+                        error_msg = "提取码错误或需要提取码"
+                    elif errno == 20010 or 'not found' in error_msg.lower():
+                        error_msg = "分享链接不存在或已失效"
+                    elif errno == 20011 or 'expired' in error_msg.lower():
+                        error_msg = "分享链接已过期"
+                    
+                    logger.error(f"❌ Web API转存失败: {error_msg} (errno={errno})")
+                    
+                    return {
+                        'success': False,
+                        'message': f"转存失败: {error_msg}",
+                        'saved_count': 0,
+                        'file_list': []
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}",
+                    'saved_count': 0,
+                    'file_list': []
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API转存分享异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'message': f"转存异常: {str(e)}",
+                'saved_count': 0,
+                'file_list': []
+            }
+    
     async def get_share_info(self, share_code: str, receive_code: Optional[str] = None) -> Dict[str, Any]:
         """
         获取115分享链接的文件信息（转存前预览）
+        自动选择开放平台API或Web API
         
         Args:
             share_code: 分享码
@@ -2771,6 +2875,13 @@ class Pan115Client:
                 "message": str
             }
         """
+        if self.app_id:
+            return await self._get_share_info_open_api(share_code, receive_code)
+        else:
+            return await self._get_share_info_web_api(share_code, receive_code)
+    
+    async def _get_share_info_open_api(self, share_code: str, receive_code: Optional[str] = None) -> Dict[str, Any]:
+        """使用开放平台API获取分享信息"""
         try:
             params = {
                 'app_id': self.app_id,
@@ -2821,6 +2932,67 @@ class Pan115Client:
                 
         except Exception as e:
             logger.error(f"❌ 获取分享信息异常: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    async def _get_share_info_web_api(self, share_code: str, receive_code: Optional[str] = None) -> Dict[str, Any]:
+        """使用Web API获取分享信息"""
+        try:
+            logger.info(f"📋 获取分享信息(Web API): share_code={share_code}")
+            
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Cookie': self.user_key,
+                'Accept': 'application/json',
+                'Referer': f'https://115.com/s/{share_code}',
+            }
+            
+            params = {
+                'share_code': share_code,
+                'receive_code': receive_code or '',
+            }
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
+                response = await client.get(
+                    f"{self.webapi_url}/share/snap",
+                    params=params,
+                    headers=headers
+                )
+            
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"📦 Web API分享信息: {result}")
+                
+                if result.get('state'):
+                    data = result.get('data', {})
+                    
+                    share_info = {
+                        'title': data.get('share_title', data.get('file_name', '')),
+                        'file_count': data.get('file_count', 1),
+                        'files': data.get('list', []),
+                        'expire_time': data.get('expire_time', 0),
+                    }
+                    
+                    return {
+                        'success': True,
+                        'share_info': share_info,
+                        'message': '获取分享信息成功'
+                    }
+                else:
+                    error_msg = result.get('error', result.get('msg', '未知错误'))
+                    return {
+                        'success': False,
+                        'message': f"获取分享信息失败: {error_msg}"
+                    }
+            else:
+                return {
+                    'success': False,
+                    'message': f"HTTP {response.status_code}"
+                }
+                
+        except Exception as e:
+            logger.error(f"❌ Web API获取分享信息异常: {e}")
+            import traceback
+            traceback.print_exc()
             return {'success': False, 'message': str(e)}
     
     # ==================== 离线下载功能 ====================
