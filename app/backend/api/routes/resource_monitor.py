@@ -11,6 +11,7 @@ import json
 from database import get_db
 from models import ResourceMonitorRule, ResourceRecord
 from log_manager import get_logger
+from timezone_utils import get_user_now
 
 logger = get_logger("resource_monitor_api", "web_api.log")
 
@@ -136,7 +137,7 @@ async def update_rule(
         if "dedup_time_window" in rule_data:
             rule.dedup_time_window = rule_data["dedup_time_window"]
         
-        rule.updated_at = datetime.now()
+        rule.updated_at = get_user_now()
         await db.commit()
         
         logger.info(f"✅ 更新资源监控规则: {rule.name}")

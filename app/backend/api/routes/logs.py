@@ -14,6 +14,7 @@ from log_manager import get_logger
 from sqlalchemy import select, desc, and_, func
 from auth import get_current_user
 from models import User
+from timezone_utils import get_user_now
 import json
 import io
 
@@ -381,7 +382,7 @@ async def export_logs(
                 io.BytesIO(json_bytes),
                 media_type='application/json',
                 headers={
-                    'Content-Disposition': f'attachment; filename="logs_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json"'
+                    'Content-Disposition': f'attachment; filename="logs_{get_user_now().strftime("%Y%m%d_%H%M%S")}.json"'
                 }
             )
     except Exception as e:

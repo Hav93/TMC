@@ -12,6 +12,7 @@ from log_manager import get_logger
 from api.dependencies import get_enhanced_bot
 from datetime import datetime, timedelta
 from sqlalchemy import and_
+from timezone_utils import get_user_now
 
 logger = get_logger('api.dashboard', 'api.log')
 
@@ -87,7 +88,7 @@ async def get_dashboard_stats():
                 success_rate = round((success_messages / total_messages) * 100, 2)
             
             # 最近7天的消息统计
-            seven_days_ago = datetime.now() - timedelta(days=7)
+            seven_days_ago = get_user_now() - timedelta(days=7)
             recent_messages_query = select(
                 func.date(MessageLog.created_at).label('date'),
                 func.count(MessageLog.id).label('count')
@@ -161,7 +162,7 @@ async def get_dashboard_overview():
         
         async for db in get_db():
             today = date.today()
-            seven_days_ago = datetime.now() - timedelta(days=7)
+            seven_days_ago = get_user_now() - timedelta(days=7)
             
             # ==================== 消息转发模块 ====================
             # 总规则数
@@ -539,7 +540,7 @@ async def get_dashboard_insights():
             current_usage_gb = current_usage_mb / 1024
             
             # 计算近7日平均增长
-            seven_days_ago = datetime.now() - timedelta(days=7)
+            seven_days_ago = get_user_now() - timedelta(days=7)
             recent_size_query = select(
                 func.sum(MediaFile.file_size_mb)
             ).where(

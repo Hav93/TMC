@@ -15,6 +15,7 @@ from database import get_db
 from models import MediaFile, DownloadTask, MediaMonitorRule, User, MediaSettings
 from auth import get_current_user
 from log_manager import get_logger
+from timezone_utils import get_user_now
 
 logger = get_logger('api.media_files')
 from services.storage_manager import get_storage_manager
@@ -1160,7 +1161,7 @@ async def reorganize_media_file(
             media_file.is_uploaded_to_cloud = True
             media_file.organize_failed = False
             media_file.organize_error = None
-            media_file.uploaded_at = datetime.now()
+            media_file.uploaded_at = get_user_now()
             
             await db.commit()
             

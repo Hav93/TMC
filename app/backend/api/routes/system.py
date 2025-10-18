@@ -19,6 +19,7 @@ import asyncio
 import os
 import re
 from config import Config
+from timezone_utils import get_user_now, get_user_timestamp
 
 logger = get_logger('api.system', 'api.log')
 
@@ -34,7 +35,7 @@ async def health_check():
     """
     return JSONResponse(content={
         "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": get_user_now().isoformat(),
         "version": Config.APP_VERSION
     })
 
@@ -282,7 +283,7 @@ async def stream_container_logs(
                                     else:
                                         # 兼容旧格式（非结构化）
                                         timestamp_match = timestamp_regex.match(line)
-                                        log_timestamp = timestamp_match.group(1) if timestamp_match else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                        log_timestamp = timestamp_match.group(1) if timestamp_match else get_user_now().strftime('%Y-%m-%d %H:%M:%S')
                                         
                                         level_match = level_regex.search(line)
                                         level_val = level_match.group(1) if level_match else None
@@ -310,14 +311,14 @@ async def stream_container_logs(
                         except Exception as e:
                             logger.warning(f"无法打开日志文件 {fname}: {e}")
 
-            last_discover_ts = datetime.now().timestamp()
+            last_discover_ts = get_user_timestamp()
 
             # 持续监控
             while True:
                 has_new_data = False
 
                 # 周期性重新发现新日志文件（每2秒）
-                now_ts = datetime.now().timestamp()
+                now_ts = get_user_timestamp()
                 if now_ts - last_discover_ts >= 2:
                     last_discover_ts = now_ts
                     current = discover_log_files()
@@ -356,7 +357,7 @@ async def stream_container_logs(
                                             else:
                                                 # 兼容旧格式
                                                 timestamp_match = timestamp_regex.match(line)
-                                                log_timestamp = timestamp_match.group(1) if timestamp_match else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                                log_timestamp = timestamp_match.group(1) if timestamp_match else get_user_now().strftime('%Y-%m-%d %H:%M:%S')
                                                 
                                                 level_match = level_regex.search(line)
                                                 level_val = level_match.group(1) if level_match else None
@@ -438,7 +439,7 @@ async def stream_container_logs(
                                         # 兼容旧格式
                                         # 黑名单已经在上面过滤，这里不需要重复
                                         timestamp_match = timestamp_regex.match(line)
-                                        log_timestamp = timestamp_match.group(1) if timestamp_match else datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                                        log_timestamp = timestamp_match.group(1) if timestamp_match else get_user_now().strftime('%Y-%m-%d %H:%M:%S')
 
                                         level_match = level_regex.search(line)
                                         level_val = level_match.group(1) if level_match else None
@@ -545,7 +546,7 @@ async def enhanced_status():
             "connected_clients": connected_clients,
             "version": Config.APP_VERSION,
             "mode": "enhanced",
-            "timestamp": datetime.now().isoformat()
+            "timestamp": get_user_now().isoformat()
         })
     except Exception as e:
         logger.error(f"获取增强模式状态失败: {e}")

@@ -15,6 +15,7 @@ from models import MediaMonitorRule, User
 from auth import get_current_user
 from log_manager import get_logger
 from telegram_client_manager import multi_client_manager
+from timezone_utils import get_user_now
 
 logger = get_logger('api.media_monitor')
 
@@ -278,7 +279,7 @@ async def update_monitor_rule(
             if hasattr(rule, key):
                 setattr(rule, key, value)
         
-        rule.updated_at = datetime.now()
+        rule.updated_at = get_user_now()
         
         await db.commit()
         await db.refresh(rule)
@@ -374,7 +375,7 @@ async def toggle_monitor_rule(
             )
         
         rule.is_active = not rule.is_active
-        rule.updated_at = datetime.now()
+        rule.updated_at = get_user_now()
         
         await db.commit()
         await db.refresh(rule)
