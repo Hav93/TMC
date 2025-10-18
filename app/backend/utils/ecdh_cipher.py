@@ -182,6 +182,23 @@ class EcdhCipher:
         Returns:
             解密后的明文
         """
+        import logging
+        logging.info(f"🔓 解密数据长度: {len(ciphertext)} bytes")
+        logging.info(f"🔑 密钥: {self.key.hex()}")
+        logging.info(f"🔑 IV: {self.iv.hex()}")
+        
+        # 检查密文长度
+        if len(ciphertext) % 16 != 0:
+            logging.error(f"❌ 密文长度不是16的倍数: {len(ciphertext)}")
+            logging.error(f"响应内容（前100字节）: {ciphertext[:100]}")
+            # 尝试作为纯文本解析
+            try:
+                text = ciphertext.decode('utf-8', errors='ignore')
+                logging.info(f"响应可能是纯文本: {text[:200]}")
+            except:
+                pass
+            raise ValueError(f"密文长度({len(ciphertext)})不是16的倍数，无法解密")
+        
         # 使用AES-CBC模式解密
         cipher = Cipher(
             algorithms.AES(self.key),
