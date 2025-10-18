@@ -4,7 +4,7 @@
 import os
 import asyncio
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Dict, Any, List, Optional
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -109,7 +109,7 @@ class StorageManager:
             logger.info(f"🧹 清理规则: {rule.name} (ID: {rule.id})")
             
             # 计算截止日期
-            cutoff_date = datetime.now() - timedelta(days=rule.auto_cleanup_days or 7)
+            cutoff_date = get_user_now() - timedelta(days=rule.auto_cleanup_days or 7)
             
             # 查询需要清理的文件
             query = select(MediaFile).where(
@@ -202,7 +202,7 @@ class StorageManager:
                     }
                 
                 # 计算截止日期
-                cutoff_date = datetime.now() - timedelta(days=days)
+                cutoff_date = get_user_now() - timedelta(days=days)
                 
                 # 查询需要清理的文件
                 query = select(MediaFile).where(
@@ -271,6 +271,7 @@ class StorageManager:
         except Exception as e:
             logger.error(f"手动清理失败: {e}")
             import traceback
+from timezone_utils import get_user_now
             traceback.print_exc()
             return {
                 'success': False,

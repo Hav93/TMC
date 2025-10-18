@@ -10,9 +10,10 @@
 """
 from typing import Dict, List, Optional, Any
 from enum import Enum
-from datetime import datetime, timedelta
+from datetime import timedelta
 import asyncio
 import json
+from timezone_utils import get_user_now
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -296,7 +297,7 @@ class NotificationService:
             payload = {
                 "message": message,
                 "data": data,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": get_user_now().isoformat()
             }
             
             async with aiohttp.ClientSession() as session:

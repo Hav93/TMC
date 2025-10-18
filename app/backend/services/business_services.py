@@ -187,7 +187,7 @@ class ForwardRuleService:
                             kwargs.pop(time_field, None)
             
             # 添加更新时间
-            kwargs['updated_at'] = datetime.now()
+            kwargs['updated_at'] = get_user_now()
             
             # 使用数据库会话工厂
             if not db_manager.async_session:
@@ -691,6 +691,7 @@ class HistoryMessageService:
             
             # 确定时间范围（最近24小时）
             from models import get_local_now
+from timezone_utils import get_user_now
             now = get_local_now()
             time_filter = {
                 'offset_date': now,

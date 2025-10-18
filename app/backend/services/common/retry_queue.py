@@ -18,6 +18,7 @@ import json
 import os
 from pathlib import Path
 from log_manager import get_logger
+from timezone_utils import get_user_now
 
 logger = get_logger("retry_queue", "enhanced_bot.log")
 
@@ -87,7 +88,7 @@ class RetryTask:
         self.last_error = error
         self.error_history.append({
             'error': error,
-            'time': datetime.now().isoformat(),
+            'time': get_user_now().isoformat(),
             'retry_count': self.retry_count
         })
     
@@ -273,7 +274,7 @@ class SmartRetryQueue:
                 max_retries=max_retries,
                 strategy=strategy,
                 base_delay=base_delay,
-                next_retry_time=datetime.now()  # 立即可重试
+                next_retry_time=get_user_now()  # 立即可重试
             )
             
             heapq.heappush(self._queue, task)
@@ -296,7 +297,7 @@ class SmartRetryQueue:
     async def _check_ready_tasks(self):
         """检查准备好的任务"""
         async with self._lock:
-            now = datetime.now()
+            now = get_user_now()
             ready_count = 0
             
             # 统计准备好的任务数量
@@ -332,7 +333,7 @@ class SmartRetryQueue:
     async def _get_next_ready_task(self) -> Optional[RetryTask]:
         """获取下一个准备好的任务"""
         async with self._lock:
-            now = datetime.now()
+            now = get_user_now()
             
             # 查找第一个准备好的任务
             if self._queue and self._queue[0].next_retry_time <= now:
@@ -375,13 +376,13 @@ class SmartRetryQueue:
     async def _handle_task_failure(self, task: RetryTask, error: str):
         """处理任务失败"""
         task.retry_count += 1
-        task.last_retry_at = datetime.now()
+        task.last_retry_at = get_user_now()
         task.record_error(error)
         
         if task.should_retry():
             # 计算下次重试时间
             delay = task.calculate_next_delay()
-            task.next_retry_time = datetime.now() + timedelta(seconds=delay)
+            task.next_retry_time = get_user_now() + timedelta(seconds=delay)
             
             # 重新加入队列
             async with self._lock:
@@ -446,7 +447,7 @@ class SmartRetryQueue:
                 # 序列化队列
                 queue_data = {
                     'version': '1.0',
-                    'saved_at': datetime.now().isoformat(),
+                    'saved_at': get_user_now().isoformat(),
                     'tasks': [task.to_dict() for task in self._queue],
                     'stats': self.stats.copy()
                 }
@@ -463,7 +464,7 @@ class SmartRetryQueue:
             # 原子性替换
             os.replace(temp_path, self.persistence_path)
             
-            self.stats['last_persistence'] = datetime.now().isoformat()
+            self.stats['last_persistence'] = get_user_now().isoformat()
             logger.debug(f"队列已保存到磁盘: {len(queue_data['tasks'])} 个任务")
         
         except Exception as e:

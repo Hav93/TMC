@@ -6,7 +6,7 @@
 import json
 import hashlib
 import re
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import List, Dict, Optional, TYPE_CHECKING
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from log_manager import get_logger
 from database import get_db
 from models import ResourceMonitorRule, ResourceRecord
+from timezone_utils import get_user_now
 
 if TYPE_CHECKING:
     from services.message_context import MessageContext
@@ -190,7 +191,7 @@ class ResourceMonitorService:
     
     async def _is_duplicate(self, link_hash: str, time_window: int) -> bool:
         """检查链接是否重复"""
-        cutoff_time = datetime.now() - timedelta(seconds=time_window)
+        cutoff_time = get_user_now() - timedelta(seconds=time_window)
         
         result = await self.db.execute(
             select(ResourceRecord).where(
@@ -266,7 +267,7 @@ class ResourceMonitorService:
             # 暂时标记为成功（实际需要调用115 API）
             record.save_status = 'success'
             record.save_path = rule.target_path or "/"
-            record.save_time = datetime.now()
+            record.save_time = get_user_now()
             await self.db.commit()
             
             logger.info(f"✅ 115转存成功: record_id={record.id}")
@@ -371,7 +372,7 @@ async def handle_115_save_retry(task) -> bool:
             # 暂时标记为成功
             record.save_status = 'success'
             record.save_path = target_path
-            record.save_time = datetime.now()
+            record.save_time = get_user_now()
             await db.commit()
             
             logger.info(f"✅ 重试成功: record_id={record_id}")

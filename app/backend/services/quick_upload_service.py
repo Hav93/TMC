@@ -11,9 +11,8 @@ import hashlib
 import os
 from typing import Optional, Tuple
 from dataclasses import dataclass
-from datetime import datetime
-
 from log_manager import get_logger
+from timezone_utils import get_user_now
 
 logger = get_logger("quick_upload", "enhanced_bot.log")
 
@@ -93,7 +92,7 @@ class QuickUploadService:
         Returns:
             QuickUploadResult: 检测结果
         """
-        start_time = datetime.now()
+        start_time = get_user_now()
         
         try:
             # 1. 获取文件大小
@@ -127,7 +126,7 @@ class QuickUploadService:
                     is_quick = False
             
             # 4. 计算耗时
-            check_time = (datetime.now() - start_time).total_seconds()
+            check_time = (get_user_now() - start_time).total_seconds()
             
             # 5. 更新统计
             self.stats["total_checks"] += 1

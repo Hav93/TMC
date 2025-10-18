@@ -15,6 +15,7 @@ import asyncio
 import hashlib
 from collections import OrderedDict
 from log_manager import get_logger
+from timezone_utils import get_user_now
 
 logger = get_logger("message_cache", "enhanced_bot.log")
 
@@ -30,11 +31,11 @@ class CacheEntry:
     
     def is_expired(self, ttl: int) -> bool:
         """检查是否过期"""
-        return (datetime.now() - self.created_at).total_seconds() > ttl
+        return (get_user_now() - self.created_at).total_seconds() > ttl
     
     def access(self):
         """记录访问"""
-        self.last_accessed = datetime.now()
+        self.last_accessed = get_user_now()
         self.access_count += 1
 
 
@@ -126,8 +127,8 @@ class MessageCacheManager:
             if key in self._cache:
                 entry = self._cache[key]
                 entry.value = value
-                entry.created_at = datetime.now()
-                entry.last_accessed = datetime.now()
+                entry.created_at = get_user_now()
+                entry.last_accessed = get_user_now()
                 self._cache.move_to_end(key)
                 return
             

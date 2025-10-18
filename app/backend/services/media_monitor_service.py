@@ -7,7 +7,6 @@ import json
 import hashlib
 import shutil
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import Optional, Dict, List, Any
 from sqlalchemy import select, or_
@@ -21,6 +20,7 @@ from models import MediaMonitorRule, DownloadTask, MediaFile, MediaSettings
 from utils.media_filters import MediaFilter
 from utils.message_deduplicator import SenderFilter
 from utils.media_metadata import MediaMetadataExtractor
+from timezone_utils import get_user_now
 
 # 导入 115网盘 Open API 客户端
 try:
@@ -52,7 +52,7 @@ class FileOrganizer:
             return ''
         
         elif rule.folder_structure == 'date':
-            now = datetime.now()
+            now = get_user_now()
             return f"{now.year}/{now.month:02d}/{now.day:02d}"
         
         elif rule.folder_structure == 'type':
@@ -70,7 +70,7 @@ class FileOrganizer:
         
         elif rule.folder_structure == 'custom':
             template = rule.custom_folder_template or '{type}/{year}/{month}/{day}'
-            now = datetime.now()
+            now = get_user_now()
             
             replacements = {
                 '{year}': str(now.year),
@@ -117,7 +117,7 @@ class FileOrganizer:
             return original_name
         
         template = rule.filename_template
-        now = datetime.now()
+        now = get_user_now()
         
         # 分离扩展名
         name_without_ext = Path(original_name).stem
@@ -351,7 +351,7 @@ class MediaMonitorService:
                             logger.warning(f"规则不存在: {rule_id}，无法续传相关任务")
                             for task in tasks:
                                 task.status = 'failed'
-                                task.failed_at = datetime.now()
+                                task.failed_at = get_user_now()
                                 task.last_error = "关联的监控规则已删除"
                                 failed_count += 1
                             continue
@@ -471,7 +471,7 @@ class MediaMonitorService:
                 except Exception as e:
                     logger.error(f"❌ 续传任务失败 {task.file_name}: {e}")
                     task.status = 'failed'
-                    task.failed_at = datetime.now()
+                    task.failed_at = get_user_now()
                     task.last_error = f"自动续传失败: {str(e)}"
                     failed += 1
             
@@ -836,7 +836,7 @@ class MediaMonitorService:
                 
                 # 更新任务状态
                 task.status = 'downloading'
-                task.started_at = datetime.now()
+                task.started_at = get_user_now()
                 await db.commit()
                 
                 # 确保下载目录存在
@@ -982,7 +982,7 @@ class MediaMonitorService:
                     
                     # 更新任务状态为成功但跳过
                     task.status = 'success'
-                    task.completed_at = datetime.now()
+                    task.completed_at = get_user_now()
                     task.progress_percent = 100
                     task.last_error = "文件已存在（重复）"
                     await db.commit()
@@ -1185,8 +1185,8 @@ class MediaMonitorService:
                     is_uploaded_to_cloud=is_uploaded,
                     organize_failed=organize_failed,
                     organize_error=organize_error,
-                    organized_at=datetime.now() if (final_path or is_uploaded) and not organize_failed else None,
-                    uploaded_at=datetime.now() if is_uploaded else None
+                    organized_at=get_user_now() if (final_path or is_uploaded) and not organize_failed else None,
+                    uploaded_at=get_user_now() if is_uploaded else None
                 )
                 
                 db.add(media_file)
@@ -1194,13 +1194,13 @@ class MediaMonitorService:
                 # 更新任务状态
                 # 下载成功就标记为success，归档失败只影响媒体文件记录，不影响下载任务状态
                 task.status = 'success'
-                task.completed_at = datetime.now()
+                task.completed_at = get_user_now()
                 task.progress_percent = 100
                 
                 # 更新规则统计
                 rule.total_downloaded = (rule.total_downloaded or 0) + 1
                 rule.total_size_mb = (rule.total_size_mb or 0) + task.file_size_mb
-                rule.last_download_at = datetime.now()
+                rule.last_download_at = get_user_now()
                 
                 if organize_failed:
                     logger.warning(f"⚠️ 下载成功但归档失败: {task.file_name} - {organize_error}")
@@ -1226,7 +1226,7 @@ class MediaMonitorService:
                     
                     if task:
                         task.status = 'failed'
-                        task.failed_at = datetime.now()
+                        task.failed_at = get_user_now()
                         task.last_error = str(e)
                         task.retry_count = (task.retry_count or 0) + 1
                         

@@ -10,10 +10,10 @@
 import asyncio
 from typing import List, Dict, Optional
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
 
 from log_manager import get_logger
+from timezone_utils import get_user_now
 
 logger = get_logger("offline_monitor", "enhanced_bot.log")
 
@@ -185,7 +185,7 @@ class OfflineTaskMonitor:
             task.progress = min(task.progress + 10, 100)
             if task.progress >= 100:
                 task.status = TaskStatus.COMPLETED
-                task.completed_at = datetime.now()
+                task.completed_at = get_user_now()
         
         return task
     
@@ -251,7 +251,7 @@ class OfflineTaskMonitor:
             task_name=task_name or f"Task {task_id}",
             file_size=0,
             status=TaskStatus.PENDING,
-            created_at=datetime.now()
+            created_at=get_user_now()
         )
         
         self.tasks[task_id] = task
