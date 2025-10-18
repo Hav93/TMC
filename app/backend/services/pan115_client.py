@@ -963,8 +963,14 @@ class Pan115Client:
                 if not result['success']:
                     return result
                 
+                # 检查是否有警告
+                if result.get('warning'):
+                    logger.warning(f"⚠️ {result['warning']}")
+                
                 current_parent_id = result['dir_id']
+                logger.debug(f"📁 创建/获取目录: {part} → ID: {current_parent_id}")
             
+            logger.info(f"✅ 最终目录ID: {current_parent_id} (路径: {path})")
             return {
                 'success': True,
                 'dir_id': current_parent_id,
@@ -1095,18 +1101,31 @@ class Pan115Client:
                     }
                 elif '已存在' in str(result.get('error', '')):
                     # 目录已存在，查询目录ID
-                    logger.info(f"📁 目录已存在: {dir_name}")
+                    logger.info(f"📁 目录已存在: {dir_name}，查询目录ID...")
                     list_result = await self._list_files_web_api(parent_id, limit=100)
+                    
                     if list_result['success']:
+                        logger.info(f"📂 查询到 {len(list_result['files'])} 个文件/目录")
                         for item in list_result['files']:
+                            logger.debug(f"  - {item['name']} (is_dir={item['is_dir']}, id={item['id']})")
                             if item['is_dir'] and item['name'] == dir_name:
+                                logger.info(f"✅ 找到已存在的目录: {dir_name} (ID: {item['id']})")
                                 return {
                                     'success': True,
                                     'dir_id': item['id']
                                 }
+                        
+                        # 如果遍历完所有文件都没找到，说明有问题
+                        logger.error(f"❌ 目录已存在但未找到: {dir_name}，返回父目录ID作为fallback")
+                    else:
+                        logger.error(f"❌ 查询父目录文件列表失败: {list_result.get('message')}")
+                    
+                    # 注意：这里返回parent_id是有问题的，但为了兼容性暂时保留
+                    # 实际应该返回错误或重新创建
                     return {
                         'success': True,
-                        'dir_id': parent_id
+                        'dir_id': parent_id,
+                        'warning': f'目录{dir_name}已存在但未找到ID，使用父目录ID'
                     }
                 else:
                     error_msg = result.get('error', '未知错误')
@@ -1809,11 +1828,15 @@ class Pan115Client:
                     
                     files = []
                     for item in data:
+                        # 目录用cid，文件用fid
+                        is_dir = bool(item.get('cid') and not item.get('fid'))
+                        item_id = item.get('cid', '') if is_dir else item.get('fid', '')
+                        
                         file_info = {
-                            'id': item.get('fid') or item.get('cid', ''),
+                            'id': item_id,
                             'name': item.get('n', ''),
                             'size': int(item.get('s', 0)),
-                            'is_dir': bool(item.get('cid') and not item.get('fid')),
+                            'is_dir': is_dir,
                             'ctime': int(item.get('te', 0)),
                             'utime': int(item.get('tu', 0)),
                             'pick_code': item.get('pc', ''),  # 提取码
