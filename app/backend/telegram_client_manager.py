@@ -876,7 +876,8 @@ class TelegramClientManager:
         try:
             from models import ResourceMonitorRule, MediaMonitorRule
             from sqlalchemy import select
-            from services.message_dispatcher import get_message_dispatcher, MessageContext
+            from services.message_dispatcher import get_message_dispatcher
+            from services.message_context import MessageContext
             import re
             
             # 1. 先检查是否有资源监控规则监听此频道
