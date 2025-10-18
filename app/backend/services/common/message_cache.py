@@ -25,8 +25,8 @@ class CacheEntry:
     """缓存条目"""
     key: str
     value: Any
-    created_at: datetime = field(default_factory=datetime.now)
-    last_accessed: datetime = field(default_factory=datetime.now)
+    created_at: datetime = field(default_factory=get_user_now)
+    last_accessed: datetime = field(default_factory=get_user_now)
     access_count: int = 0
     
     def is_expired(self, ttl: int) -> bool:
