@@ -395,54 +395,71 @@ class TelegramClientManager:
                     try:
                         import sqlite3
                         import time
+                        import gc
                         session_path = Path(Config.SESSIONS_DIR) / f"{self.client_type}_{self.client_id}.session"
                         
                         if session_path.exists():
-                            # 强制删除 WAL 和 SHM 文件（这些是导致锁定的主要原因）
+                            self.logger.info("   ├─ 📂 Session文件存在，开始清理锁定...")
+                            
+                            # 第1步：断开当前连接（如果有）
+                            if hasattr(self, 'client') and self.client:
+                                try:
+                                    await self.client.disconnect()
+                                    self.client = None
+                                    self.logger.info("   ├─ 🔌 已断开旧连接")
+                                except Exception as e:
+                                    self.logger.debug(f"   ├─ 断开连接异常: {e}")
+                            
+                            # 等待连接完全释放
+                            await asyncio.sleep(0.5)
+                            gc.collect()  # 强制垃圾回收
+                            
+                            # 第2步：强制删除 WAL 和 SHM 文件
                             wal_file = session_path.with_suffix('.session-wal')
                             shm_file = session_path.with_suffix('.session-shm')
                             
-                            if wal_file.exists():
-                                try:
-                                    wal_file.unlink()
-                                    self.logger.info("   ├─ 🗑️ 删除 WAL 文件")
-                                except:
-                                    pass
+                            for file, name in [(wal_file, 'WAL'), (shm_file, 'SHM')]:
+                                if file.exists():
+                                    try:
+                                        file.unlink()
+                                        self.logger.info(f"   ├─ 🗑️ 删除 {name} 文件")
+                                    except Exception as e:
+                                        self.logger.warning(f"   ├─ ⚠️ 删除{name}失败: {e}")
                             
-                            if shm_file.exists():
-                                try:
-                                    shm_file.unlink()
-                                    self.logger.info("   ├─ 🗑️ 删除 SHM 文件")
-                                except:
-                                    pass
-                            
-                            # 尝试打开数据库并执行 checkpoint 来清理 WAL 模式
+                            # 第3步：尝试打开数据库并清除WAL模式
                             try:
-                                conn = sqlite3.connect(str(session_path), timeout=5.0, check_same_thread=False)
-                                # 切换到 DELETE 模式（而不是 WAL 模式）来避免锁定
+                                conn = sqlite3.connect(str(session_path), timeout=10.0, check_same_thread=False)
                                 conn.execute("PRAGMA journal_mode=DELETE")
+                                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
                                 conn.commit()
                                 conn.close()
                                 self.logger.info("   ├─ ✅ Session 文件锁定已清除")
                             except Exception as db_error:
                                 self.logger.warning(f"   ├─ ⚠️ 无法清除数据库锁: {db_error}")
+                                # 如果还是锁定，尝试最后一招：复制session文件
+                                try:
+                                    import shutil
+                                    backup_path = session_path.with_suffix('.session.backup')
+                                    temp_path = session_path.with_suffix('.session.tmp')
+                                    
+                                    # 复制到临时文件
+                                    shutil.copy2(session_path, temp_path)
+                                    # 删除原文件
+                                    session_path.unlink()
+                                    # 重命名回来
+                                    temp_path.rename(session_path)
+                                    self.logger.info("   ├─ ✅ 使用复制方式清除锁定")
+                                except Exception as copy_error:
+                                    self.logger.error(f"   ├─ ❌ 复制方式也失败: {copy_error}")
                             
                             # 等待文件系统同步
                             await asyncio.sleep(1.0)
                             
-                            # 断开当前连接（如果有）
-                            if hasattr(self, 'client') and self.client:
-                                try:
-                                    await self.client.disconnect()
-                                    self.logger.info("   ├─ 🔌 已断开旧连接")
-                                except:
-                                    pass
-                            
-                            # 重新创建客户端
+                            # 第4步：重新创建客户端
                             self.logger.info("   ├─ 🔄 重新创建客户端...")
                             await self._create_client()
                             
-                            # 重试启动
+                            # 第5步：重试启动
                             self.logger.info("   └─ 🔄 重试启动客户端...")
                             await self.client.start()
                             self.logger.info("   └─ ✅ 客户端启动成功（锁定已修复）")
