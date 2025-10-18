@@ -229,7 +229,10 @@ app = FastAPI(
     }
 )
 
-# CORS配置
+# 认证中间件 - 保护所有API路由（必须在CORS之前添加，因为中间件执行顺序是倒序）
+app.add_middleware(AuthenticationMiddleware)
+
+# CORS配置（最后添加，最先执行）
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # 允许所有域名（生产环境建议指定具体域名）
@@ -237,9 +240,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# 认证中间件 - 保护所有API路由
-app.add_middleware(AuthenticationMiddleware)
 
 # 注册API路由
 app.include_router(auth.router, prefix="/api", tags=["认证"])  # 认证路由（不需要auth前缀，因为router已经有了）
