@@ -909,6 +909,17 @@ class TelegramClientManager:
                     
                     # 检查消息是否来自监控的聊天
                     if str(chat_id) in source_chats:
+                        # 提前检查消息是否包含媒体，避免不必要的处理
+                        has_media = (
+                            hasattr(message, 'media') and message.media is not None and
+                            not (hasattr(message.media, '__class__') and 
+                                 message.media.__class__.__name__ == 'MessageMediaWebPage')
+                        )
+                        
+                        if not has_media:
+                            self.logger.debug(f"⏭️ 跳过媒体监控规则 {rule.name}：消息不包含媒体")
+                            continue
+                        
                         self.logger.info(f"📹 触发媒体监控规则: {rule.name} (ID: {rule.id})")
                         # 处理媒体消息（传递客户端包装器self，以便访问事件循环）
                         await media_monitor.process_message(self.client, message, rule.id, client_wrapper=self)
