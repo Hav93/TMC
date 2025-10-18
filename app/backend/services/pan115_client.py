@@ -322,9 +322,12 @@ class Pan115Client:
     
     async def get_access_token(self) -> Dict[str, Any]:
         """
-        直接使用cookies + AppID获取115开放平台access_token
+        使用cookies + AppID + AppSecret获取115开放平台access_token
         
-        不需要重新扫码，直接用已登录的cookies激活开放平台
+        需要：
+        1. 已登录的cookies（通过扫码登录获得）
+        2. 开放平台AppID（从115开放平台申请）
+        3. 开放平台AppSecret（从115开放平台申请）
         
         Returns:
             {
@@ -340,7 +343,14 @@ class Pan115Client:
                 logger.warning("⚠️ 未配置AppID")
                 return {
                     'success': False,
-                    'message': '未配置开放平台AppID'
+                    'message': '未配置开放平台AppID，请先在115开放平台申请应用'
+                }
+            
+            if not self.app_key:
+                logger.warning("⚠️ 未配置AppSecret")
+                return {
+                    'success': False,
+                    'message': '未配置开放平台AppSecret，请在设置中填写'
                 }
             
             if not self.user_key:
@@ -350,33 +360,43 @@ class Pan115Client:
                     'message': '请先扫码登录115账号'
                 }
             
-            logger.info(f"🔑 使用cookies + AppID获取access_token")
+            logger.info(f"🔑 使用cookies + AppID + AppSecret获取access_token")
+            logger.info(f"📝 AppID: {self.app_id}")
+            logger.info(f"🔐 AppSecret: {self.app_key[:4]}...{self.app_key[-4:] if len(self.app_key) > 8 else '***'}")
+            
+            # 准备请求参数（需要签名）
+            timestamp = str(int(time.time()))
+            params = {
+                'client_id': self.app_id,
+                'timestamp': timestamp,
+            }
+            
+            # 生成签名（使用AppSecret）
+            params['sign'] = self._generate_signature(params)
             
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Cookie': self.user_key,
                 'Accept': 'application/json',
-                'Content-Type': 'application/json',
+                'Content-Type': 'application/x-www-form-urlencoded',
             }
             
-            # 115 Open API的token端点 - 使用passportapi.115.com/app/1.0/token
-            # 需要：已登录的cookies + AppID
+            # 115 Open API的token端点
             token_url = f"{self.open_api_url}/app/1.0/token"
             
             logger.info(f"🔄 请求access_token: {token_url}")
-            logger.info(f"📦 请求参数: client_id={self.app_id}")
+            logger.info(f"📦 请求参数: {params}")
             logger.info(f"🍪 Cookies长度: {len(self.user_key)} 字符")
-            logger.info(f"🍪 Cookies前100字符: {self.user_key[:100]}...")
             
-            # 尝试使用form-data格式而不是JSON
             async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0, follow_redirects=False)) as client:
                 response = await client.post(
                     token_url,
-                    data={'client_id': self.app_id},  # 使用form-data
+                    data=params,  # 使用form-data，包含签名
                     headers=headers
                 )
                 
                 logger.info(f"📥 响应: HTTP {response.status_code}")
+                
                 if response.status_code == 302:
                     redirect_url = response.headers.get('Location', 'N/A')
                     logger.warning(f"🔀 重定向到: {redirect_url}")
@@ -385,6 +405,7 @@ class Pan115Client:
                         'success': False,
                         'message': '登录凭证已过期，请重新扫码登录'
                     }
+                
                 logger.info(f"📄 响应内容: {response.text[:500]}")
                 
                 if response.status_code == 200:
@@ -412,8 +433,20 @@ class Pan115Client:
                             return {'success': False, 'message': error_msg}
                     else:
                         error_msg = result.get('message', result.get('error', 'API返回失败'))
-                        logger.error(f"❌ {error_msg}")
+                        error_code = result.get('code', result.get('errno', 'unknown'))
+                        logger.error(f"❌ {error_msg} (code={error_code})")
+                        
+                        # 提供更详细的错误信息
+                        if 'signature' in error_msg.lower() or 'sign' in error_msg.lower():
+                            error_msg = f"签名验证失败，请检查AppSecret是否正确。原始错误：{error_msg}"
+                        elif 'client_id' in error_msg.lower():
+                            error_msg = f"AppID无效，请检查AppID是否正确。原始错误：{error_msg}"
+                        
                         return {'success': False, 'message': error_msg}
+                elif response.status_code == 401:
+                    return {'success': False, 'message': 'AppID或AppSecret错误，请检查配置'}
+                elif response.status_code == 403:
+                    return {'success': False, 'message': '没有权限访问开放平台API，请检查应用状态'}
                 else:
                     error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
                     logger.error(f"❌ {error_msg}")

@@ -481,6 +481,7 @@ class MediaSettings(Base):
     
     # 115网盘配置
     pan115_app_id = Column(String(50), comment='115开放平台AppID')
+    pan115_app_secret = Column(String(100), comment='115开放平台AppSecret')
     pan115_user_id = Column(String(100), comment='115用户ID')
     pan115_user_key = Column(String(200), comment='115用户密钥')
     pan115_request_interval = Column(Float, default=1.0, comment='API请求间隔(秒)')

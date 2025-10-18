@@ -126,6 +126,7 @@ def main():
             ("pan115_remote_path", "VARCHAR(255)"),
             ("pan115_user_key", "TEXT"),
             ("pan115_app_id", "VARCHAR(50)"),
+            ("pan115_app_secret", "VARCHAR(100)"),
             ("pan115_user_info", "TEXT"),
             ("pan115_access_token", "TEXT"),
             ("pan115_token_expires_at", "DATETIME"),

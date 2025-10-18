@@ -5,6 +5,7 @@ import { apiClient } from './api';
 
 export interface Pan115Config {
   pan115_app_id?: string;
+  pan115_app_secret?: string;  // 115开放平台AppSecret
   pan115_user_id?: string;
   pan115_user_key?: string;
   pan115_request_interval?: number;
@@ -63,6 +64,7 @@ const pan115Api = {
    */
   updateConfig: async (data: {
     pan115_app_id?: string;
+    pan115_app_secret?: string;
     pan115_user_id?: string;
     pan115_user_key?: string;
     pan115_request_interval?: number;

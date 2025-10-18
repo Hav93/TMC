@@ -678,6 +678,23 @@ const Pan115Settings: React.FC = () => {
                   </Form.Item>
 
                   <Form.Item
+                    label="115开放平台AppSecret"
+                    name="pan115_app_secret"
+                    rules={[
+                      { required: useOpenApi, message: '请输入115开放平台AppSecret' },
+                    ]}
+                    tooltip="从115开放平台获取的应用密钥，用于API签名验证"
+                    style={{ marginBottom: 8 }}
+                  >
+                    <Input.Password 
+                      placeholder="请输入您的AppSecret" 
+                      disabled={isLoading}
+                      style={{ maxWidth: 400 }}
+                      autoComplete="off"
+                    />
+                  </Form.Item>
+
+                  <Form.Item
                     label="API请求间隔（秒）"
                     name="pan115_request_interval"
                     tooltip="避免触发115 API限流，建议设置为1.0秒"

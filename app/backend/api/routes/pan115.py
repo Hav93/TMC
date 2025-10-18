@@ -33,6 +33,10 @@ def create_pan115_client(settings: MediaSettings, app_id: str = "", app_key: str
     """
     use_proxy = getattr(settings, 'pan115_use_proxy', False) or False
     
+    # 如果没有提供app_key,从settings读取app_secret
+    if not app_key:
+        app_key = getattr(settings, 'pan115_app_secret', '') or ''
+    
     return Pan115Client(
         app_id=app_id or getattr(settings, 'pan115_app_id', '') or '',
         app_key=app_key,
@@ -45,6 +49,7 @@ def create_pan115_client(settings: MediaSettings, app_id: str = "", app_key: str
 class Pan115ConfigUpdate(BaseModel):
     """115网盘配置更新"""
     pan115_app_id: Optional[str] = None
+    pan115_app_secret: Optional[str] = None  # 115开放平台AppSecret
     pan115_user_id: Optional[str] = None  # 手动输入的user_id
     pan115_user_key: Optional[str] = None  # 手动输入的user_key
     pan115_request_interval: Optional[float] = 1.0  # API请求间隔（秒）
@@ -100,8 +105,15 @@ async def get_pan115_config(
             else:
                 logger.warning(f"⚠️ access_token已过期: {token_expires_at}")
         
+        # AppSecret脱敏显示
+        app_secret = getattr(settings, 'pan115_app_secret', None)
+        app_secret_masked = None
+        if app_secret:
+            app_secret_masked = f"{app_secret[:4]}...{app_secret[-4:]}" if len(app_secret) > 8 else "***"
+        
         result = {
             "pan115_app_id": getattr(settings, 'pan115_app_id', None),
+            "pan115_app_secret": app_secret_masked,
             "pan115_user_id": getattr(settings, 'pan115_user_id', None),
             "pan115_user_key": user_key_masked,
             "pan115_request_interval": getattr(settings, 'pan115_request_interval', 1.0),
@@ -192,6 +204,9 @@ async def update_pan115_config(
         # 更新配置（使用setattr以支持动态字段）
         if config.pan115_app_id is not None:
             setattr(settings, 'pan115_app_id', config.pan115_app_id)
+        
+        if config.pan115_app_secret is not None:
+            setattr(settings, 'pan115_app_secret', config.pan115_app_secret)
         
         if config.pan115_user_id is not None:
             setattr(settings, 'pan115_user_id', config.pan115_user_id)
