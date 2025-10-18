@@ -120,6 +120,24 @@ def main():
                 changes_made += 1
         print()
         
+        # 4. 修复 media_settings 表
+        print("🔧 修复 media_settings 表...")
+        media_settings_fields = [
+            ("pan115_remote_path", "VARCHAR(255)"),
+            ("pan115_user_key", "TEXT"),
+            ("pan115_app_id", "VARCHAR(50)"),
+            ("pan115_user_info", "TEXT"),
+            ("pan115_access_token", "TEXT"),
+            ("pan115_token_expires_at", "DATETIME"),
+            ("pan115_last_refresh_at", "DATETIME"),
+            ("pan115_use_proxy", "BOOLEAN DEFAULT 0"),
+        ]
+        
+        for field_name, field_def in media_settings_fields:
+            if add_column_if_not_exists(cursor, "media_settings", field_name, field_def):
+                changes_made += 1
+        print()
+        
         # 提交更改
         conn.commit()
         
