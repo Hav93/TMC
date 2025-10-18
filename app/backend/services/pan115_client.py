@@ -737,7 +737,7 @@ class Pan115Client:
             logger.info(f"📤 步骤4: 开始上传文件...")
             upload_result = await self._do_upload_advanced(
                 file_path, file_name, file_size, 
-                upload_info['data'], headers
+                upload_info, headers  # 传递完整的upload_info，包含sts_token标记
             )
             
             return upload_result
