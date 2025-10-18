@@ -59,6 +59,8 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
         link_types: rule.link_types || ['pan115', 'magnet', 'ed2k'],
         keywords: rule.keywords || [],
         default_tags: rule.default_tags || [],
+        auto_save_to_115: rule.auto_save_to_115 || false,
+        target_path: rule.target_path || '',
       });
     }
   }, [rule, form]);
