@@ -28,6 +28,10 @@ cryptography==43.0.3
 Pillow==11.0.0
 protobuf>=4.21.0
 
+# 115上传依赖
+lz4>=4.3.2  # LZ4压缩/解压
+oss2>=2.18.0  # 阿里云OSS SDK
+
 # 115网盘SDK  
 # p115client库 - 因依赖p115cipher.fast(C扩展)无法在当前环境使用,已禁用
 # 依赖问题: ModuleNotFoundError: No module named 'p115cipher.fast'

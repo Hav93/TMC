@@ -700,6 +700,17 @@ class Pan115Client:
             file_name = os.path.basename(file_path)
             file_size = os.path.getsize(file_path)
             
+            # 优先使用我们的Python实现（基于fake115uploader）
+            logger.info("🚀 使用fake115uploader Python实现上传")
+            try:
+                result = await self._upload_with_fake115_python(file_path, target_dir_id)
+                if result.get('success'):
+                    return result
+                else:
+                    logger.warning(f"⚠️ Python实现上传失败: {result.get('message')}，尝试传统方式")
+            except Exception as e:
+                logger.warning(f"⚠️ Python实现异常: {e}，尝试传统方式")
+            
             # 步骤1: 计算文件哈希（SHA1和sig）
             logger.info(f"📝 计算文件哈希: {file_name}, size={file_size}")
             file_sha1, sig_sha1 = await self._calculate_file_hashes(file_path)
@@ -780,6 +791,112 @@ class Pan115Client:
             logger.error(f"❌ Web API上传文件异常: {e}")
             import traceback
             traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
+    async def _upload_with_fake115_python(self, file_path: str, target_dir_id: str = "0") -> Dict[str, Any]:
+        """
+        使用Python实现的fake115uploader上传逻辑
+        
+        Args:
+            file_path: 文件路径
+            target_dir_id: 目标目录ID
+            
+        Returns:
+            上传结果
+        """
+        try:
+            # 导入上传模块
+            import sys
+            from pathlib import Path
+            
+            # 添加utils路径到sys.path
+            utils_path = Path(__file__).parent.parent / 'utils'
+            if str(utils_path) not in sys.path:
+                sys.path.insert(0, str(utils_path))
+            
+            from upload115 import create_uploader
+            
+            # 获取用户信息
+            # 从uploadinfo接口获取user_id和userkey
+            user_info = await self._get_user_upload_info()
+            if not user_info.get('success'):
+                return {'success': False, 'message': '获取用户信息失败'}
+            
+            upload_user_id = user_info.get('user_id', self.user_id)
+            upload_user_key = user_info.get('userkey', '')
+            
+            if not upload_user_key:
+                return {'success': False, 'message': '缺少userkey'}
+            
+            logger.info(f"📤 使用用户ID: {upload_user_id}")
+            
+            # 创建上传器
+            uploader = create_uploader(
+                user_id=upload_user_id,
+                user_key=upload_user_key,
+                cookies=self.user_key,  # Cookie字符串
+                use_proxy=self.use_proxy
+            )
+            
+            # 执行上传
+            result = await uploader.upload_file(
+                file_path=file_path,
+                target_cid=target_dir_id
+            )
+            
+            return result
+        
+        except ImportError as e:
+            logger.error(f"❌ 导入上传模块失败: {e}")
+            return {'success': False, 'message': f'导入上传模块失败: {e}'}
+        except Exception as e:
+            logger.error(f"❌ Python上传异常: {e}", exc_info=True)
+            return {'success': False, 'message': str(e)}
+    
+    async def _get_user_upload_info(self) -> Dict[str, Any]:
+        """
+        获取用户上传信息（user_id和userkey）
+        
+        从 /app/uploadinfo 接口获取
+        
+        Returns:
+            {'success': bool, 'user_id': str, 'userkey': str}
+        """
+        try:
+            url = "https://proapi.115.com/app/uploadinfo"
+            headers = {
+                'User-Agent': 'Mozilla/5.0 115disk/30.5.1',
+                'Cookie': self.user_key,
+            }
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs()) as client:
+                response = await client.get(url, headers=headers)
+            
+            if response.status_code != 200:
+                return {'success': False, 'message': f'HTTP {response.status_code}'}
+            
+            result = response.json()
+            
+            # 检查响应
+            if not result:
+                return {'success': False, 'message': '响应为空'}
+            
+            user_id = str(result.get('user_id', ''))
+            userkey = result.get('userkey', '')
+            
+            if not user_id or not userkey:
+                return {'success': False, 'message': '缺少必要字段'}
+            
+            logger.info(f"✅ 获取用户上传信息成功: user_id={user_id}")
+            
+            return {
+                'success': True,
+                'user_id': user_id,
+                'userkey': userkey
+            }
+        
+        except Exception as e:
+            logger.error(f"❌ 获取用户上传信息异常: {e}", exc_info=True)
             return {'success': False, 'message': str(e)}
     
     async def _calculate_file_hashes(self, file_path: str) -> tuple:
