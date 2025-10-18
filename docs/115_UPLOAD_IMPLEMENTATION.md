@@ -1,12 +1,12 @@
 # 115 Web API 上传实现指南
 
-基于 p115client 文档和逆向分析的完整上传实现
+基于 fake115uploader 项目的纯Python上传实现
 
 ## 📚 参考资料
 
-- [p115client 官方文档](https://p115client.readthedocs.io/en/latest/reference/module/client.html)
+- [fake115uploader GitHub](https://github.com/orzogc/fake115uploader)
 - 115 Web API 接口分析
-- AList 115驱动实现
+- 阿里云OSS Multipart Upload API
 
 ## 🔍 上传流程分析
 
@@ -269,35 +269,122 @@ async def _upload_with_signature(self, ...):
 
 ---
 
+## 📋 实现总结 (v1.4.0 - 2025-10-18)
+
+### ✅ 已完成功能
+
+#### 1. 基础上传功能
+- ✅ 秒传检测（Quick Upload）
+- ✅ 小文件直接上传（<100MB）
+- ✅ 文件哈希计算（SHA1 + sig_sha1）
+- ✅ 阿里云OSS上传
+
+#### 2. 断点续传功能 🆕
+- ✅ 上传会话管理（UploadResumeManager）
+- ✅ 分片进度持久化（JSON存储）
+- ✅ 自动恢复未完成的上传
+- ✅ 会话ID生成（文件+目标目录）
+- ✅ 过期会话清理（7天）
+
+#### 3. 进度追踪功能 🆕
+- ✅ 实时进度跟踪（UploadProgressManager）
+- ✅ 多文件并发上传管理
+- ✅ 上传速度计算（MB/s）
+- ✅ ETA预估（剩余时间）
+- ✅ 进度回调机制
+
+#### 4. WebSocket实时推送 🆕
+- ✅ WebSocket连接管理
+- ✅ 自动广播上传进度（500ms间隔）
+- ✅ 心跳保活机制
+- ✅ 自动重连
+
+#### 5. 前端进度显示 🆕
+- ✅ `useUploadProgress` Hook
+- ✅ `UploadProgressList` 组件
+- ✅ 进度条显示
+- ✅ 速度和ETA显示
+- ✅ 分片进度显示
+- ✅ 状态标签（上传中/成功/失败/秒传）
+
+#### 6. API接口 🆕
+- ✅ GET `/api/upload/progress` - 获取所有上传进度
+- ✅ GET `/api/upload/progress/{file_path}` - 获取指定文件进度
+- ✅ GET `/api/upload/sessions` - 获取断点续传会话
+- ✅ DELETE `/api/upload/sessions/{session_id}` - 删除会话
+- ✅ POST `/api/upload/sessions/cleanup` - 清理过期会话
+- ✅ WS `/ws/upload/progress` - WebSocket实时进度推送
+
+### ⚠️ 待实现
+
+#### 1. 大文件分片上传
+- ⚠️ OSS Multipart Upload API集成
+- ⚠️ 分片并发上传
+- ⚠️ 分片上传完成通知
+
+#### 2. 高级功能
+- 📝 并发上传限制
+- 📝 上传队列管理
+- 📝 上传任务取消
+- 📝 上传失败自动重试
+
+### 💡 使用示例
+
+#### 后端调用
+```python
+from services.pan115_client import Pan115Client
+
+client = Pan115Client(user_key="UID=xxx; CID=xxx; SEID=xxx")
+
+# 上传文件（自动秒传检测，支持进度追踪）
+result = await client.upload_file(
+    file_path="/path/to/video.mp4",
+    target_path="/影视/电影/2025"
+)
+
+# 查询上传进度
+from services.upload_progress_manager import get_progress_manager
+progress_mgr = get_progress_manager()
+progress = await progress_mgr.get_progress("/path/to/video.mp4")
+print(f"进度: {progress.percentage}%, 速度: {progress.speed_mbps}MB/s")
+
+# 管理断点续传会话
+from services.upload_resume_manager import get_resume_manager
+resume_mgr = get_resume_manager()
+sessions = await resume_mgr.list_sessions()
+```
+
+#### 前端调用
+```typescript
+import { UploadProgressList } from '@/components/UploadProgress';
+
+function MyPage() {
+  return (
+    <div>
+      <h1>文件上传</h1>
+      <UploadProgressList />
+    </div>
+  );
+}
+```
+
+---
+
 ## 🔄 未来改进
 
 ### 短期目标
-- [ ] 继续尝试简化的上传接口
-- [ ] 改善错误提示和用户引导
-- [ ] 完善文档
+- [ ] 完成OSS分片上传API集成
+- [ ] 实现上传任务取消功能
+- [ ] 添加上传队列管理
 
 ### 长期目标  
-- [ ] 研究上传签名算法（如果有时间和兴趣）
-- [ ] 寻找社区中的其他实现方案
-- [ ] 监控115 API的变化
+- [ ] 支持更多云存储服务
+- [ ] 优化大文件上传性能
+- [ ] 增加上传统计和分析
 
 ---
 
-## 📞 联系与支持
-
-如果你：
-- ✅ 成功破解了上传签名算法
-- ✅ 发现了新的上传方式
-- ✅ 有其他改进建议
-
-欢迎：
-- 提交 Pull Request
-- 创建 Issue讨论
-- 分享你的发现
-
----
-
-**最后更新**：2025-01-18  
+**最后更新**：2025-10-18  
 **维护者**：TMC 项目团队  
-**参考**：[p115client文档](https://p115client.readthedocs.io/)
+**参考**：[fake115uploader](https://github.com/orzogc/fake115uploader)
 

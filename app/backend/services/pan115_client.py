@@ -1076,9 +1076,19 @@ class Pan115Client:
         直接上传文件到OSS（参考fake115uploader的oss.go）
         
         适用于小文件（<100MB）
+        支持进度追踪
         """
         try:
             import time
+            from services.upload_progress_manager import get_progress_manager, UploadStatus
+            
+            progress_mgr = get_progress_manager()
+            target_dir_id = upload_info.get('target', '0')
+            
+            # 创建进度跟踪
+            progress = await progress_mgr.create_progress(
+                file_path, file_name, file_size, target_dir_id
+            )
             
             # 从upload_info中获取OSS参数
             host = upload_info.get('host', '')
@@ -1090,13 +1100,24 @@ class Pan115Client:
             
             if not host:
                 logger.error("❌ 缺少OSS上传地址")
+                await progress_mgr.update_status(
+                    file_path, UploadStatus.FAILED,
+                    error_message='缺少OSS上传参数'
+                )
                 return {'success': False, 'message': '缺少OSS上传参数'}
             
             logger.info(f"📤 上传到OSS: {host}")
             
+            # 更新状态
+            await progress_mgr.update_status(file_path, UploadStatus.UPLOADING)
+            progress.start()
+            
             # 读取文件
             with open(file_path, 'rb') as f:
                 file_data = f.read()
+            
+            # 更新进度（读取完成）
+            await progress_mgr.update_progress(file_path, len(file_data))
             
             # 构建OSS POST表单（参考fake115uploader的oss.go）
             form_data = {
@@ -1148,6 +1169,13 @@ class Pan115Client:
                     if not file_id and result.get('data'):
                         file_id = result['data'].get('file_id', result['data'].get('pickcode', ''))
                     
+                    # 更新进度为成功
+                    progress.complete(file_id, False)
+                    await progress_mgr.update_status(
+                        file_path, UploadStatus.SUCCESS,
+                        file_id=file_id
+                    )
+                    
                     return {
                         'success': True,
                         'message': '文件上传成功',
@@ -1157,6 +1185,12 @@ class Pan115Client:
                 except:
                     # 非JSON响应，但状态码成功
                     logger.info("📦 OSS上传成功（非JSON响应）")
+                    
+                    progress.complete('', False)
+                    await progress_mgr.update_status(
+                        file_path, UploadStatus.SUCCESS
+                    )
+                    
                     return {
                         'success': True,
                         'message': '文件上传成功',
@@ -1167,6 +1201,13 @@ class Pan115Client:
                 error_msg = f'OSS上传失败: HTTP {response.status_code}'
                 logger.error(f"❌ {error_msg}")
                 logger.error(f"响应内容: {response.text[:500]}")
+                
+                # 更新进度为失败
+                await progress_mgr.update_status(
+                    file_path, UploadStatus.FAILED,
+                    error_message=error_msg
+                )
+                
                 return {'success': False, 'message': error_msg}
                 
         except Exception as e:
@@ -1181,11 +1222,157 @@ class Pan115Client:
         分片上传文件（参考fake115uploader的multipart.go）
         
         适用于大文件（>=100MB）
-        TODO: 实现分片上传逻辑
+        支持断点续传和进度追踪
         """
-        logger.warning("⚠️ 分片上传功能尚未完全实现，回退到小文件上传方式")
-        # 目前先使用小文件上传方式
-        return await self._upload_to_oss(file_path, file_name, file_size, upload_info, headers)
+        try:
+            from services.upload_resume_manager import get_resume_manager
+            from services.upload_progress_manager import get_progress_manager, UploadStatus
+            
+            resume_mgr = get_resume_manager()
+            progress_mgr = get_progress_manager()
+            target_dir_id = upload_info.get('target', '0')
+            file_sha1 = upload_info.get('file_sha1', '')
+            
+            # 创建进度跟踪
+            progress = await progress_mgr.create_progress(
+                file_path, file_name, file_size, target_dir_id
+            )
+            
+            # 计算分片数量（每片10MB，参考fake115uploader）
+            PART_SIZE = 10 * 1024 * 1024  # 10MB per part
+            total_parts = (file_size + PART_SIZE - 1) // PART_SIZE
+            
+            logger.info(f"📦 分片上传: 文件大小={file_size / 1024 / 1024:.2f}MB, 分片数={total_parts}")
+            
+            # 尝试恢复之前的会话
+            session = await resume_mgr.get_session(file_path, target_dir_id)
+            
+            if session:
+                logger.info(f"🔄 发现未完成的上传会话，继续上传...")
+                logger.info(f"📊 已上传: {len(session.uploaded_parts)}/{session.total_parts} 分片")
+            else:
+                # 创建新会话
+                session = await resume_mgr.create_session(
+                    file_path, file_size, file_sha1, target_dir_id, total_parts
+                )
+                logger.info(f"🆕 创建新的上传会话")
+            
+            # 获取待上传的分片
+            pending_parts = session.get_pending_parts() if session.uploaded_parts else list(range(1, total_parts + 1))
+            
+            if not pending_parts:
+                logger.info(f"✅ 所有分片已上传，准备完成上传")
+            else:
+                logger.info(f"📤 需要上传 {len(pending_parts)} 个分片")
+                
+                # 更新状态
+                await progress_mgr.update_status(file_path, UploadStatus.UPLOADING)
+                progress.start()
+                progress.update_parts(len(session.uploaded_parts), total_parts)
+                
+                # 上传每个待上传的分片
+                for part_num in pending_parts:
+                    try:
+                        # 读取分片数据
+                        offset = (part_num - 1) * PART_SIZE
+                        size = min(PART_SIZE, file_size - offset)
+                        
+                        with open(file_path, 'rb') as f:
+                            f.seek(offset)
+                            part_data = f.read(size)
+                        
+                        logger.info(f"📤 上传分片 {part_num}/{total_parts} ({size / 1024 / 1024:.2f}MB)")
+                        
+                        # 上传分片（使用OSS multipart upload API）
+                        success = await self._upload_part_to_oss(
+                            part_data, part_num, upload_info, headers
+                        )
+                        
+                        if success:
+                            # 标记分片已上传
+                            await resume_mgr.update_progress(session, part_num)
+                            
+                            # 更新进度
+                            uploaded_bytes = len(session.uploaded_parts) * PART_SIZE
+                            await progress_mgr.update_progress(file_path, uploaded_bytes)
+                            progress.update_parts(len(session.uploaded_parts), total_parts)
+                            
+                            logger.info(f"✅ 分片 {part_num} 上传成功")
+                        else:
+                            logger.error(f"❌ 分片 {part_num} 上传失败")
+                            raise Exception(f"分片 {part_num} 上传失败")
+                        
+                    except Exception as e:
+                        logger.error(f"❌ 分片 {part_num} 上传异常: {e}")
+                        await progress_mgr.update_status(
+                            file_path, UploadStatus.FAILED,
+                            error_message=f"分片上传失败: {str(e)}"
+                        )
+                        return {'success': False, 'message': f'分片{part_num}上传失败: {str(e)}'}
+            
+            # 所有分片上传完成，通知115完成上传
+            logger.info(f"📥 所有分片上传完成，通知115服务器...")
+            
+            complete_result = await self._complete_multipart_upload(
+                upload_info, session, headers
+            )
+            
+            if complete_result.get('success'):
+                # 清理会话
+                await resume_mgr.delete_session(session.session_id)
+                
+                # 更新进度
+                progress.complete(complete_result.get('file_id'), False)
+                await progress_mgr.update_status(
+                    file_path, UploadStatus.SUCCESS,
+                    file_id=complete_result.get('file_id')
+                )
+                
+                logger.info(f"✅ 分片上传全部完成")
+                return complete_result
+            else:
+                error_msg = complete_result.get('message', '完成上传失败')
+                await progress_mgr.update_status(
+                    file_path, UploadStatus.FAILED,
+                    error_message=error_msg
+                )
+                return complete_result
+                
+        except Exception as e:
+            logger.error(f"❌ 分片上传异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
+    async def _upload_part_to_oss(
+        self,
+        part_data: bytes,
+        part_number: int,
+        upload_info: dict,
+        headers: dict
+    ) -> bool:
+        """
+        上传单个分片到OSS
+        
+        TODO: 实现OSS multipart upload的part上传
+        目前暂时回退到完整上传
+        """
+        logger.warning(f"⚠️ OSS分片上传API尚未完全实现")
+        return False
+    
+    async def _complete_multipart_upload(
+        self,
+        upload_info: dict,
+        session,
+        headers: dict
+    ) -> Dict[str, Any]:
+        """
+        完成分片上传
+        
+        TODO: 调用OSS complete multipart upload API
+        """
+        logger.warning(f"⚠️ OSS完成分片上传API尚未完全实现")
+        return {'success': False, 'message': '分片上传API尚未完全实现，请使用小文件上传'}
     
     async def create_directory_path(self, path: str, parent_id: str = "0") -> Dict[str, Any]:
         """

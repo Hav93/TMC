@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 # 导入API路由
-from api.routes import system, rules, logs, chats, clients, settings, dashboard, auth, users, media_monitor, media_files, media_settings, pan115, resource_monitor, performance, notifications
+from api.routes import system, rules, logs, chats, clients, settings, dashboard, auth, users, media_monitor, media_files, media_settings, pan115, resource_monitor, performance, notifications, upload_progress, upload_websocket
 
 # 导入核心业务逻辑
 from enhanced_bot import EnhancedTelegramBot
@@ -258,6 +258,8 @@ app.include_router(pan115.router, prefix="/api/pan115", tags=["115网盘"])
 app.include_router(resource_monitor.router, prefix="/api/resources", tags=["资源监控"])
 app.include_router(performance.router, prefix="/api/performance", tags=["性能监控"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["通知系统"])
+app.include_router(upload_progress.router, prefix="/api", tags=["上传进度"])
+app.include_router(upload_websocket.router, tags=["WebSocket"])
 
 
 @app.get("/health")
