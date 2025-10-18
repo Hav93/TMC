@@ -1132,9 +1132,9 @@ async def reorganize_media_file(
                 content={"success": False, "message": "115网盘配置不完整，请先扫码登录115"}
             )
         
-        # 纯Cookie模式：不需要app_id
+        # 纯Cookie模式：使用Web API
         client = Pan115Client(
-            app_id=getattr(media_settings, 'pan115_app_id', '') or "",
+            app_id="",  # 使用Web API
             app_key="",
             user_id=getattr(media_settings, 'pan115_user_id', '') or "",
             user_key=pan115_user_key

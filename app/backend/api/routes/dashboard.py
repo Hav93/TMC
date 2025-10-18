@@ -352,7 +352,7 @@ async def get_dashboard_overview():
                     from services.pan115_client import Pan115Client
                     
                     client = Pan115Client(
-                        app_id=media_settings.pan115_app_id or "",
+                        app_id="",  # 使用Web API
                         app_key="",
                         user_id=media_settings.pan115_user_id,
                         user_key=media_settings.pan115_user_key or ""

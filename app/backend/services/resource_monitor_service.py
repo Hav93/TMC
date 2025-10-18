@@ -279,18 +279,16 @@ class ResourceMonitorService:
             if not settings:
                 raise ValueError("未找到115网盘配置")
             
-            app_id = getattr(settings, 'pan115_app_id', None) or ""
-            app_secret = getattr(settings, 'pan115_app_secret', None) or ""
             user_id = getattr(settings, 'pan115_user_id', None)
             user_key = getattr(settings, 'pan115_user_key', None)
             
             if not user_id or not user_key:
                 raise ValueError("请先登录115网盘")
             
-            # 创建115客户端
+            # 创建115客户端（仅使用Web API）
             client = Pan115Client(
-                app_id=app_id,
-                app_key=app_secret,
+                app_id="",  # 使用Web API
+                app_key="",
                 user_id=user_id,
                 user_key=user_key,
                 use_proxy=getattr(settings, 'pan115_use_proxy', False)
@@ -432,18 +430,16 @@ async def handle_115_save_retry(task) -> bool:
             if not settings:
                 raise ValueError("未找到115网盘配置")
             
-            app_id = getattr(settings, 'pan115_app_id', None) or ""
-            app_secret = getattr(settings, 'pan115_app_secret', None) or ""
             user_id = getattr(settings, 'pan115_user_id', None)
             user_key = getattr(settings, 'pan115_user_key', None)
             
             if not user_id or not user_key:
                 raise ValueError("请先登录115网盘")
             
-            # 创建115客户端
+            # 创建115客户端（仅使用Web API）
             client = Pan115Client(
-                app_id=app_id,
-                app_key=app_secret,
+                app_id="",  # 使用Web API
+                app_key="",
                 user_id=user_id,
                 user_key=user_key,
                 use_proxy=getattr(settings, 'pan115_use_proxy', False)
