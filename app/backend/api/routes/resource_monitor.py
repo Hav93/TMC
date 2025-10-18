@@ -75,7 +75,7 @@ async def create_rule(
             keywords=json.dumps(rule_data.get("keywords", []), ensure_ascii=False),
             auto_save_to_115=rule_data.get("auto_save_to_115", False),
             target_path=rule_data.get("target_path"),
-            pan115_user_key=rule_data.get("pan115_user_key"),
+            pan115_user_key=None,  # 不再保存user_key，使用系统设置中的115账号
             default_tags=json.dumps(rule_data.get("default_tags", []), ensure_ascii=False),
             enable_deduplication=rule_data.get("enable_deduplication", True),
             dedup_time_window=rule_data.get("dedup_time_window", 3600)
@@ -85,7 +85,7 @@ async def create_rule(
         await db.commit()
         await db.refresh(rule)
         
-        logger.info(f"✅ 创建资源监控规则: {rule.name}")
+        logger.info(f"✅ 创建资源监控规则: {rule.name} (使用系统115账号)")
         
         return {
             "success": True,

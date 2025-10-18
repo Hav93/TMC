@@ -27,7 +27,6 @@ import {
 import { resourceMonitorService } from '../../services/resourceMonitor';
 import type { ResourceMonitorRule, KeywordConfig } from '../../services/resourceMonitor';
 import { chatsApi } from '../../services/chats';
-import { mediaSettingsApi } from '../../services/mediaSettings';
 
 const { TextArea } = Input;
 const { Option } = Select;
@@ -50,14 +49,6 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
   });
 
   const chats = chatsData?.chats || [];
-
-  // 获取115设置（用于选择账号）
-  const { data: mediaSettingsData } = useQuery({
-    queryKey: ['media-settings'],
-    queryFn: mediaSettingsApi.getSettings,
-  });
-
-  const mediaSettings = mediaSettingsData?.settings || [];
 
   // 初始化表单
   useEffect(() => {
@@ -280,31 +271,26 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
           {({ getFieldValue }) =>
             getFieldValue('auto_save_to_115') ? (
               <>
+                <Alert
+                  message="将使用系统设置中配置的115账号进行转存"
+                  type="info"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                />
+
                 <Form.Item
                   label="目标路径"
                   name="target_path"
                   rules={[{ required: true, message: '请输入目标路径' }]}
+                  tooltip="文件将保存到115网盘的此路径下"
                 >
                   <Input placeholder="/资源监控" />
                 </Form.Item>
 
                 <Form.Item
-                  label="115账号"
-                  name="pan115_user_key"
-                  rules={[{ required: true, message: '请选择115账号' }]}
-                >
-                  <Select placeholder="选择115账号">
-                    {mediaSettings.map((setting: any) => (
-                      <Option key={setting.id} value={setting.pan115_user_key}>
-                        {setting.name || setting.pan115_user_key}
-                      </Option>
-                    ))}
-                  </Select>
-                </Form.Item>
-
-                <Form.Item
                   label="默认标签"
                   name="default_tags"
+                  tooltip="为转存的资源添加默认标签，方便后续管理"
                 >
                   <Select
                     mode="tags"
