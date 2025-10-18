@@ -731,6 +731,10 @@ class Pan115Client:
             )
             
             if not upload_info.get('success'):
+                # 检查是否可以回退到旧上传方式
+                if upload_info.get('fallback'):
+                    logger.warning(f"⚠️ 高级上传不可用，回退到传统上传方式")
+                    return await self._do_upload(file_path, file_name, file_size, upload_info, headers)
                 return upload_info
             
             # 步骤4: 执行上传
@@ -949,22 +953,13 @@ class Pan115Client:
                     if token_data.get('StatusCode') == '200' and token_data.get('AccessKeySecret'):
                         # 这是阿里云STS临时凭证
                         logger.info(f"✅ 成功获取阿里云STS临时凭证")
+                        logger.warning(f"⚠️ STS上传暂不支持（bucket未知），尝试回退到旧的上传方式")
                         
-                        # 注意：这种格式需要使用阿里云OSS SDK，或者直接用临时凭证签名
-                        # 暂时先返回成功，但需要特殊处理
+                        # STS token方式bucket未知，暂时标记为失败，尝试其他上传方式
                         return {
-                            'success': True,
-                            'sts_token': True,  # 标记为STS token
-                            'data': {
-                                'endpoint': endpoint,
-                                'access_key_id': token_data.get('AccessKeyId', ''),
-                                'access_key_secret': token_data.get('AccessKeySecret', ''),
-                                'security_token': token_data.get('SecurityToken', ''),
-                                'expiration': token_data.get('Expiration', ''),
-                                'target': target_dir_id,
-                                'file_sha1': file_sha1,
-                                'sig_sha1': sig_sha1,
-                            }
+                            'success': False,
+                            'message': 'STS token上传暂不支持，需要使用115中转API',
+                            'fallback': True,  # 标记可以回退
                         }
                     
                     # 旧格式：带state字段的响应
