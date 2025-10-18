@@ -216,18 +216,34 @@ class EcdhCipher:
             backend=default_backend()
         )
         decryptor = cipher.decryptor()
-        lz4_data = decryptor.update(ciphertext) + decryptor.finalize()
+        
+        try:
+            lz4_data = decryptor.update(ciphertext) + decryptor.finalize()
+            logging.info(f"✅ AES解密成功，数据长度: {len(lz4_data)} bytes")
+            logging.info(f"解密后数据（前50字节）: {lz4_data[:50]}")
+            logging.info(f"解密后数据（hex）: {lz4_data[:50].hex()}")
+        except Exception as e:
+            logging.error(f"❌ AES解密失败: {e}")
+            raise
         
         # 读取LZ4压缩数据长度（前2字节，小端序）
+        if len(lz4_data) < 2:
+            logging.error(f"❌ 解密后数据太短: {len(lz4_data)} bytes")
+            raise ValueError("解密后数据太短")
+        
         compressed_length = struct.unpack('<H', lz4_data[:2])[0]
+        logging.info(f"📦 LZ4压缩长度: {compressed_length}")
         
         # 解压LZ4数据
         try:
             import lz4.block
+            logging.info(f"🔓 尝试解压LZ4数据: {len(lz4_data[2:2+compressed_length])} bytes")
             decompressed = lz4.block.decompress(
                 lz4_data[2:2+compressed_length],
                 uncompressed_size=8192  # 最大8KB
             )
+            logging.info(f"✅ LZ4解压成功: {len(decompressed)} bytes")
+            logging.info(f"解压后数据: {decompressed[:200]}")
             return decompressed
         except ImportError:
             # 如果没有lz4库，尝试使用zlib（可能不完全兼容）
