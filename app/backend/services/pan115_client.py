@@ -2820,6 +2820,17 @@ class Pan115Client:
                     error_msg = result.get('error', result.get('msg', '未知错误'))
                     errno = result.get('errno', result.get('errNo', 0))
                     
+                    # 特殊处理：已转存过标记为重复
+                    if errno == 4100024 or '已经转存过' in error_msg:
+                        logger.info(f"⚠️ 文件重复（之前已转存）")
+                        return {
+                            'success': True,
+                            'message': '文件已存在（之前已转存）',
+                            'saved_count': 0,
+                            'file_list': [],
+                            'duplicate': True  # 标记为重复
+                        }
+                    
                     # 处理常见错误
                     if errno == 20009 or 'password' in error_msg.lower():
                         error_msg = "提取码错误或需要提取码"

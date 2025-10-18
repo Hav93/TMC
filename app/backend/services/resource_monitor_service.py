@@ -318,12 +318,20 @@ class ResourceMonitorService:
             
             if save_result.get('success'):
                 saved_count = save_result.get('saved_count', 0)
-                logger.info(f"✅ 115转存成功: record_id={record.id}, 转存了{saved_count}个文件")
                 
-                # 标记为成功
-                record.save_status = 'success'
-                record.save_path = rule.target_path or "/"
-                record.save_time = get_user_now()
+                # 检查是否为重复
+                if save_result.get('duplicate'):
+                    logger.info(f"⚠️ 115转存重复: record_id={record.id}, 文件已存在")
+                    record.save_status = 'duplicate'
+                    record.save_path = rule.target_path or "/"
+                    record.save_time = get_user_now()
+                    record.save_error = "文件已存在（之前已转存）"
+                else:
+                    logger.info(f"✅ 115转存成功: record_id={record.id}, 转存了{saved_count}个文件")
+                    record.save_status = 'success'
+                    record.save_path = rule.target_path or "/"
+                    record.save_time = get_user_now()
+                
                 await self.db.commit()
             else:
                 error_msg = save_result.get('message', '转存失败')
@@ -469,13 +477,21 @@ async def handle_115_save_retry(task) -> bool:
             
             if save_result.get('success'):
                 saved_count = save_result.get('saved_count', 0)
-                logger.info(f"✅ 重试转存成功: record_id={record_id}, 转存了{saved_count}个文件")
                 
-                # 标记为成功
-                record.save_status = 'success'
-                record.save_path = target_path
-                record.save_time = get_user_now()
-                record.save_error = None  # 清空之前的错误信息
+                # 检查是否为重复
+                if save_result.get('duplicate'):
+                    logger.info(f"⚠️ 重试转存重复: record_id={record_id}, 文件已存在")
+                    record.save_status = 'duplicate'
+                    record.save_path = target_path
+                    record.save_time = get_user_now()
+                    record.save_error = "文件已存在（之前已转存）"
+                else:
+                    logger.info(f"✅ 重试转存成功: record_id={record_id}, 转存了{saved_count}个文件")
+                    record.save_status = 'success'
+                    record.save_path = target_path
+                    record.save_time = get_user_now()
+                    record.save_error = None  # 清空之前的错误信息
+                
                 await db.commit()
                 return True
             else:
