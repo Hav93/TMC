@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Card, 
   Form, 
@@ -19,7 +19,6 @@ import {
 } from '@ant-design/icons';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { settingsApi } from '../../services/settings';
-import apiConfig from '../../services/api-config';
 import { useThemeContext } from '../../theme';
 import Pan115Settings from './Pan115Settings';
 import MediaSettingsPage from './MediaSettings';
