@@ -2091,14 +2091,14 @@ class Pan115Client:
         """测试连接（使用 get_user_info）"""
         result = await self.get_user_info()
         if result['success']:
-                    return {
-                        'success': True,
-                        'message': '115网盘连接成功',
+            return {
+                'success': True,
+                'message': '115网盘连接成功',
                 'user_info': result.get('user_info', {})
-                    }
-                else:
-                    return {
-                        'success': False,
+            }
+        else:
+            return {
+                'success': False,
                 'message': f"连接失败: {result.get('message', '未知错误')}"
             }
     
@@ -2180,10 +2180,10 @@ class Pan115Client:
                         'app': app,
                         'message': '获取二维码成功'
                     }
-            else:
+                else:
                     error_msg = result.get('message', result.get('error', '未知错误'))
-                return {
-                    'success': False,
+                    return {
+                        'success': False,
                         'message': f"获取二维码失败: {error_msg}"
                     }
             else:
@@ -2221,8 +2221,8 @@ class Pan115Client:
             sign = qrcode_token.get('sign', '')
             
             if not all([uid, time_val, sign]):
-            return {
-                'success': False,
+                return {
+                    'success': False,
                     'status': 'error',
                     'message': '二维码token数据不完整'
                 }
