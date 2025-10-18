@@ -686,72 +686,169 @@ class Pan115Client:
         使用Web API上传文件（Cookie认证）
         
         适用于没有开放平台AppID的场景
-        注意：Web API上传较复杂，这里提供基础实现
+        完整实现：秒传检测 + 真实上传
         """
         try:
             import hashlib
+            import json
+            from urllib.parse import urlencode
             
-            # 计算文件SHA1
+            # 计算文件SHA1和读取文件内容
             sha1 = hashlib.sha1()
             file_size = 0
             file_name = os.path.basename(file_path)
+            file_data = b''
             
             with open(file_path, 'rb') as f:
-                while True:
-                    chunk = f.read(8192)
-                    if not chunk:
-                        break
-                    sha1.update(chunk)
-                    file_size += len(chunk)
+                file_data = f.read()
+                file_size = len(file_data)
+                sha1.update(file_data)
             
             file_sha1 = sha1.hexdigest().upper()
+            
+            # 计算文件的前几个字节的SHA1（用于秒传验证）
+            read_size = min(file_size, 128 * 1024)  # 前128KB
+            sig_sha1 = hashlib.sha1(file_data[:read_size]).hexdigest()
+            
             logger.info(f"📝 文件信息: {file_name}, size={file_size}, sha1={file_sha1}")
             
-            # 先尝试秒传
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
                 'Cookie': self.user_key,
                 'Accept': 'application/json',
             }
             
-            # 检查文件是否已存在（秒传）
+            # 步骤1: 尝试秒传
+            logger.info(f"🔍 步骤1: 检查秒传...")
             check_data = {
-                'file_id': target_dir_id,
-                'file_name': file_name,
-                'file_size': file_size,
-                'file_sha1': file_sha1,
+                'preid': target_dir_id,
+                'fileid': target_dir_id,
+                'filename': file_name,
+                'filesize': str(file_size),
+                'target': f'U_1_{target_dir_id}',
             }
             
             async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
-                check_response = await client.post(
-                    f"{self.webapi_url}/files/add",
-                    data=check_data,
+                check_response = await client.get(
+                    f"{self.webapi_url}/rb/quick_file",
+                    params=check_data,
                     headers=headers
                 )
             
             if check_response.status_code == 200:
                 result = check_response.json()
-                logger.info(f"📦 Web API检查响应: {result}")
+                logger.info(f"📦 秒传检查响应: {result}")
                 
-                if result.get('state'):
+                if result.get('state') and result.get('data'):
                     # 秒传成功
-                    file_id = result.get('file_id', result.get('data', {}).get('file_id', ''))
-                    logger.info(f"✅ Web API秒传成功")
+                    pick_code = result.get('data', {}).get('pickcode', '')
+                    logger.info(f"✅ Web API秒传成功: pickcode={pick_code}")
                     return {
                         'success': True,
                         'message': '文件秒传成功',
-                        'file_id': file_id,
+                        'file_id': pick_code,
                         'quick_upload': True
                     }
             
-            # 需要真实上传
-            logger.warning("⚠️ Web API真实上传功能尚未完整实现")
-            logger.warning("⚠️ 建议配置开放平台AppID以使用完整上传功能")
+            # 步骤2: 获取上传参数
+            logger.info(f"📤 步骤2: 获取上传参数...")
             
-            return {
-                'success': False,
-                'message': 'Web API上传需要更复杂的实现，建议配置开放平台AppID'
+            upload_info_data = {
+                'userid': self.user_id or '',
+                'filename': file_name,
+                'filesize': str(file_size),
+                'fileid': target_dir_id,
+                'target': f'U_1_{target_dir_id}',
+                'sig': sig_sha1,
             }
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                upload_info_response = await client.get(
+                    f"{self.webapi_url}/rb/get_upload_info",
+                    params=upload_info_data,
+                    headers=headers
+                )
+            
+            if upload_info_response.status_code != 200:
+                logger.error(f"❌ 获取上传参数失败: HTTP {upload_info_response.status_code}")
+                return {
+                    'success': False,
+                    'message': f"获取上传参数失败: HTTP {upload_info_response.status_code}"
+                }
+            
+            upload_info = upload_info_response.json()
+            logger.info(f"📦 上传参数响应: {upload_info}")
+            
+            if not upload_info.get('state'):
+                error_msg = upload_info.get('error', '获取上传参数失败')
+                logger.error(f"❌ {error_msg}")
+                return {'success': False, 'message': error_msg}
+            
+            # 提取上传URL和参数
+            upload_url = upload_info.get('host', '')
+            upload_params = {
+                'userid': upload_info.get('userid', ''),
+                'filename': file_name,
+                'filesize': str(file_size),
+                'fileid': target_dir_id,
+                'target': upload_info.get('target', f'U_1_{target_dir_id}'),
+                'sig': upload_info.get('sig', sig_sha1),
+                'token': upload_info.get('token', ''),
+            }
+            
+            if not upload_url:
+                logger.error("❌ 未获取到上传URL")
+                return {'success': False, 'message': '未获取到上传URL'}
+            
+            # 步骤3: 执行文件上传
+            logger.info(f"📤 步骤3: 上传文件到 {upload_url}...")
+            
+            # 准备上传数据
+            files = {
+                'file': (file_name, file_data, 'application/octet-stream')
+            }
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=600.0)) as client:
+                upload_response = await client.post(
+                    upload_url,
+                    data=upload_params,
+                    files=files,
+                    headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Cookie': self.user_key,
+                    }
+                )
+            
+            logger.info(f"📥 上传响应: HTTP {upload_response.status_code}")
+            
+            if upload_response.status_code == 200:
+                upload_result = upload_response.json()
+                logger.info(f"📦 上传结果: {upload_result}")
+                
+                if upload_result.get('state') or upload_result.get('status') == 2:
+                    pick_code = upload_result.get('pickcode', upload_result.get('data', {}).get('pickcode', ''))
+                    file_id = upload_result.get('file_id', pick_code)
+                    
+                    logger.info(f"✅ Web API文件上传成功: file_id={file_id}")
+                    return {
+                        'success': True,
+                        'message': '文件上传成功',
+                        'file_id': file_id,
+                        'quick_upload': False
+                    }
+                else:
+                    error_msg = upload_result.get('error', upload_result.get('message', '上传失败'))
+                    logger.error(f"❌ 上传失败: {error_msg}")
+                    return {
+                        'success': False,
+                        'message': f"上传失败: {error_msg}"
+                    }
+            else:
+                logger.error(f"❌ 上传请求失败: HTTP {upload_response.status_code}")
+                return {
+                    'success': False,
+                    'message': f"上传请求失败: HTTP {upload_response.status_code}"
+                }
                 
         except Exception as e:
             logger.error(f"❌ Web API上传文件异常: {e}")

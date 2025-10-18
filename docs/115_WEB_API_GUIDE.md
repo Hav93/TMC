@@ -25,7 +25,7 @@
 | 复制文件 | `copy_files()` | ✅ 完整实现 | 复制文件到目标目录 |
 | 重命名 | `rename_file()` | ✅ 完整实现 | 重命名文件或文件夹 |
 | 创建目录 | `create_directory()` | ✅ 完整实现 | 创建新目录，支持已存在检测 |
-| 上传文件 | `upload_file()` | ⚠️ 秒传支持 | 支持秒传检测，真实上传待完善 |
+| 上传文件 | `upload_file()` | ✅ 完整实现 | 支持秒传检测和真实上传 |
 | 下载链接 | `get_download_url()` | ✅ 完整实现 | 获取文件下载链接 |
 | 添加离线任务 | `add_offline_task()` | ✅ 完整实现 | 添加HTTP/磁力/BT离线下载 |
 | 离线任务列表 | `get_offline_tasks()` | ✅ 完整实现 | 获取离线任务列表 |
@@ -219,20 +219,56 @@ data = {
 
 ### 7. _upload_file_web_api()
 
-**功能**：上传文件（当前仅支持秒传检测）
+**功能**：上传文件（完整实现）
 
 **实现说明**：
 - ✅ 支持文件 SHA1 计算
 - ✅ 支持秒传检测
-- ⚠️ 真实上传流程较复杂，建议使用开放平台 API
+- ✅ 支持真实文件上传
+- ✅ 完整的三步上传流程
 
-**秒传检测**：
+**上传流程**：
+
+**步骤1：秒传检测**
 ```python
 check_data = {
-    'file_id': target_dir_id,
-    'file_name': file_name,
-    'file_size': file_size,
-    'file_sha1': file_sha1,
+    'preid': target_dir_id,
+    'fileid': target_dir_id,
+    'filename': file_name,
+    'filesize': str(file_size),
+    'target': f'U_1_{target_dir_id}',
+}
+# GET /rb/quick_file
+```
+
+**步骤2：获取上传参数**
+```python
+upload_info_data = {
+    'userid': user_id,
+    'filename': file_name,
+    'filesize': str(file_size),
+    'fileid': target_dir_id,
+    'target': f'U_1_{target_dir_id}',
+    'sig': sig_sha1,  # 文件前128KB的SHA1
+}
+# GET /rb/get_upload_info
+```
+
+**步骤3：执行文件上传**
+```python
+files = {
+    'file': (file_name, file_data, 'application/octet-stream')
+}
+# POST to upload_url with files and params
+```
+
+**返回数据**：
+```python
+{
+    'success': True,
+    'message': '文件上传成功',
+    'file_id': file_id,
+    'quick_upload': False  # True表示秒传，False表示真实上传
 }
 ```
 
@@ -659,17 +695,7 @@ async def retry_operation(operation, max_retries=3):
 
 ## 未来改进
 
-### 1. Web API 真实上传
-
-当前 Web API 上传仅支持秒传检测，完整的上传流程包括：
-
-1. ✅ 文件 SHA1 计算
-2. ✅ 秒传检测
-3. ⚠️ 获取上传地址
-4. ⚠️ 分片上传
-5. ⚠️ 上传确认
-
-### 2. 搜索功能
+### 1. 搜索功能
 
 计划添加 Web API 搜索支持：
 
@@ -678,6 +704,13 @@ async def _search_files_web_api(self, keyword: str) -> Dict[str, Any]:
     # 待实现
     pass
 ```
+
+### 2. 大文件分片上传优化
+
+当前实现一次性读取整个文件到内存，对于大文件（>100MB）建议：
+- 实现分片上传
+- 添加进度回调
+- 支持断点续传
 
 ### 3. 文件分享
 
@@ -740,6 +773,13 @@ async def get_offline_task_status(self, task_id: str) -> Dict[str, Any]:
 - 💬 技术讨论：项目 Discussions
 
 ## 更新日志
+
+### v1.2.0 (2025-01-18)
+
+- ✅ 完善 Web API 上传功能
+- ✅ 实现完整的三步上传流程（秒传检测 + 获取参数 + 真实上传）
+- ✅ 修复目录路径创建在 Web API 模式下的问题
+- ✅ 所有文件操作现在完全支持 Web API
 
 ### v1.1.0 (2025-01-18)
 
