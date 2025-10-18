@@ -22,6 +22,7 @@ services:
       - ../app/backend/main.py:/app/main.py
       - ../app/backend/enhanced_bot.py:/app/enhanced_bot.py
       - ../app/backend/telegram_client_manager.py:/app/telegram_client_manager.py
+      - ../app/backend/timezone_utils.py:/app/timezone_utils.py
       - ../app/backend/docker-entrypoint.sh:/docker-entrypoint.sh
       # 前端热挂载（开发模式）
       # 注意：如果前端有更新，需要先在本地运行 npm run build 重新编译

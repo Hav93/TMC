@@ -47,6 +47,7 @@ __pycache__
 *.log
 *.tmp
 *.bak
+*.backup
 .DS_Store
 Thumbs.db
 
