@@ -2,7 +2,7 @@
  * 115网盘离线下载 API 服务
  */
 
-import axios from 'axios';
+import { apiClient } from './api';
 import type {
   AddOfflineTaskRequest,
   AddOfflineTaskResponse,
@@ -20,7 +20,7 @@ const API_BASE_URL = '/api/pan115';
 export async function addOfflineTask(
   params: AddOfflineTaskRequest
 ): Promise<AddOfflineTaskResponse> {
-  const response = await axios.post(`${API_BASE_URL}/offline/add`, {
+  const response = await apiClient.post(`${API_BASE_URL}/offline/add`, {
     url: params.url,
     target_dir_id: params.target_dir_id || '0',
   });
@@ -33,7 +33,7 @@ export async function addOfflineTask(
 export async function getOfflineTasks(
   page: number = 1
 ): Promise<GetOfflineTasksResponse> {
-  const response = await axios.get(`${API_BASE_URL}/offline/tasks`, {
+  const response = await apiClient.get(`${API_BASE_URL}/offline/tasks`, {
     params: { page },
   });
   return response.data;
@@ -45,7 +45,7 @@ export async function getOfflineTasks(
 export async function deleteOfflineTasks(
   params: DeleteOfflineTasksRequest
 ): Promise<OfflineOperationResponse> {
-  const response = await axios.delete(`${API_BASE_URL}/offline/tasks`, {
+  const response = await apiClient.delete(`${API_BASE_URL}/offline/tasks`, {
     data: { task_ids: params.task_ids },
   });
   return response.data;
@@ -57,7 +57,7 @@ export async function deleteOfflineTasks(
 export async function clearOfflineTasks(
   params: ClearOfflineTasksRequest
 ): Promise<OfflineOperationResponse> {
-  const response = await axios.post(`${API_BASE_URL}/offline/clear`, {
+  const response = await apiClient.post(`${API_BASE_URL}/offline/clear`, {
     flag: params.flag,
   });
   return response.data;
