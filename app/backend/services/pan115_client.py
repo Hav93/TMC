@@ -3103,7 +3103,7 @@ class Pan115Client:
             
             async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.post(
-                    f"{self.webapi_url}/lixian/add",
+                    f"{self.webapi_url}/lixian/?ct=lixian&ac=add_task_url",
                     data=data,
                     headers=headers
                 )
@@ -3274,7 +3274,7 @@ class Pan115Client:
             
             async with httpx.AsyncClient(**self._get_client_kwargs(timeout=10.0)) as client:
                 response = await client.get(
-                    f"{self.webapi_url}/lixian/task",
+                    f"{self.webapi_url}/lixian/?ct=lixian&ac=task_lists",
                     params=params,
                     headers=headers
                 )
@@ -3430,7 +3430,7 @@ class Pan115Client:
             
             async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.post(
-                    f"{self.webapi_url}/lixian/task_del",
+                    f"{self.webapi_url}/lixian/?ct=lixian&ac=task_del",
                     data=data,
                     headers=headers
                 )
@@ -3553,7 +3553,7 @@ class Pan115Client:
             
             async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
                 response = await client.post(
-                    f"{self.webapi_url}/lixian/task_clear",
+                    f"{self.webapi_url}/lixian/?ct=lixian&ac=task_clear",
                     data=data,
                     headers=headers
                 )
