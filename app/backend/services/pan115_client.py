@@ -921,14 +921,9 @@ class Pan115Client:
                 logger.info(f"📦 Token响应: HTTP {token_response.status_code}")
                 
                 if token_response.status_code == 200:
-                    # 返回的是JSONP格式，需要去掉jsonp1()包装
+                    # 返回的是纯JSON（阿里云STS临时凭证）
                     token_text = token_response.text
-                    logger.info(f"📦 Token原始响应: {token_text[:500]}")  # 显示更多内容
-                    
-                    # 去掉jsonp包装: jsonp1({...})
-                    if token_text.startswith('jsonp1(') and token_text.endswith(')'):
-                        token_text = token_text[7:-1]  # 去掉 "jsonp1(" 和 ")"
-                        logger.info(f"📦 去掉JSONP包装后: {token_text[:500]}")
+                    logger.info(f"📦 Token原始响应: {token_text[:500]}")
                     
                     import json
                     try:
@@ -939,7 +934,30 @@ class Pan115Client:
                         logger.error(f"📦 原始文本: {token_text}")
                         return {'success': False, 'message': f'解析token失败: {str(e)}'}
                     
-                    if token_data.get('state'):
+                    # 检查是否是STS临时凭证格式（阿里云OSS）
+                    if token_data.get('StatusCode') == '200' and token_data.get('AccessKeySecret'):
+                        # 这是阿里云STS临时凭证
+                        logger.info(f"✅ 成功获取阿里云STS临时凭证")
+                        
+                        # 注意：这种格式需要使用阿里云OSS SDK，或者直接用临时凭证签名
+                        # 暂时先返回成功，但需要特殊处理
+                        return {
+                            'success': True,
+                            'sts_token': True,  # 标记为STS token
+                            'data': {
+                                'endpoint': endpoint,
+                                'access_key_id': token_data.get('AccessKeyId', ''),
+                                'access_key_secret': token_data.get('AccessKeySecret', ''),
+                                'security_token': token_data.get('SecurityToken', ''),
+                                'expiration': token_data.get('Expiration', ''),
+                                'target': target_dir_id,
+                                'file_sha1': file_sha1,
+                                'sig_sha1': sig_sha1,
+                            }
+                        }
+                    
+                    # 旧格式：带state字段的响应
+                    elif token_data.get('state'):
                         # 成功获取token
                         data = token_data.get('data', token_data)
                         logger.info(f"✅ 成功获取上传token")
@@ -1099,11 +1117,17 @@ class Pan115Client:
         """
         执行文件上传（高级版本，参考fake115uploader）
         
-        根据文件大小选择不同的上传策略：
+        根据文件大小和token类型选择不同的上传策略：
+        - STS Token：使用阿里云OSS SDK上传
         - 小文件（<100MB）：直接上传到OSS
         - 大文件（>=100MB）：分片上传
         """
         try:
+            # 检查是否是STS token
+            if upload_info.get('sts_token'):
+                logger.info(f"📤 使用STS临时凭证上传...")
+                return await self._upload_with_sts_token(file_path, file_name, file_size, upload_info, headers)
+            
             # 100MB阈值
             MULTIPART_THRESHOLD = 100 * 1024 * 1024
             
@@ -1118,6 +1142,152 @@ class Pan115Client:
                 
         except Exception as e:
             logger.error(f"❌ 高级上传异常: {e}")
+            import traceback
+            traceback.print_exc()
+            return {'success': False, 'message': str(e)}
+    
+    async def _upload_with_sts_token(self, file_path: str, file_name: str, file_size: int,
+                                     upload_info: dict, headers: dict) -> Dict[str, Any]:
+        """
+        使用阿里云STS临时凭证上传文件
+        
+        参考：https://help.aliyun.com/document_detail/32005.html
+        """
+        try:
+            import time
+            import hashlib
+            import base64
+            import hmac
+            from services.upload_progress_manager import get_progress_manager, UploadStatus
+            
+            progress_mgr = get_progress_manager()
+            data = upload_info.get('data', {})
+            target_dir_id = data.get('target', '0')
+            
+            # 创建进度追踪
+            progress = await progress_mgr.create_progress(
+                file_path, file_name, file_size, target_dir_id
+            )
+            
+            # 获取STS凭证
+            endpoint = data.get('endpoint', '')
+            access_key_id = data.get('access_key_id', '')
+            access_key_secret = data.get('access_key_secret', '')
+            security_token = data.get('security_token', '')
+            file_sha1 = data.get('file_sha1', '')
+            
+            if not endpoint or not access_key_id or not access_key_secret:
+                logger.error("❌ 缺少STS凭证")
+                await progress_mgr.update_status(
+                    file_path, UploadStatus.FAILED,
+                    error_message='缺少STS凭证'
+                )
+                return {'success': False, 'message': '缺少STS凭证'}
+            
+            logger.info(f"📤 STS上传到: {endpoint}")
+            logger.info(f"📤 AccessKeyId: {access_key_id[:20]}...")
+            
+            # 更新状态
+            await progress_mgr.update_status(file_path, UploadStatus.UPLOADING)
+            progress.start()
+            
+            # 读取文件
+            with open(file_path, 'rb') as f:
+                file_data = f.read()
+            
+            # 更新进度（读取完成）
+            await progress_mgr.update_progress(file_path, len(file_data))
+            
+            # 生成对象键（object key）
+            # 115的规则：sha1-{时间戳}-{随机}.{ext}
+            import os
+            ext = os.path.splitext(file_name)[1]
+            object_key = f"sha1-{file_sha1}-{int(time.time())}{ext}"
+            
+            logger.info(f"📤 Object Key: {object_key}")
+            
+            # 构建PUT请求（阿里云OSS PutObject API）
+            # 参考：https://help.aliyun.com/document_detail/31978.html
+            
+            # 准备请求
+            content_type = 'application/octet-stream'
+            date_gmt = time.strftime('%a, %d %b %Y %H:%M:%S GMT', time.gmtime())
+            
+            # 计算Content-MD5
+            content_md5 = base64.b64encode(hashlib.md5(file_data).digest()).decode()
+            
+            # 构建签名字符串
+            # PUT\nContent-MD5\nContent-Type\nDate\nx-oss-security-token:token\n/bucket/object
+            bucket = 'lx-noreply'  # 115的默认bucket
+            canonicalized_resource = f"/{bucket}/{object_key}"
+            canonicalized_oss_headers = f"x-oss-security-token:{security_token}"
+            
+            string_to_sign = f"PUT\n{content_md5}\n{content_type}\n{date_gmt}\n{canonicalized_oss_headers}\n{canonicalized_resource}"
+            
+            logger.debug(f"📝 String to sign: {string_to_sign}")
+            
+            # 计算签名
+            signature = base64.b64encode(
+                hmac.new(access_key_secret.encode(), string_to_sign.encode(), hashlib.sha1).digest()
+            ).decode()
+            
+            # 构建请求头
+            oss_headers = {
+                'Host': endpoint.replace('http://', '').replace('https://', ''),
+                'Date': date_gmt,
+                'Content-Type': content_type,
+                'Content-MD5': content_md5,
+                'Authorization': f'OSS {access_key_id}:{signature}',
+                'x-oss-security-token': security_token,
+                'Content-Length': str(file_size),
+            }
+            
+            # 上传文件
+            upload_url = f"{endpoint}/{object_key}"
+            logger.info(f"📤 上传URL: {upload_url}")
+            
+            async with httpx.AsyncClient(**self._get_client_kwargs(timeout=600.0)) as client:
+                response = await client.put(
+                    upload_url,
+                    content=file_data,
+                    headers=oss_headers
+                )
+            
+            logger.info(f"📥 OSS响应: HTTP {response.status_code}")
+            logger.info(f"📥 响应头: {dict(response.headers)}")
+            
+            if response.status_code in [200, 201, 204]:
+                # 上传成功
+                logger.info(f"✅ 文件已上传到OSS")
+                
+                # 更新进度为成功
+                progress.complete('', False)
+                await progress_mgr.update_status(
+                    file_path, UploadStatus.SUCCESS
+                )
+                
+                return {
+                    'success': True,
+                    'message': '文件上传成功',
+                    'file_id': '',  # STS上传不直接返回file_id
+                    'object_key': object_key,
+                    'quick_upload': False
+                }
+            else:
+                error_msg = f'OSS上传失败: HTTP {response.status_code}'
+                logger.error(f"❌ {error_msg}")
+                logger.error(f"响应内容: {response.text[:500]}")
+                
+                # 更新进度为失败
+                await progress_mgr.update_status(
+                    file_path, UploadStatus.FAILED,
+                    error_message=error_msg
+                )
+                
+                return {'success': False, 'message': error_msg}
+                
+        except Exception as e:
+            logger.error(f"❌ STS上传异常: {e}")
             import traceback
             traceback.print_exc()
             return {'success': False, 'message': str(e)}
