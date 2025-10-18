@@ -10,6 +10,7 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from log_manager import get_logger
+from timezone_utils import get_user_now
 
 logger = get_logger('storage_manager')
 from database import get_db
@@ -271,7 +272,6 @@ class StorageManager:
         except Exception as e:
             logger.error(f"手动清理失败: {e}")
             import traceback
-from timezone_utils import get_user_now
             traceback.print_exc()
             return {
                 'success': False,
