@@ -854,24 +854,8 @@ class TelegramClientManager:
             else:
                 self.logger.debug(f"聊天ID {chat_id} 没有适用的转发规则")
             
-            # 2. 处理媒体监控规则
-            await self._process_media_monitor(chat_id, message)
-            
-            # 3. 使用消息分发器处理资源监控和其他处理器
-            try:
-                # 创建消息上下文
-                context = MessageContext(
-                    message=message,
-                    client_manager=self,
-                    chat_id=chat_id,
-                    is_edited=is_edited
-                )
-                
-                # 获取消息分发器并分发消息
-                dispatcher = get_message_dispatcher()
-                await dispatcher.dispatch(context)
-            except Exception as e:
-                self.logger.error(f"消息分发器处理失败: {e}", exc_info=True)
+            # 2. 统一处理资源监控和媒体监控（带优先级）
+            await self._process_monitors_with_priority(chat_id, message, is_edited)
                 
             # 性能监控
             processing_time = (time.time() - start_time) * 1000
@@ -881,8 +865,110 @@ class TelegramClientManager:
         except Exception as e:
             self.logger.error(f"消息处理失败: {e}")
     
+    async def _process_monitors_with_priority(self, chat_id: int, message, is_edited: bool = False):
+        """
+        统一处理资源监控和媒体监控，按优先级执行
+        
+        优先级逻辑：
+        1. 先检查是否有资源监控规则，如果有且消息包含链接 → 只处理资源监控
+        2. 如果没有链接或没有资源监控规则 → 检查媒体监控规则
+        """
+        try:
+            from models import ResourceMonitorRule, MediaMonitorRule
+            from sqlalchemy import select
+            from services.message_dispatcher import get_message_dispatcher, MessageContext
+            import re
+            
+            # 1. 先检查是否有资源监控规则监听此频道
+            has_resource_monitor = False
+            has_links = False
+            
+            async for db in get_db():
+                # 检查资源监控规则
+                resource_rules_result = await db.execute(
+                    select(ResourceMonitorRule).where(
+                        ResourceMonitorRule.is_active == True
+                    )
+                )
+                resource_rules = resource_rules_result.scalars().all()
+                
+                # 检查是否有规则监听此频道
+                import json
+                for rule in resource_rules:
+                    source_chats = json.loads(rule.source_chats) if rule.source_chats else []
+                    if str(chat_id) in source_chats:
+                        has_resource_monitor = True
+                        
+                        # 检查消息是否包含链接
+                        if hasattr(message, 'text') and message.text:
+                            # 检测各类资源链接
+                            magnet_pattern = r'magnet:\?xt=urn:btih:[a-zA-Z0-9]+'
+                            pan115_pattern = r'https?://(?:115\.com|115cdn\.com)/s/[a-zA-Z0-9]+(?:\?password=[a-zA-Z0-9]+)?'
+                            ed2k_pattern = r'ed2k://\|file\|[^|]+\|[0-9]+\|[a-fA-F0-9]+\|'
+                            
+                            if (re.search(magnet_pattern, message.text) or 
+                                re.search(pan115_pattern, message.text) or 
+                                re.search(ed2k_pattern, message.text)):
+                                has_links = True
+                                break
+                        break
+                
+                # 2. 根据优先级决定处理方式
+                if has_resource_monitor and has_links:
+                    # 优先级1: 有资源监控规则且消息包含链接 → 只处理资源监控
+                    self.logger.info(f"📋 检测到资源链接，分发给资源监控处理")
+                    context = MessageContext(
+                        message=message,
+                        client_manager=self,
+                        chat_id=chat_id,
+                        is_edited=is_edited
+                    )
+                    dispatcher = get_message_dispatcher()
+                    await dispatcher.dispatch(context)
+                    # 不再处理媒体监控
+                    return
+                
+                # 优先级2: 没有链接或没有资源监控 → 检查媒体监控
+                self.logger.debug(f"📋 未检测到资源链接，检查媒体监控")
+                
+                # 查找适用的媒体监控规则
+                media_rules_result = await db.execute(
+                    select(MediaMonitorRule).where(
+                        MediaMonitorRule.is_active == True,
+                        MediaMonitorRule.client_id == self.client_id
+                    )
+                )
+                media_rules = media_rules_result.scalars().all()
+                
+                for rule in media_rules:
+                    source_chats = json.loads(rule.source_chats) if rule.source_chats else []
+                    
+                    if str(chat_id) in source_chats:
+                        # 检查消息是否包含媒体
+                        has_media = (
+                            hasattr(message, 'media') and message.media is not None and
+                            not (hasattr(message.media, '__class__') and 
+                                 message.media.__class__.__name__ == 'MessageMediaWebPage')
+                        )
+                        
+                        if not has_media:
+                            self.logger.debug(f"⏭️ 跳过媒体监控规则 {rule.name}：消息不包含媒体")
+                            continue
+                        
+                        self.logger.info(f"📹 触发媒体监控规则: {rule.name} (ID: {rule.id})")
+                        
+                        # 处理媒体消息
+                        from services.media_monitor_service import get_media_monitor_service
+                        media_monitor = get_media_monitor_service()
+                        await media_monitor.process_message(self.client, message, rule.id, client_wrapper=self)
+                
+                break
+                
+        except Exception as e:
+            self.logger.error(f"监控处理失败: {e}", exc_info=True)
+    
     async def _process_media_monitor(self, chat_id: int, message):
-        """处理媒体监控"""
+        """处理媒体监控（已弃用，保留用于兼容）"""
         try:
             # 获取媒体监控服务
             from services.media_monitor_service import get_media_monitor_service
