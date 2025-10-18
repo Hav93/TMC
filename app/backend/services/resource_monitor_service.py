@@ -207,13 +207,18 @@ class ResourceMonitorService:
     async def _create_record(self, context: 'MessageContext', rule: ResourceMonitorRule,
                             link_type: str, link_url: str, link_hash: str) -> ResourceRecord:
         """创建资源记录"""
+        from timezone_utils import telegram_time_to_user_time
+        
         # 获取默认标签
         default_tags = json.loads(rule.default_tags) if rule.default_tags else []
+        
+        # 转换消息时间到用户时区
+        user_time = telegram_time_to_user_time(context.message.date)
         
         # 创建消息快照
         message_snapshot = {
             'id': context.message.id,
-            'date': context.message.date.isoformat() if context.message.date else None,
+            'date': user_time.isoformat() if user_time else None,
             'text': context.message.text or "",
             'chat_id': context.chat_id
         }
@@ -224,7 +229,7 @@ class ResourceMonitorService:
             source_chat_id=str(context.chat_id),
             message_id=context.message.id,
             message_text=context.message.text or "",
-            message_date=context.message.date,
+            message_date=user_time,
             link_type=link_type,
             link_url=link_url,
             link_hash=link_hash,
