@@ -138,6 +138,19 @@ def main():
                 changes_made += 1
         print()
         
+        # 5. 修复 resource_monitor_rules 表
+        print("🔧 修复 resource_monitor_rules 表...")
+        resource_monitor_fields = [
+            ("target_path", "VARCHAR(500)"),
+            ("auto_save_to_115", "BOOLEAN DEFAULT 0"),
+            ("default_tags", "TEXT"),
+        ]
+        
+        for field_name, field_def in resource_monitor_fields:
+            if add_column_if_not_exists(cursor, "resource_monitor_rules", field_name, field_def):
+                changes_made += 1
+        print()
+        
         # 提交更改
         conn.commit()
         
