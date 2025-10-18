@@ -20,8 +20,58 @@ logger = get_logger('pan115_api')
 router = APIRouter(tags=["115网盘"])
 
 
+async def get_pan115_settings_for_webapi(db: AsyncSession) -> MediaSettings:
+    """
+    获取115网盘配置的原始settings对象（用于Web API）
+    
+    用于离线下载、分享链接等功能，只需要Cookie（user_id + user_key），
+    不需要开放平台的AppID/AppSecret
+    """
+    result = await db.execute(select(MediaSettings))
+    settings = result.scalars().first()
+    
+    if not settings:
+        raise HTTPException(status_code=404, detail="115网盘未配置")
+    
+    # 检查是否已配置Cookie（只要有user_id和user_key就可以使用Web API）
+    user_id = getattr(settings, 'pan115_user_id', None)
+    user_key = getattr(settings, 'pan115_user_key', None)
+    
+    if not user_id or not user_key:
+        raise HTTPException(
+            status_code=400, 
+            detail="115网盘Cookie未配置，请先在设置中配置User ID和User Key"
+        )
+    
+    return settings
+
+
+def create_pan115_client_for_webapi(settings: MediaSettings) -> Pan115Client:
+    """
+    创建Pan115Client实例（仅用于Web API）
+    
+    不传入app_id和app_secret，只使用Cookie（user_id + user_key）
+    用于离线下载、分享链接等Web API功能
+    
+    Args:
+        settings: 媒体设置对象
+    """
+    use_proxy = getattr(settings, 'pan115_use_proxy', False) or False
+    user_id = getattr(settings, 'pan115_user_id', '') or ''
+    user_key = getattr(settings, 'pan115_user_key', '') or ''
+    
+    # 不传入app_id和app_secret，强制使用Web API
+    return Pan115Client(
+        app_id="",  # 留空，使用Web API
+        app_key="",
+        user_id=user_id,
+        user_key=user_key,
+        use_proxy=use_proxy
+    )
+
+
 def create_pan115_client(settings: MediaSettings, app_id: str = "", app_key: str = "", 
-                         user_id: str = "", user_key: str = "") -> Pan115Client:
+                        user_id: str = "", user_key: str = "") -> Pan115Client:
     """
     创建Pan115Client实例,自动读取use_proxy配置
     
@@ -869,28 +919,13 @@ async def test_pan115_connection(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """测试115网盘连接并刷新用户信息（使用 Pan115Client）"""
+    """测试115网盘连接并刷新用户信息（使用 Web API）"""
     try:
-        result = await db.execute(select(MediaSettings))
-        settings = result.scalars().first()
+        # 获取115网盘配置（仅需Cookie）
+        settings = await get_pan115_settings_for_webapi(db)
         
-        if not settings:
-            raise HTTPException(status_code=400, detail="未配置115网盘")
-        
-        app_id = getattr(settings, 'pan115_app_id', None)
-        user_id = getattr(settings, 'pan115_user_id', None)
-        user_key = getattr(settings, 'pan115_user_key', None)
-        
-        if not user_id or not user_key:
-            raise HTTPException(status_code=400, detail="请先登录115网盘")
-        
-        # 使用 Pan115Client 测试连接并获取最新的用户信息
-        client = Pan115Client(
-            app_id=app_id or "",
-            app_key="",
-            user_id=user_id,
-            user_key=user_key
-        )
+        # 创建Web API客户端（不需要AppID）
+        client = create_pan115_client_for_webapi(settings)
         
         # 获取最新的用户信息和空间信息
         user_info_result = await client.get_user_info()
@@ -906,6 +941,8 @@ async def test_pan115_connection(
                 logger.info(f"✅ 测试连接成功，已更新用户信息缓存")
             except Exception as cache_error:
                 logger.warning(f"⚠️ 更新用户信息缓存失败: {cache_error}")
+            
+            user_id = getattr(settings, 'pan115_user_id', None)
             
             return {
                 "success": True,
@@ -934,7 +971,7 @@ async def upload_to_pan115(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """上传文件到115网盘（使用 Pan115Client）"""
+    """上传文件到115网盘（使用 Web API）"""
     try:
         from pathlib import Path
         
@@ -942,27 +979,11 @@ async def upload_to_pan115(
         if not Path(file_path).exists():
             raise HTTPException(status_code=400, detail=f"文件不存在: {file_path}")
         
-        # 获取115登录信息
-        result = await db.execute(select(MediaSettings))
-        settings = result.scalars().first()
+        # 获取115网盘配置（仅需Cookie）
+        settings = await get_pan115_settings_for_webapi(db)
         
-        if not settings:
-            raise HTTPException(status_code=400, detail="未配置115网盘")
-        
-        app_id = getattr(settings, 'pan115_app_id', None)
-        user_id = getattr(settings, 'pan115_user_id', None)
-        user_key = getattr(settings, 'pan115_user_key', None)
-        
-        if not all([app_id, user_id, user_key]):
-            raise HTTPException(status_code=400, detail="请先配置并登录115网盘")
-        
-        # 使用 Pan115Client 上传
-        client = Pan115Client(
-            app_id=app_id,
-            app_key="",
-            user_id=user_id,
-            user_key=user_key
-        )
+        # 创建Web API客户端（不需要AppID）
+        client = create_pan115_client_for_webapi(settings)
         
         upload_result = await client.upload_file(
             file_path=file_path,
@@ -1160,7 +1181,7 @@ async def add_offline_task(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    添加离线下载任务
+    添加离线下载任务（使用Web API，只需Cookie）
     
     支持的链接类型：
     - HTTP/HTTPS 直链
@@ -1168,22 +1189,11 @@ async def add_offline_task(
     - BT种子 URL
     """
     try:
-        # 获取115网盘配置
-        config = await get_pan115_config(db)
-        if not config:
-            raise HTTPException(status_code=404, detail="115网盘未配置")
+        # 获取115网盘配置（仅需Cookie）
+        settings = await get_pan115_settings_for_webapi(db)
         
-        if not config.enabled:
-            raise HTTPException(status_code=400, detail="115网盘未启用")
-        
-        # 创建客户端
-        client = Pan115Client(
-            app_id=config.app_id,
-            app_secret=config.app_secret,
-            user_id=config.user_id,
-            user_key=config.user_key,
-            use_proxy=config.use_proxy
-        )
+        # 创建Web API客户端（不需要AppID）
+        client = create_pan115_client_for_webapi(settings)
         
         # 添加离线任务
         result = await client.add_offline_task(url, target_dir_id)
@@ -1206,7 +1216,7 @@ async def get_offline_tasks(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    获取离线任务列表
+    获取离线任务列表（使用Web API，只需Cookie）
     
     返回任务信息：
     - task_id: 任务ID
@@ -1219,22 +1229,11 @@ async def get_offline_tasks(
     - file_id: 完成后的文件ID
     """
     try:
-        # 获取115网盘配置
-        config = await get_pan115_config(db)
-        if not config:
-            raise HTTPException(status_code=404, detail="115网盘未配置")
+        # 获取115网盘配置（仅需Cookie）
+        settings = await get_pan115_settings_for_webapi(db)
         
-        if not config.enabled:
-            raise HTTPException(status_code=400, detail="115网盘未启用")
-        
-        # 创建客户端
-        client = Pan115Client(
-            app_id=config.app_id,
-            app_secret=config.app_secret,
-            user_id=config.user_id,
-            user_key=config.user_key,
-            use_proxy=config.use_proxy
-        )
+        # 创建Web API客户端（不需要AppID）
+        client = create_pan115_client_for_webapi(settings)
         
         # 获取离线任务列表
         result = await client.get_offline_tasks(page)
@@ -1257,27 +1256,16 @@ async def delete_offline_tasks(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    删除离线任务
+    删除离线任务（使用Web API，只需Cookie）
     
     支持批量删除多个任务
     """
     try:
-        # 获取115网盘配置
-        config = await get_pan115_config(db)
-        if not config:
-            raise HTTPException(status_code=404, detail="115网盘未配置")
+        # 获取115网盘配置（仅需Cookie）
+        settings = await get_pan115_settings_for_webapi(db)
         
-        if not config.enabled:
-            raise HTTPException(status_code=400, detail="115网盘未启用")
-        
-        # 创建客户端
-        client = Pan115Client(
-            app_id=config.app_id,
-            app_secret=config.app_secret,
-            user_id=config.user_id,
-            user_key=config.user_key,
-            use_proxy=config.use_proxy
-        )
+        # 创建Web API客户端（不需要AppID）
+        client = create_pan115_client_for_webapi(settings)
         
         # 删除离线任务
         result = await client.delete_offline_task(task_ids)
@@ -1300,7 +1288,7 @@ async def clear_offline_tasks(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    清空离线任务
+    清空离线任务（使用Web API，只需Cookie）
     
     flag 参数：
     - 0: 清空所有任务（慎用）
@@ -1308,22 +1296,11 @@ async def clear_offline_tasks(
     - 2: 清空失败任务
     """
     try:
-        # 获取115网盘配置
-        config = await get_pan115_config(db)
-        if not config:
-            raise HTTPException(status_code=404, detail="115网盘未配置")
+        # 获取115网盘配置（仅需Cookie）
+        settings = await get_pan115_settings_for_webapi(db)
         
-        if not config.enabled:
-            raise HTTPException(status_code=400, detail="115网盘未启用")
-        
-        # 创建客户端
-        client = Pan115Client(
-            app_id=config.app_id,
-            app_secret=config.app_secret,
-            user_id=config.user_id,
-            user_key=config.user_key,
-            use_proxy=config.use_proxy
-        )
+        # 创建Web API客户端（不需要AppID）
+        client = create_pan115_client_for_webapi(settings)
         
         # 清空离线任务
         result = await client.clear_offline_tasks(flag)
@@ -1362,29 +1339,18 @@ async def get_share_info(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    获取115分享链接信息
+    获取115分享链接信息（使用Web API，只需Cookie）
     
     支持：
     - 无密码分享
     - 有密码分享（需要提供 receive_code）
     """
     try:
-        # 获取115网盘配置
-        config = await get_pan115_config(db)
-        if not config:
-            raise HTTPException(status_code=404, detail="115网盘未配置")
+        # 获取115网盘配置（仅需Cookie）
+        settings = await get_pan115_settings_for_webapi(db)
         
-        if not config.enabled:
-            raise HTTPException(status_code=400, detail="115网盘未启用")
-        
-        # 创建客户端
-        client = Pan115Client(
-            app_id=config.app_id,
-            app_secret=config.app_secret,
-            user_id=config.user_id,
-            user_key=config.user_key,
-            use_proxy=config.use_proxy
-        )
+        # 创建Web API客户端（不需要AppID）
+        client = create_pan115_client_for_webapi(settings)
         
         # 获取分享信息
         result = await client.get_share_info(
@@ -1410,35 +1376,20 @@ async def save_share(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    转存115分享链接到我的网盘
+    转存115分享链接到我的网盘（使用Web API，只需Cookie）
     
     参数：
     - share_code: 分享码（从链接提取，如 sw1abc123）
     - receive_code: 提取码（如果分享有密码）
     - target_dir_id: 目标目录ID（默认根目录）
     - file_ids: 要转存的文件ID列表（可选，为空则转存全部）
-    
-    支持：
-    - 开放平台API（有AppID时）
-    - Web API（无AppID时，仅需Cookie）
     """
     try:
-        # 获取115网盘配置
-        config = await get_pan115_config(db)
-        if not config:
-            raise HTTPException(status_code=404, detail="115网盘未配置")
+        # 获取115网盘配置（仅需Cookie）
+        settings = await get_pan115_settings_for_webapi(db)
         
-        if not config.enabled:
-            raise HTTPException(status_code=400, detail="115网盘未启用")
-        
-        # 创建客户端
-        client = Pan115Client(
-            app_id=config.app_id,
-            app_secret=config.app_secret,
-            user_id=config.user_id,
-            user_key=config.user_key,
-            use_proxy=config.use_proxy
-        )
+        # 创建Web API客户端（不需要AppID）
+        client = create_pan115_client_for_webapi(settings)
         
         logger.info(f"📥 转存分享链接: share_code={payload.share_code}, target_dir={payload.target_dir_id}")
         
@@ -1453,7 +1404,7 @@ async def save_share(
         if not result['success']:
             raise HTTPException(status_code=400, detail=result['message'])
         
-        logger.info(f"✅ 转存成功: {result['saved_count']} 个文件")
+        logger.info(f"✅ 转存成功: {result.get('saved_count', 0)} 个文件")
         
         return result
         
