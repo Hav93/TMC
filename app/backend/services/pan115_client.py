@@ -2768,7 +2768,7 @@ class Pan115Client:
                                   target_dir_id: str = "0", file_ids: Optional[List[str]] = None) -> Dict[str, Any]:
         """使用Web API转存分享（Cookie认证）"""
         try:
-            logger.info(f"📥 开始转存分享(Web API): share_code={share_code}")
+            logger.info(f"📥 开始转存分享(Web API): share_code={share_code}, target_dir_id={target_dir_id}")
             
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -2785,6 +2785,8 @@ class Pan115Client:
                 'user_id': self.user_id or '',
                 'file_id': target_dir_id,
             }
+            
+            logger.info(f"📦 转存请求参数: file_id={target_dir_id}, share_code={share_code}")
             
             # 如果指定了要转存的文件
             if file_ids:
