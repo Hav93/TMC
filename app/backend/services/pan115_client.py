@@ -895,30 +895,71 @@ class Pan115Client:
                 result = response.json()
                 logger.info(f"📦 上传信息: {result}")
                 
-                if result.get('state'):
-                    # 成功获取上传信息
-                    data = result.get('data', result)
+                # 115返回两步式API：先返回endpoint和gettokenurl
+                endpoint = result.get('endpoint', '')
+                get_token_url = result.get('gettokenurl', '')
+                
+                if not endpoint or not get_token_url:
+                    logger.error(f"❌ 获取上传信息失败: 缺少endpoint或gettokenurl")
+                    return {'success': False, 'message': '获取上传信息失败'}
+                
+                logger.info(f"📤 步骤3.1: 获取上传token from {get_token_url}")
+                
+                # 第二步：调用gettoken.php获取真正的上传参数
+                token_params = {
+                    'callback': 'jsonp1',
+                    't': str(int(time.time() * 1000)),
+                }
+                
+                async with httpx.AsyncClient(**self._get_client_kwargs(timeout=30.0)) as client:
+                    token_response = await client.get(
+                        get_token_url,
+                        params=token_params,
+                        headers=headers
+                    )
+                
+                logger.info(f"📦 Token响应: HTTP {token_response.status_code}")
+                
+                if token_response.status_code == 200:
+                    # 返回的是JSONP格式，需要去掉jsonp1()包装
+                    token_text = token_response.text
+                    logger.debug(f"📦 Token原始响应: {token_text[:200]}")
                     
-                    return {
-                        'success': True,
-                        'data': {
-                            'host': data.get('host', ''),
-                            'object': data.get('object', ''),
-                            'callback': data.get('callback', {}),
-                            'bucket': data.get('bucket', ''),
-                            'access_key_id': data.get('accessid', ''),
-                            'policy': data.get('policy', ''),
-                            'signature': data.get('signature', ''),
-                            'upload_url': data.get('host', ''),
-                            'target': target_dir_id,
-                            'file_sha1': file_sha1,
-                            'sig_sha1': sig_sha1,
+                    # 去掉jsonp包装: jsonp1({...})
+                    if token_text.startswith('jsonp1(') and token_text.endswith(')'):
+                        token_text = token_text[7:-1]  # 去掉 "jsonp1(" 和 ")"
+                    
+                    import json
+                    token_data = json.loads(token_text)
+                    logger.info(f"📦 Token数据: {token_data}")
+                    
+                    if token_data.get('state'):
+                        # 成功获取token
+                        data = token_data.get('data', token_data)
+                        
+                        return {
+                            'success': True,
+                            'data': {
+                                'endpoint': endpoint,
+                                'host': data.get('host', ''),
+                                'object': data.get('object', ''),
+                                'callback': data.get('callback', {}),
+                                'bucket': data.get('bucket', ''),
+                                'access_key_id': data.get('access_key_id', data.get('accessid', '')),
+                                'policy': data.get('policy', ''),
+                                'signature': data.get('signature', ''),
+                                'upload_url': data.get('host', ''),
+                                'target': target_dir_id,
+                                'file_sha1': file_sha1,
+                                'sig_sha1': sig_sha1,
+                            }
                         }
-                    }
+                    else:
+                        error_msg = token_data.get('error', '获取token失败')
+                        logger.error(f"❌ {error_msg}")
+                        return {'success': False, 'message': error_msg}
                 else:
-                    error_msg = result.get('error', '获取上传信息失败')
-                    logger.error(f"❌ {error_msg}")
-                    return {'success': False, 'message': error_msg}
+                    return {'success': False, 'message': f'获取token失败: HTTP {token_response.status_code}'}
             
             return {'success': False, 'message': f'HTTP {response.status_code}'}
                 
