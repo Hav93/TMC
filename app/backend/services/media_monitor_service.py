@@ -1120,13 +1120,13 @@ class MediaMonitorService:
                             logger.info(f"   本地文件: {source_file}")
                             logger.info(f"   目标路径: {pan115_path}")
                             
-                            # 使用 Pan115Client 上传
+                            # 使用 Pan115Client 上传（纯Cookie模式）
                             from services.pan115_client import Pan115Client
                             
                             client = Pan115Client(
-                                app_id=media_settings.pan115_app_id or "",
+                                app_id=getattr(media_settings, 'pan115_app_id', '') or "",
                                 app_key="",
-                                user_id=media_settings.pan115_user_id or "",
+                                user_id=getattr(media_settings, 'pan115_user_id', '') or "",
                                 user_key=pan115_user_key
                             )
                             

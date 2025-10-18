@@ -1124,17 +1124,18 @@ async def reorganize_media_file(
         media_settings_result = await db.execute(select(MediaSettings))
         media_settings = media_settings_result.scalars().first()
         
-        if not media_settings or not media_settings.pan115_app_id:
-            logger.error("❌ 115网盘配置不完整")
+        if not media_settings or not pan115_user_key:
+            logger.error("❌ 115网盘配置不完整：缺少Cookie")
             return JSONResponse(
                 status_code=400,
-                content={"success": False, "message": "115网盘配置不完整，请检查 app_id"}
+                content={"success": False, "message": "115网盘配置不完整，请先扫码登录115"}
             )
         
+        # 纯Cookie模式：不需要app_id
         client = Pan115Client(
-            app_id=media_settings.pan115_app_id,
+            app_id=getattr(media_settings, 'pan115_app_id', '') or "",
             app_key="",
-            user_id=media_settings.pan115_user_id,
+            user_id=getattr(media_settings, 'pan115_user_id', '') or "",
             user_key=pan115_user_key
         )
         
