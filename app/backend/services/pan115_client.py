@@ -733,8 +733,38 @@ class Pan115Client:
             if not upload_info.get('success'):
                 # 检查是否可以回退到旧上传方式
                 if upload_info.get('fallback'):
-                    logger.warning(f"⚠️ 高级上传不可用，回退到传统上传方式")
-                    return await self._do_upload(file_path, file_name, file_size, upload_info, headers)
+                    logger.warning(f"⚠️ 高级上传不可用，尝试使用fake115uploader")
+                    
+                    # 尝试使用fake115uploader二进制
+                    try:
+                        from services.fake115uploader_wrapper import upload_with_fake115uploader
+                        
+                        # 获取目标目录CID
+                        # 注意：这里需要将target_dir_id转换为实际的CID
+                        # target_dir_id是我们创建的目录ID
+                        result = await upload_with_fake115uploader(
+                            cookie=self.user_key,
+                            file_path=file_path,
+                            target_cid=target_dir_id,
+                            mode='upload'  # 使用普通上传模式（秒传+上传）
+                        )
+                        
+                        if result.get('success'):
+                            logger.info(f"✅ fake115uploader上传成功")
+                            return result
+                        else:
+                            logger.warning(f"⚠️ fake115uploader上传失败: {result.get('message')}")
+                            # 继续尝试传统方式
+                            return await self._do_upload(file_path, file_name, file_size, upload_info, headers)
+                    
+                    except ImportError:
+                        logger.warning(f"⚠️ fake115uploader包装器不可用，回退到传统上传方式")
+                        return await self._do_upload(file_path, file_name, file_size, upload_info, headers)
+                    except Exception as e:
+                        logger.error(f"❌ fake115uploader调用异常: {e}")
+                        # 回退到传统方式
+                        return await self._do_upload(file_path, file_name, file_size, upload_info, headers)
+                
                 return upload_info
             
             # 步骤4: 执行上传
