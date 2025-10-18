@@ -550,6 +550,7 @@ def rule_to_dict(rule: MediaMonitorRule) -> dict:
         "organize_enabled": rule.organize_enabled,
         "organize_target_type": rule.organize_target_type,
         "organize_local_path": rule.organize_local_path,
+        "pan115_remote_path": getattr(rule, 'pan115_remote_path', None),
         "organize_mode": rule.organize_mode,
         "keep_temp_file": rule.keep_temp_file,
         
