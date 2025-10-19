@@ -1090,73 +1090,70 @@ class MediaMonitorService:
                         organize_failed = True
                         organize_error = f"本地归档失败: {str(e)}"
                 
-                # 上传到115网盘（作为归档方式）
+                # 上传到115网盘（通过 CloudDrive2）
                 elif should_upload_to_115:
                     try:
-                        # 获取115网盘配置
-                        pan115_user_key = self._get_config_value('pan115_user_key')
+                        # 获取CloudDrive2配置
+                        clouddrive2_enabled = os.getenv('CLOUDDRIVE2_ENABLED', 'false').lower() == 'true'
                         pan115_remote_base = rule.pan115_remote_path or self._get_config_value('pan115_remote_path', '/Telegram媒体')
                         
-                        if not pan115_user_key:
-                            error_msg = "115网盘未配置，请先在设置页面扫码登录115网盘"
+                        if not clouddrive2_enabled:
+                            error_msg = "CloudDrive2未启用，请先在【系统设置 → CloudDrive2】中启用并配置"
                             logger.warning(f"⚠️ {error_msg}")
                             organize_failed = True
                             organize_error = error_msg
                         else:
-                            logger.info(f"📤 115网盘归档模式")
+                            logger.info(f"📤 CloudDrive2归档模式")
                             
                             # 生成远程路径
                             remote_dir = FileOrganizer.generate_target_directory(rule, organize_metadata)
                             remote_filename = FileOrganizer.generate_filename(rule, task.file_name, organize_metadata)
                             
-                            # 完整的115网盘目标路径
+                            # 完整的目标路径（CloudDrive2使用路径，不是ID）
                             remote_target_dir = os.path.join(pan115_remote_base, remote_dir).replace('\\', '/')
                             pan115_path = os.path.join(remote_target_dir, remote_filename).replace('\\', '/')
                             
                             # 源文件（直接使用临时下载文件）
                             source_file = str(file_path)
                             
-                            logger.info(f"📤 准备上传到115网盘: {remote_filename}")
+                            logger.info(f"📤 准备通过CloudDrive2上传: {remote_filename}")
                             logger.info(f"   本地文件: {source_file}")
                             logger.info(f"   目标路径: {pan115_path}")
                             
-                            # 使用 Pan115Client 上传（使用Web API）
-                            from services.pan115_client import Pan115Client
+                            # 使用 CloudDrive2 上传
+                            try:
+                                from services.clouddrive2_uploader import get_clouddrive2_uploader
+                                
+                                uploader = get_clouddrive2_uploader()
+                                
+                                upload_result = await uploader.upload_file(
+                                    file_path=source_file,
+                                    target_dir=remote_target_dir,  # 传递目录路径
+                                    enable_quick_upload=True,
+                                    enable_resume=True
+                                )
+                                
+                                if upload_result.get('success'):
+                                    is_uploaded = True
+                                    pan115_path = pan115_path  # 记录115网盘路径
+                                    logger.info(f"✅ 文件已通过CloudDrive2上传: {pan115_path}")
+                                else:
+                                    error_msg = upload_result.get('message', '未知错误')
+                                    logger.warning(f"⚠️ CloudDrive2上传失败: {error_msg}")
+                                    organize_failed = True
+                                    organize_error = f"CloudDrive2上传失败: {error_msg}"
                             
-                            # 获取115网盘用户ID（从配置中读取）
-                            pan115_user_id = self._get_config_value('pan115_user_id', '')
-                            
-                            client = Pan115Client(
-                                app_id="",  # 使用Web API
-                                app_key="",
-                                user_id=pan115_user_id,
-                                user_key=pan115_user_key
-                            )
-                            
-                            upload_result = await client.upload_file(
-                                file_path=source_file,
-                                target_path=remote_target_dir
-                            )
-                            
-                            if upload_result.get('success'):
-                                is_uploaded = True
-                                pan115_path = pan115_path  # 记录115网盘路径
-                                logger.info(f"✅ 文件已上传到115网盘: {pan115_path}")
-                                if upload_result.get('pickcode'):
-                                    logger.info(f"📝 文件ID: {upload_result['pickcode']}")
-                                if upload_result.get('is_quick'):
-                                    logger.info("⚡ 秒传成功（文件已存在）")
-                            else:
-                                error_msg = upload_result.get('message', '未知错误')
-                                logger.warning(f"⚠️ 115网盘上传失败: {error_msg}")
+                            except ImportError:
+                                error_msg = "CloudDrive2模块未安装，请先安装 grpcio"
+                                logger.error(f"❌ {error_msg}")
                                 organize_failed = True
-                                organize_error = f"115网盘上传失败: {error_msg}"
+                                organize_error = error_msg
                     
-                    except Exception as pan115_error:
-                        error_msg = str(pan115_error)
-                        logger.error(f"❌ 115网盘上传异常: {error_msg}")
+                    except Exception as clouddrive2_error:
+                        error_msg = str(clouddrive2_error)
+                        logger.error(f"❌ CloudDrive2上传异常: {error_msg}")
                         organize_failed = True
-                        organize_error = f"115网盘上传异常: {error_msg}"
+                        organize_error = f"CloudDrive2上传异常: {error_msg}"
                         import traceback
                         traceback.print_exc()
                 
