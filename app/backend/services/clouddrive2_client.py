@@ -267,15 +267,30 @@ class CloudDrive2Client:
         if parent_path in ('', '/'):
             return
 
+        # 一些版本的 FindFileByPath 使用 {parentPath, path}
+        # 先按绝对路径尝试；失败则按“根 + 相对路径”重试
+        last_exc = None
         try:
-            req = clouddrive_pb2.FindFileByPathRequest(theFilePath=parent_path)
+            req = clouddrive_pb2.FindFileByPathRequest(parentPath='/', path=parent_path)
             await self.stub.official_stub.FindFileByPath(
                 req, metadata=self.stub._get_metadata()
             )
+            return
         except Exception as e:
-            # 父目录不存在，记录并让上层给出更明确错误
-            logger.warning(f"⚠️ 远程父目录不存在: {parent_path} -> {e}")
-            raise
+            last_exc = e
+        try:
+            # 将根段提取为 parentPath，其余为相对 path
+            parts = parent_path.replace('\\', '/').lstrip('/').split('/')
+            root = '/' + parts[0] if parts and parts[0] else '/'
+            rel = '/'.join(parts[1:])
+            req2 = clouddrive_pb2.FindFileByPathRequest(parentPath=root, path=rel)
+            await self.stub.official_stub.FindFileByPath(
+                req2, metadata=self.stub._get_metadata()
+            )
+            return
+        except Exception as e2:
+            logger.warning(f"⚠️ 远程父目录不存在: {parent_path} -> {e2}")
+            raise e2
 
     async def disconnect(self):
         """断开连接"""
