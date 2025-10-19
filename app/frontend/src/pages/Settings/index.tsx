@@ -22,6 +22,7 @@ import { settingsApi } from '../../services/settings';
 import { useThemeContext } from '../../theme';
 import Pan115Settings from './Pan115Settings';
 import MediaSettingsPage from './MediaSettings';
+import CloudDrive2Settings from './CloudDrive2Settings';
 
 const { Title, Text } = Typography;
 const { Option } = Select;
@@ -337,6 +338,11 @@ const SettingsPage: React.FC = () => {
               key: 'pan115',
               label: '115网盘',
               children: <Pan115Settings />,
+            },
+            {
+              key: 'clouddrive2',
+              label: 'CloudDrive2',
+              children: <CloudDrive2Settings />,
             },
           ]}
         />

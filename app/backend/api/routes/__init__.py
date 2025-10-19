@@ -20,6 +20,7 @@ from . import (
     media_files,     # 媒体文件 - /api/media
     media_settings,  # 媒体配置 - /api/settings/media
     pan115,          # 115网盘 - /api/pan115
+    clouddrive2_settings, # CloudDrive2配置 - /api/settings/clouddrive2
     resource_monitor,# 资源监控 - /api/resources
     performance,     # 性能监控 - /api/performance
     notifications,   # 通知系统 - /api/notifications
@@ -42,6 +43,7 @@ __all__ = [
     'media_files',
     'media_settings',
     'pan115',
+    'clouddrive2_settings',
     'resource_monitor',
     'performance',
     'notifications',
@@ -107,6 +109,11 @@ API_ROUTE_CONFIG = {
         'prefix': '/api/pan115',
         'tags': ['115网盘'],
         'router': pan115.router,
+    },
+    'clouddrive2_settings': {
+        'prefix': '/api/settings/clouddrive2',
+        'tags': ['CloudDrive2配置'],
+        'router': clouddrive2_settings.router,
     },
     'resource_monitor': {
         'prefix': '/api/resources',
