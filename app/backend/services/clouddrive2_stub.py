@@ -218,7 +218,7 @@ class CloudDrive2Stub:
     
     async def CompleteUpload(self, session_id: str) -> Optional[Dict]:
         """
-        完成上传
+        完成上传（已弃用 - 远程上传协议不需要）
         
         Returns:
             {
@@ -228,17 +228,165 @@ class CloudDrive2Stub:
                 'message': str
             }
         """
+        logger.warning("⚠️ CompleteUpload 已弃用，远程上传协议使用 RemoteUploadChannel")
+        return {
+            'success': False,
+            'file_id': '',
+            'file_path': '',
+            'message': 'Use RemoteUploadChannel instead'
+        }
+    
+    async def RemoteUploadChannel(self, session_id: str):
+        """
+        远程上传通道（服务器流式推送）
+        
+        监听服务器的流式请求
+        
+        Yields:
+            服务器请求字典
+        """
         try:
-            logger.warning(f"⚠️ CompleteUpload gRPC 调用尚未实现: session={session_id[:8]}...")
-            return {
-                'success': False,
-                'file_id': '',
-                'file_path': '',
-                'message': 'gRPC API not implemented'
-            }
+            # 优先使用官方 gRPC
+            if self.official_stub:
+                logger.info("📡 使用官方 gRPC: RemoteUploadChannel")
+                
+                request = clouddrive_pb2.RemoteUploadChannelRequest(
+                    device_id="TMC"
+                )
+                
+                # 监听服务器流式推送
+                async for reply in self.official_stub.RemoteUploadChannel(request):
+                    # 转换为字典格式
+                    result = {
+                        'upload_id': reply.upload_id
+                    }
+                    
+                    # 检查请求类型
+                    if reply.HasField('read_data'):
+                        result['request_type'] = 'read_data'
+                        result['read_data'] = {
+                            'offset': reply.read_data.offset,
+                            'length': reply.read_data.length,
+                            'lazy_read': reply.read_data.lazy_read
+                        }
+                    elif reply.HasField('hash_data'):
+                        result['request_type'] = 'hash_data'
+                        result['hash_data'] = {}
+                    elif reply.HasField('status_changed'):
+                        result['request_type'] = 'status_changed'
+                        status_enum = reply.status_changed.status
+                        # 转换状态枚举
+                        status_map = {
+                            0: 'WaitforPreprocessing',
+                            1: 'Checking',
+                            2: 'Uploading',
+                            3: 'Success',
+                            4: 'Error',
+                            5: 'Paused',
+                            6: 'Cancelled'
+                        }
+                        result['status_changed'] = {
+                            'status': status_map.get(status_enum, 'Unknown'),
+                            'error_message': reply.status_changed.error_message
+                        }
+                    
+                    yield result
+            
+            else:
+                logger.warning("⚠️ 官方 gRPC 不可用，RemoteUploadChannel 无法使用")
+                return
+        
         except Exception as e:
-            logger.error(f"❌ CompleteUpload 调用失败: {e}")
-            return None
+            logger.error(f"❌ RemoteUploadChannel 失败: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    async def RemoteReadData(
+        self,
+        session_id: str,
+        offset: int,
+        length: int,
+        data: bytes
+    ) -> bool:
+        """
+        发送文件数据给服务器
+        
+        Args:
+            session_id: 上传会话ID
+            offset: 数据偏移量
+            length: 数据长度
+            data: 文件数据
+        
+        Returns:
+            是否成功
+        """
+        try:
+            # 优先使用官方 gRPC
+            if self.official_stub:
+                logger.debug(f"📡 使用官方 gRPC: RemoteReadData (offset={offset}, length={length})")
+                
+                request = clouddrive_pb2.RemoteReadDataUpload(
+                    upload_id=session_id,
+                    offset=offset,
+                    length=length,
+                    data=data
+                )
+                
+                response = await self.official_stub.RemoteReadData(request)
+                
+                return response.received
+            
+            else:
+                logger.warning("⚠️ 官方 gRPC 不可用")
+                return False
+        
+        except Exception as e:
+            logger.error(f"❌ RemoteReadData 失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    async def RemoteHashProgress(
+        self,
+        session_id: str,
+        bytes_hashed: int,
+        total_bytes: int
+    ) -> bool:
+        """
+        报告哈希计算进度
+        
+        Args:
+            session_id: 上传会话ID
+            bytes_hashed: 已哈希字节数
+            total_bytes: 总字节数
+        
+        Returns:
+            是否成功
+        """
+        try:
+            # 优先使用官方 gRPC
+            if self.official_stub:
+                logger.debug(f"📡 使用官方 gRPC: RemoteHashProgress ({bytes_hashed}/{total_bytes})")
+                
+                request = clouddrive_pb2.RemoteHashProgressUpload(
+                    upload_id=session_id,
+                    bytes_hashed=bytes_hashed,
+                    total_bytes=total_bytes
+                )
+                
+                response = await self.official_stub.RemoteHashProgress(request)
+                
+                return True  # RemoteHashProgressReply 是空消息
+            
+            else:
+                logger.warning("⚠️ 官方 gRPC 不可用")
+                return False
+        
+        except Exception as e:
+            logger.error(f"❌ RemoteHashProgress 失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     async def ListFiles(self, path: str) -> List[Dict]:
         """列出文件"""

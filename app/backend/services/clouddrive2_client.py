@@ -360,58 +360,22 @@ class CloudDrive2Client:
             
             logger.info(f"✅ 会话ID: {session_id}")
             
-            # 步骤3: 分块上传文件数据
-            logger.info("📤 开始传输文件数据...")
-            chunk_size = 4 * 1024 * 1024  # 4MB 每块
-            uploaded_bytes = 0
+            # 步骤3: 处理远程上传通道（服务器驱动）
+            logger.info("📡 监听远程上传通道（双向流式）...")
+            result = await self._handle_remote_upload_channel(
+                session_id=session_id,
+                local_path=local_path,
+                file_size=file_size,
+                progress_callback=progress_callback
+            )
             
-            with open(local_path, 'rb') as f:
-                chunk_index = 0
-                while True:
-                    chunk = f.read(chunk_size)
-                    if not chunk:
-                        break
-                    
-                    # 上传数据块
-                    success = await self._upload_chunk(
-                        session_id=session_id,
-                        chunk_index=chunk_index,
-                        chunk_data=chunk
-                    )
-                    
-                    if not success:
-                        return {
-                            'success': False,
-                            'message': f'上传数据块 {chunk_index} 失败'
-                        }
-                    
-                    uploaded_bytes += len(chunk)
-                    chunk_index += 1
-                    
-                    # 进度回调
-                    if progress_callback:
-                        await progress_callback(uploaded_bytes, file_size)
-                    
-                    logger.info(f"📊 进度: {uploaded_bytes}/{file_size} ({uploaded_bytes/file_size*100:.1f}%)")
-            
-            # 步骤4: 完成上传
-            logger.info("✅ 文件数据传输完成，等待服务器确认...")
-            result = await self._complete_upload_session(session_id)
-            
-            if result:
+            if result.get('success'):
                 logger.info(f"✅ 远程上传成功: {file_name}")
-                return {
-                    'success': True,
-                    'message': '文件上传成功（远程协议）',
-                    'file_path': f"{mount_point}{remote_path}",
-                    'local_path': local_path,
-                    'method': 'remote_protocol'
-                }
-            else:
-                return {
-                    'success': False,
-                    'message': '服务器确认上传失败'
-                }
+                result['file_path'] = remote_path
+                result['local_path'] = local_path
+                result['method'] = 'remote_protocol'
+            
+            return result
         
         except Exception as e:
             logger.error(f"❌ 远程上传失败: {e}")
@@ -514,33 +478,240 @@ class CloudDrive2Client:
             logger.error(f"❌ 上传数据块失败: {e}")
             return False
     
-    async def _complete_upload_session(self, session_id: str) -> bool:
+    async def _handle_remote_upload_channel(
+        self,
+        session_id: str,
+        local_path: str,
+        file_size: int,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> Dict[str, Any]:
         """
-        完成上传会话
+        处理远程上传通道（双向流式通信）
         
-        通知服务器所有数据已上传完成
+        CloudDrive2 远程上传协议是服务器驱动的：
+        1. 客户端监听 RemoteUploadChannel（服务器流式推送）
+        2. 服务器请求数据 (read_data) 或哈希 (hash_data)
+        3. 客户端响应请求
+        4. 服务器推送状态变化 (status_changed)
+        
+        Args:
+            session_id: 上传会话ID
+            local_path: 本地文件路径
+            file_size: 文件大小
+            progress_callback: 进度回调函数
+        
+        Returns:
+            上传结果字典
         """
         try:
             if not self.stub:
                 logger.error("❌ gRPC stub 未初始化")
-                return False
+                return {'success': False, 'message': 'gRPC stub 未初始化'}
             
-            # 调用 gRPC API
-            logger.info("📡 调用 gRPC API: CompleteUpload")
-            response = await self.stub.CompleteUpload(session_id=session_id)
+            logger.info(f"📡 开始监听上传通道: {session_id[:8]}...")
             
-            if response and response.get('success'):
-                logger.info(f"✅ 上传完成: {response.get('file_path')}")
-                return True
-            else:
-                logger.error(f"❌ 完成上传失败: {response.get('message') if response else 'No response'}")
-                return False
+            # 监听服务器流式推送
+            async for reply in self.stub.RemoteUploadChannel(session_id=session_id):
+                try:
+                    # 检查是否是当前上传任务
+                    if reply.get('upload_id') != session_id:
+                        continue
+                    
+                    # 处理服务器请求
+                    request_type = reply.get('request_type')
+                    
+                    if request_type == 'read_data':
+                        # 服务器请求读取文件数据
+                        logger.info("📖 服务器请求文件数据")
+                        read_request = reply.get('read_data', {})
+                        success = await self._handle_read_data_request(
+                            session_id=session_id,
+                            offset=read_request.get('offset', 0),
+                            length=read_request.get('length', 0),
+                            local_path=local_path,
+                            file_size=file_size,
+                            progress_callback=progress_callback
+                        )
+                        if not success:
+                            return {'success': False, 'message': '发送文件数据失败'}
+                    
+                    elif request_type == 'hash_data':
+                        # 服务器请求计算哈希
+                        logger.info("🔐 服务器请求哈希计算")
+                        success = await self._handle_hash_data_request(
+                            session_id=session_id,
+                            local_path=local_path,
+                            file_size=file_size
+                        )
+                        if not success:
+                            return {'success': False, 'message': '哈希计算失败'}
+                    
+                    elif request_type == 'status_changed':
+                        # 上传状态变化
+                        status_data = reply.get('status_changed', {})
+                        status = status_data.get('status')
+                        error_msg = status_data.get('error_message', '')
+                        
+                        logger.info(f"📊 状态变化: {status}")
+                        
+                        if status == 'Success' or status == 'Completed':
+                            logger.info("✅ 上传成功！")
+                            return {
+                                'success': True,
+                                'message': '文件上传成功'
+                            }
+                        elif status == 'Error' or status == 'Failed':
+                            logger.error(f"❌ 上传失败: {error_msg}")
+                            return {
+                                'success': False,
+                                'message': f'上传失败: {error_msg}'
+                            }
+                        elif status == 'Uploading':
+                            logger.info("📤 上传中...")
+                        elif status == 'Checking':
+                            logger.info("🔍 检查中（秒传检测）...")
+                
+                except Exception as e:
+                    logger.error(f"❌ 处理服务器请求失败: {e}")
+                    continue
+            
+            # 通道关闭
+            logger.warning("⚠️ 上传通道已关闭，但未收到完成状态")
+            return {
+                'success': False,
+                'message': '上传通道意外关闭'
+            }
         
         except Exception as e:
-            logger.error(f"❌ 完成上传会话失败: {e}")
+            logger.error(f"❌ 上传通道处理失败: {e}")
             import traceback
             traceback.print_exc()
+            return {
+                'success': False,
+                'message': f'上传通道异常: {str(e)}'
+            }
+    
+    async def _handle_read_data_request(
+        self,
+        session_id: str,
+        offset: int,
+        length: int,
+        local_path: str,
+        file_size: int,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> bool:
+        """
+        处理服务器的读取数据请求
+        
+        Args:
+            session_id: 上传会话ID
+            offset: 读取偏移量
+            length: 读取长度
+            local_path: 本地文件路径
+            file_size: 文件大小
+            progress_callback: 进度回调
+        
+        Returns:
+            是否成功
+        """
+        try:
+            logger.info(f"📖 读取文件数据: offset={offset}, length={length}")
+            
+            # 从本地文件读取数据
+            with open(local_path, 'rb') as f:
+                f.seek(offset)
+                data = f.read(length)
+            
+            if len(data) != length:
+                logger.warning(f"⚠️ 读取长度不匹配: expected={length}, actual={len(data)}")
+            
+            # 发送数据给服务器
+            success = await self.stub.RemoteReadData(
+                session_id=session_id,
+                offset=offset,
+                length=len(data),
+                data=data
+            )
+            
+            if success:
+                logger.info(f"✅ 数据块已发送: {len(data)} bytes")
+                
+                # 进度回调
+                if progress_callback:
+                    await progress_callback(offset + len(data), file_size)
+            else:
+                logger.error("❌ 数据块发送失败")
+            
+            return success
+        
+        except Exception as e:
+            logger.error(f"❌ 处理读取请求失败: {e}")
             return False
+    
+    async def _handle_hash_data_request(
+        self,
+        session_id: str,
+        local_path: str,
+        file_size: int
+    ) -> bool:
+        """
+        处理服务器的哈希计算请求
+        
+        Args:
+            session_id: 上传会话ID
+            local_path: 本地文件路径
+            file_size: 文件大小
+        
+        Returns:
+            是否成功
+        """
+        try:
+            logger.info("🔐 开始计算文件哈希...")
+            
+            # 计算哈希并报告进度
+            with open(local_path, 'rb') as f:
+                bytes_hashed = 0
+                chunk_size = 1024 * 1024  # 1MB
+                
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    
+                    bytes_hashed += len(chunk)
+                    
+                    # 报告哈希进度
+                    success = await self.stub.RemoteHashProgress(
+                        session_id=session_id,
+                        bytes_hashed=bytes_hashed,
+                        total_bytes=file_size
+                    )
+                    
+                    if not success:
+                        logger.error("❌ 哈希进度报告失败")
+                        return False
+                    
+                    # 每 10MB 记录一次
+                    if bytes_hashed % (10 * 1024 * 1024) == 0:
+                        progress = (bytes_hashed / file_size) * 100
+                        logger.info(f"📊 哈希进度: {progress:.1f}%")
+            
+            logger.info("✅ 哈希计算完成")
+            return True
+        
+        except Exception as e:
+            logger.error(f"❌ 哈希计算失败: {e}")
+            return False
+    
+    async def _complete_upload_session(self, session_id: str) -> bool:
+        """
+        完成上传会话（已弃用 - 远程上传协议不需要）
+        
+        在远程上传协议中，服务器会通过 status_changed 通知完成，
+        不需要客户端主动调用 Complete
+        """
+        logger.warning("⚠️ _complete_upload_session 已弃用，远程上传协议使用 RemoteUploadChannel")
+        return False
     
     async def get_mount_points(self) -> List[Dict[str, Any]]:
         """
