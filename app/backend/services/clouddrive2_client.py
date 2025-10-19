@@ -227,10 +227,17 @@ class CloudDrive2Client:
                 best_mount = mounts[0].get('mount_path') or mounts[0].get('path', '')
             
             if best_mount:
-                # 构建实际路径
-                actual_path = f"{best_mount}/{relative_path}".replace('//', '/')
+                # CloudDrive2 gRPC 的路径根通常使用挂载名（如 "/115"），
+                # 一些环境会返回物理源目录（如 "/CloudNAS/115"）。
+                # 如果发现以 "/CloudNAS/" 开头，则将 API 根规范化为最后一级（如 "/115"）。
+                api_root = best_mount
+                if api_root.startswith('/CloudNAS/'):
+                    api_root = '/' + api_root.split('/')[-1]
+
+                # 构建实际路径（用于 gRPC API）
+                actual_path = f"{api_root}/{relative_path}".replace('//', '/')
                 logger.info(f"🔄 路径映射: {user_remote_path} -> {actual_path}")
-                return best_mount, actual_path
+                return api_root, actual_path
             else:
                 logger.warning("⚠️ 未找到合适的挂载点，使用用户配置的路径")
                 return user_mount_point, user_remote_path
@@ -247,16 +254,16 @@ class CloudDrive2Client:
         参考: CloudDrive2 gRPC API - 文件操作 [CreateFolder]
         文档: https://www.clouddrive2.com/api/CloudDrive2_gRPC_API_Guide.html
         """
+        # 某些版本不支持 CreateFolder（UNIMPLEMENTED）。
+        # 按官方错误语义，若不支持就不尝试创建，只验证父级是否存在，缺失则直接抛错由上层处理。
         try:
             from protos import clouddrive_pb2
         except Exception:
-            # proto 不可用则直接返回，由服务端决定
             return
 
         if not self.stub or not getattr(self.stub, 'official_stub', None):
             return
 
-        # 仅处理以 "/" 开头的绝对路径
         path = remote_full_path.replace('\\', '/').strip()
         if not path.startswith('/'):
             return
@@ -265,54 +272,15 @@ class CloudDrive2Client:
         if parent_path in ('', '/'):
             return
 
-        # 逐级创建：/CloudNAS/115/a/b/c -> 检查/创建 /CloudNAS/115, /CloudNAS/115/a, ...
-        segments = [seg for seg in parent_path.split('/') if seg]
-        if not segments:
-            return
-
-        # 根起点，如 /CloudNAS/115
-        current = ''
-        for idx, seg in enumerate(segments):
-            current = f"{current}/{seg}" if current else f"/{seg}"
-
-            # 顶层根无需创建（例如 /CloudNAS 或 /CloudNAS/115 可能由挂载管理）
-            if idx < 2:  # 避免对类似 /CloudNAS/115 直接 CreateFolder
-                continue
-
-            # 检查是否存在
-            exists = False
-            try:
-                req = clouddrive_pb2.FindFileByPathRequest(theFilePath=current)
-                _ = await self.stub.official_stub.FindFileByPath(
-                    req, metadata=self.stub._get_metadata()
-                )
-                exists = True
-            except Exception:
-                exists = False
-
-            if exists:
-                continue
-
-            # 创建当前目录：parent = dirname(current), name = basename(current)
-            parent_dir = os.path.dirname(current) or '/'
-            folder_name = os.path.basename(current)
-            try:
-                create_req = clouddrive_pb2.CreateFolderRequest(
-                    parentPath=parent_dir,
-                    folderName=folder_name,
-                )
-                create_res = await self.stub.official_stub.CreateFolder(
-                    create_req, metadata=self.stub._get_metadata()
-                )
-                # 校验结果（FileOperationResult）
-                if hasattr(create_res, 'result') and hasattr(create_res.result, 'success'):
-                    if not create_res.result.success:
-                        err = getattr(create_res.result, 'errorMessage', '') or 'unknown error'
-                        logger.warning(f"⚠️ 创建目录失败(忽略): {current} -> {err}")
-                logger.info(f"📁 已创建目录: {current}")
-            except Exception as e:
-                # 目录可能已被其他并发创建，或无权限，忽略继续
-                logger.warning(f"⚠️ 创建目录异常(忽略): {current} -> {e}")
+        try:
+            req = clouddrive_pb2.FindFileByPathRequest(theFilePath=parent_path)
+            await self.stub.official_stub.FindFileByPath(
+                req, metadata=self.stub._get_metadata()
+            )
+        except Exception as e:
+            # 父目录不存在，记录并让上层给出更明确错误
+            logger.warning(f"⚠️ 远程父目录不存在: {parent_path} -> {e}")
+            raise
 
     async def disconnect(self):
         """断开连接"""
@@ -524,11 +492,14 @@ class CloudDrive2Client:
             logger.info(f"   文件名: {file_name}")
             logger.info(f"   大小: {file_size} bytes")
             
-            # 步骤0: 确保父目录存在（按官方 API 逐级创建）
+            # 步骤0: 校验父目录存在（某些版本不支持在服务端创建目录）
             try:
                 await self._ensure_remote_parent_dirs(remote_path)
             except Exception as e:
-                logger.warning(f"⚠️ 确保父目录存在时出错(忽略继续): {e}")
+                return {
+                    'success': False,
+                    'message': f'远程父目录不存在: {os.path.dirname(remote_path)}'
+                }
 
             # 步骤1: 创建文件
             logger.info("📄 步骤1: 创建文件...")
