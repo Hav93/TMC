@@ -37,6 +37,7 @@ except ImportError:
     GRPC_AVAILABLE = False
 
 from log_manager import get_logger
+from services.clouddrive2_stub import create_stub, CloudDrive2Stub
 
 logger = get_logger(__name__)
 
@@ -79,6 +80,7 @@ class CloudDrive2Client:
         
         self.config = config
         self.channel: Optional[grpc_aio.Channel] = None
+        self.stub: Optional[CloudDrive2Stub] = None
         self.token: Optional[str] = None
         self._connected = False
     
@@ -101,6 +103,10 @@ class CloudDrive2Client:
                 )
             else:
                 self.channel = grpc_aio.insecure_channel(self.config.address)
+            
+            # 创建 gRPC stub
+            self.stub = create_stub(self.channel)
+            logger.info("✅ gRPC Stub 已创建")
             
             # 验证连接
             await self._authenticate()
@@ -441,26 +447,37 @@ class CloudDrive2Client:
         返回会话ID
         """
         try:
-            # TODO: 实现实际的 gRPC 调用
-            # 示例伪代码：
-            # request = UploadSessionRequest(
-            #     file_name=file_name,
-            #     file_size=file_size,
-            #     file_hash=file_hash,
-            #     target_path=target_path
-            # )
-            # response = await self.stub.CreateUploadSession(request)
-            # return response.session_id
+            if not self.stub:
+                logger.error("❌ gRPC stub 未初始化")
+                return None
             
-            logger.warning("⚠️ gRPC CreateUploadSession API 尚未实现")
-            logger.info(f"   需要实现: CreateUploadSession(file={file_name}, size={file_size}, target={target_path})")
+            # 调用 gRPC API
+            logger.info("📡 调用 gRPC API: CreateUploadSession")
+            response = await self.stub.CreateUploadSession(
+                file_name=file_name,
+                file_size=file_size,
+                file_hash=file_hash,
+                target_path=target_path,
+                cloud_type="115"
+            )
             
-            # 返回模拟会话ID用于测试
-            import uuid
-            return str(uuid.uuid4())
+            if response and response.get('success'):
+                session_id = response.get('session_id')
+                quick_upload = response.get('quick_upload', False)
+                
+                if quick_upload:
+                    logger.info("⚡ 支持秒传！")
+                
+                logger.info(f"✅ 上传会话已创建: {session_id}")
+                return session_id
+            else:
+                logger.error(f"❌ 创建会话失败: {response.get('message') if response else 'No response'}")
+                return None
         
         except Exception as e:
             logger.error(f"❌ 创建上传会话失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     async def _upload_chunk(
@@ -475,21 +492,23 @@ class CloudDrive2Client:
         通过 gRPC API 发送文件数据块
         """
         try:
-            # TODO: 实现实际的 gRPC 调用
-            # request = UploadChunkRequest(
-            #     session_id=session_id,
-            #     chunk_index=chunk_index,
-            #     chunk_data=chunk_data
-            # )
-            # response = await self.stub.UploadChunk(request)
-            # return response.success
+            if not self.stub:
+                logger.error("❌ gRPC stub 未初始化")
+                return False
             
-            logger.debug(f"   上传块 {chunk_index}: {len(chunk_data)} bytes")
+            # 调用 gRPC API
+            success = await self.stub.UploadChunk(
+                session_id=session_id,
+                chunk_index=chunk_index,
+                chunk_data=chunk_data
+            )
             
-            # 模拟网络延迟
-            await asyncio.sleep(0.01)
+            if success:
+                logger.debug(f"✅ 块 {chunk_index} 上传成功: {len(chunk_data)} bytes")
+            else:
+                logger.error(f"❌ 块 {chunk_index} 上传失败")
             
-            return True
+            return success
         
         except Exception as e:
             logger.error(f"❌ 上传数据块失败: {e}")
@@ -502,18 +521,25 @@ class CloudDrive2Client:
         通知服务器所有数据已上传完成
         """
         try:
-            # TODO: 实现实际的 gRPC 调用
-            # request = CompleteUploadRequest(session_id=session_id)
-            # response = await self.stub.CompleteUpload(request)
-            # return response.success
+            if not self.stub:
+                logger.error("❌ gRPC stub 未初始化")
+                return False
             
-            logger.warning("⚠️ gRPC CompleteUpload API 尚未实现")
-            logger.info(f"   需要实现: CompleteUpload(session={session_id})")
+            # 调用 gRPC API
+            logger.info("📡 调用 gRPC API: CompleteUpload")
+            response = await self.stub.CompleteUpload(session_id=session_id)
             
-            return False  # 暂时返回失败，等待实际实现
+            if response and response.get('success'):
+                logger.info(f"✅ 上传完成: {response.get('file_path')}")
+                return True
+            else:
+                logger.error(f"❌ 完成上传失败: {response.get('message') if response else 'No response'}")
+                return False
         
         except Exception as e:
             logger.error(f"❌ 完成上传会话失败: {e}")
+            import traceback
+            traceback.print_exc()
             return False
     
     async def get_mount_points(self) -> List[Dict[str, Any]]:
@@ -537,15 +563,27 @@ class CloudDrive2Client:
                 logger.warning("⚠️ CloudDrive2 未连接，尝试重新连接...")
                 await self.connect()
             
-            # TODO: 实现 gRPC API 调用获取挂载点
-            # 根据 CloudDrive2 官方文档，应该有类似 ListMounts 的方法
-            # 由于当前没有生成的 protobuf 文件，这里返回模拟数据
+            if not self.stub:
+                logger.error("❌ gRPC stub 未初始化")
+                return []
             
-            logger.warning("⚠️ gRPC ListMounts API 尚未实现，返回空列表")
-            return []
+            # 调用 gRPC API 获取挂载点列表
+            logger.info("📡 调用 gRPC API: ListMounts")
+            mounts = await self.stub.ListMounts()
+            
+            if mounts:
+                logger.info(f"✅ 获取到 {len(mounts)} 个挂载点")
+                for mount in mounts:
+                    logger.info(f"   - {mount.get('name')}: {mount.get('path')} ({mount.get('cloud_type')})")
+            else:
+                logger.warning("⚠️ 未找到挂载点")
+            
+            return mounts
         
         except Exception as e:
             logger.error(f"❌ 获取挂载点列表失败: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     async def check_mount_status(self, mount_point: str = "/115") -> Dict[str, Any]:
