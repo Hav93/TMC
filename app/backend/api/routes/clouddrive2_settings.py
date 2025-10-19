@@ -8,9 +8,58 @@ from models import User
 from auth import get_current_user
 from log_manager import get_logger
 import os
+from pathlib import Path
 
 logger = get_logger('api.clouddrive2_settings')
 router = APIRouter()
+
+
+def save_config_to_file(config_dict: dict):
+    """
+    将配置保存到 config/app.config 文件
+    
+    Args:
+        config_dict: 要保存的配置字典
+    """
+    config_file = Path('config/app.config')
+    
+    # 确保config目录存在
+    config_file.parent.mkdir(exist_ok=True)
+    
+    # 读取现有配置
+    existing_config = {}
+    if config_file.exists():
+        with open(config_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    existing_config[key.strip()] = value.strip()
+    
+    # 更新配置
+    existing_config.update(config_dict)
+    
+    # 写入配置文件
+    with open(config_file, 'w', encoding='utf-8') as f:
+        f.write("# TMC 配置文件\n")
+        f.write("# 此文件由系统自动生成和更新\n\n")
+        
+        # 分组写入配置
+        clouddrive2_keys = [k for k in existing_config.keys() if k.startswith('CLOUDDRIVE2_')]
+        other_keys = [k for k in existing_config.keys() if not k.startswith('CLOUDDRIVE2_')]
+        
+        if clouddrive2_keys:
+            f.write("# === CloudDrive2 配置 ===\n")
+            for key in sorted(clouddrive2_keys):
+                f.write(f"{key}={existing_config[key]}\n")
+            f.write("\n")
+        
+        if other_keys:
+            f.write("# === 其他配置 ===\n")
+            for key in sorted(other_keys):
+                f.write(f"{key}={existing_config[key]}\n")
+    
+    logger.info(f"✅ 配置已保存到: {config_file}")
 
 
 class CloudDrive2ConfigSchema(BaseModel):
@@ -53,26 +102,41 @@ async def update_clouddrive2_config(
 ):
     """更新CloudDrive2配置"""
     try:
-        # 更新环境变量
-        os.environ['CLOUDDRIVE2_ENABLED'] = 'true' if data.enabled else 'false'
-        os.environ['CLOUDDRIVE2_HOST'] = data.host
-        os.environ['CLOUDDRIVE2_PORT'] = str(data.port)
-        os.environ['CLOUDDRIVE2_USERNAME'] = data.username
+        # 准备要保存的配置
+        config_to_save = {
+            'CLOUDDRIVE2_ENABLED': 'true' if data.enabled else 'false',
+            'CLOUDDRIVE2_HOST': data.host,
+            'CLOUDDRIVE2_PORT': str(data.port),
+            'CLOUDDRIVE2_USERNAME': data.username,
+            'CLOUDDRIVE2_MOUNT_POINT': data.mount_point,
+        }
         
         # 只有提供新密码时才更新
         if data.password and data.password != '***':
-            os.environ['CLOUDDRIVE2_PASSWORD'] = data.password
+            config_to_save['CLOUDDRIVE2_PASSWORD'] = data.password
+        else:
+            # 保持原有密码
+            existing_password = os.getenv('CLOUDDRIVE2_PASSWORD', '')
+            if existing_password:
+                config_to_save['CLOUDDRIVE2_PASSWORD'] = existing_password
         
-        os.environ['CLOUDDRIVE2_MOUNT_POINT'] = data.mount_point
+        # 保存到配置文件
+        save_config_to_file(config_to_save)
         
-        logger.info("✅ CloudDrive2配置已更新")
+        # 同时更新运行时环境变量（立即生效）
+        for key, value in config_to_save.items():
+            os.environ[key] = value
+        
+        logger.info("✅ CloudDrive2配置已保存并生效")
         
         return {
-            "message": "配置更新成功",
-            "note": "环境变量已更新，重启后生效"
+            "message": "配置保存成功",
+            "note": "配置已持久化保存并立即生效"
         }
     except Exception as e:
         logger.error(f"更新CloudDrive2配置失败: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
