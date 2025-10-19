@@ -1,12 +1,10 @@
 """
 CloudDrive2 gRPC Stub Implementation
 
-这是一个简化的 gRPC stub 实现，用于在没有完整 protobuf 生成代码的情况下工作。
-当 protobuf 不可用时，使用 HTTP REST API 作为备选方案。
+使用官方 proto 生成的 gRPC 客户端
+支持回退到 HTTP API（如果 proto 不可用）
 
-完整实现需要运行: python -m grpc_tools.protoc ...
-
-基于官方 API: https://www.clouddrive2.com/api/CloudDrive2_gRPC_API_Guide.html
+基于官方 API: https://www.clouddrive2.com/api/
 """
 import grpc
 import os
@@ -16,18 +14,37 @@ from log_manager import get_logger
 
 logger = get_logger(__name__)
 
+# 尝试导入官方生成的 proto
+try:
+    from protos import clouddrive_pb2
+    from protos import clouddrive_pb2_grpc
+    from google.protobuf import empty_pb2
+    OFFICIAL_PROTO_AVAILABLE = True
+    logger.info("✅ 官方 proto 可用")
+except ImportError as e:
+    OFFICIAL_PROTO_AVAILABLE = False
+    logger.warning(f"⚠️ 官方 proto 不可用，将使用 HTTP 备选方案: {e}")
+
 
 class CloudDrive2Stub:
     """
     CloudDrive2 gRPC Stub
     
-    简化的 stub 实现，当 protobuf 不可用时使用 HTTP API
+    优先使用官方 proto，回退到 HTTP API
     """
     
     def __init__(self, channel: grpc_aio.Channel):
         self.channel = channel
         self.http_client = None
-        self._use_http_fallback = True  # 当前使用 HTTP 备选方案
+        self._use_http_fallback = not OFFICIAL_PROTO_AVAILABLE
+        
+        # 如果官方 proto 可用，创建官方 stub
+        if OFFICIAL_PROTO_AVAILABLE:
+            self.official_stub = clouddrive_pb2_grpc.CloudDriveFileSrvStub(channel)
+            logger.info("✅ 使用官方 gRPC stub")
+        else:
+            self.official_stub = None
+            logger.info("⚠️ 将使用 HTTP API 备选方案")
     
     async def _ensure_http_client(self):
         """确保 HTTP 客户端已初始化"""
@@ -54,7 +71,28 @@ class CloudDrive2Stub:
             }]
         """
         try:
-            # 使用 HTTP API 作为备选
+            # 优先使用官方 gRPC
+            if self.official_stub:
+                logger.info("📡 使用官方 gRPC: GetMountPoints")
+                response = await self.official_stub.GetMountPoints(empty_pb2.Empty())
+                
+                # 转换为字典列表
+                mounts = []
+                for mp in response.mountPoints:
+                    mounts.append({
+                        'name': mp.mountPoint,
+                        'path': mp.mountPoint,
+                        'source_dir': mp.sourceDir,
+                        'cloud_type': 'unknown',  # proto 中没有这个字段
+                        'mounted': mp.isMounted,
+                        'space_total': 0,
+                        'space_used': 0
+                    })
+                
+                logger.info(f"✅ 找到 {len(mounts)} 个挂载点")
+                return mounts
+            
+            # 回退到 HTTP API
             if self._use_http_fallback:
                 await self._ensure_http_client()
                 if self.http_client:
@@ -62,9 +100,7 @@ class CloudDrive2Stub:
                     mounts = await self.http_client.list_mounts()
                     return mounts
             
-            # TODO: 实现真实的 gRPC 调用
-            # 方法签名: /clouddrive2.CloudDrive/ListMounts
-            logger.warning("⚠️ ListMounts gRPC 调用尚未实现，HTTP 备选也不可用")
+            logger.warning("⚠️ gRPC 和 HTTP API 都不可用")
             return []
         
         except Exception as e:
@@ -126,21 +162,43 @@ class CloudDrive2Stub:
             }
         """
         try:
-            logger.warning("⚠️ CreateUploadSession gRPC 调用尚未实现")
-            logger.info(f"   file: {file_name}, size: {file_size}")
-            logger.info(f"   hash: {file_hash[:16]}...")
-            logger.info(f"   target: {target_path}")
+            # 优先使用官方 gRPC: StartRemoteUpload
+            if self.official_stub:
+                logger.info("📡 使用官方 gRPC: StartRemoteUpload")
+                logger.info(f"   文件: {file_name}")
+                logger.info(f"   大小: {file_size} bytes")
+                logger.info(f"   目标: {target_path}")
+                
+                request = clouddrive_pb2.StartRemoteUploadRequest(
+                    file_path=target_path,  # 目标路径
+                    file_size=file_size,
+                    device_id="TMC"
+                )
+                
+                response = await self.official_stub.StartRemoteUpload(request)
+                
+                logger.info(f"✅ 上传会话已创建: {response.upload_id}")
+                
+                return {
+                    'success': True,
+                    'session_id': response.upload_id,
+                    'quick_upload': False,
+                    'message': 'Session created'
+                }
             
-            # 返回模拟会话ID
+            # 回退方案
+            logger.warning("⚠️ 官方 gRPC 不可用，使用模拟会话")
             import uuid
             return {
                 'success': True,
                 'session_id': str(uuid.uuid4()),
                 'quick_upload': False,
-                'message': 'Session created (mock)'
+                'message': 'Session created (fallback)'
             }
         except Exception as e:
             logger.error(f"❌ CreateUploadSession 调用失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     async def UploadChunk(

@@ -333,7 +333,7 @@ class CloudDrive2Client:
             logger.info(f"🌐 远程上传协议开始")
             logger.info(f"   文件: {file_name}")
             logger.info(f"   大小: {file_size} bytes")
-            logger.info(f"   目标: {mount_point}{remote_path}")
+            logger.info(f"   目标: {remote_path}")  # remote_path 已经是完整路径
             
             # TODO: 实现完整的远程上传协议
             # 由于当前没有 protobuf 定义文件，这里提供框架实现
@@ -349,7 +349,7 @@ class CloudDrive2Client:
                 file_name=file_name,
                 file_size=file_size,
                 file_hash=file_hash,
-                target_path=f"{mount_point}{remote_path}"
+                target_path=remote_path  # remote_path 已经是完整路径
             )
             
             if not session_id:
