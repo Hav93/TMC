@@ -653,6 +653,11 @@ class CloudDrive2Client:
                 cloud_type="115"
             )
             
+            # 检查是否需要使用 WriteToFile API
+            if response and response.get('use_write_file_api'):
+                logger.info("🔄 远程上传协议不可用，返回 WriteToFile API 标记")
+                return response  # 返回包含 use_write_file_api 的字典
+            
             if response and response.get('success'):
                 session_id = response.get('session_id')
                 quick_upload = response.get('quick_upload', False)
