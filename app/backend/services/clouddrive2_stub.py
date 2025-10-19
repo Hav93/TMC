@@ -8,10 +8,17 @@ CloudDrive2 gRPC Stub Implementation
 """
 import grpc
 import os
+import sys
 from grpc import aio as grpc_aio
 from typing import Dict, List, Any, Optional
-from log_manager import get_logger
+from pathlib import Path
 
+# 首先设置 Python 路径（在任何导入之前）
+_backend_path = Path(__file__).parent.parent
+if str(_backend_path) not in sys.path:
+    sys.path.insert(0, str(_backend_path))
+
+from log_manager import get_logger
 logger = get_logger(__name__)
 
 # 尝试导入官方生成的 proto
@@ -21,21 +28,9 @@ clouddrive_pb2_grpc = None
 empty_pb2 = None
 
 try:
-    # 尝试多种导入路径
-    try:
-        from protos import clouddrive_pb2
-        from protos import clouddrive_pb2_grpc
-        from google.protobuf import empty_pb2
-    except ImportError:
-        # Docker 容器中的路径
-        import sys
-        from pathlib import Path
-        backend_path = Path(__file__).parent.parent
-        if str(backend_path) not in sys.path:
-            sys.path.insert(0, str(backend_path))
-        from protos import clouddrive_pb2
-        from protos import clouddrive_pb2_grpc
-        from google.protobuf import empty_pb2
+    from protos import clouddrive_pb2
+    from protos import clouddrive_pb2_grpc
+    from google.protobuf import empty_pb2
     
     OFFICIAL_PROTO_AVAILABLE = True
     logger.info("✅ 官方 proto 可用")
