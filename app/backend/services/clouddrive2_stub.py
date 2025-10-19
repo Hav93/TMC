@@ -2,11 +2,14 @@
 CloudDrive2 gRPC Stub Implementation
 
 这是一个简化的 gRPC stub 实现，用于在没有完整 protobuf 生成代码的情况下工作。
+当 protobuf 不可用时，使用 HTTP REST API 作为备选方案。
+
 完整实现需要运行: python -m grpc_tools.protoc ...
 
 基于官方 API: https://www.clouddrive2.com/api/CloudDrive2_gRPC_API_Guide.html
 """
 import grpc
+import os
 from grpc import aio as grpc_aio
 from typing import Dict, List, Any, Optional
 from log_manager import get_logger
@@ -18,11 +21,23 @@ class CloudDrive2Stub:
     """
     CloudDrive2 gRPC Stub
     
-    简化的 stub 实现，模拟 gRPC 调用
+    简化的 stub 实现，当 protobuf 不可用时使用 HTTP API
     """
     
     def __init__(self, channel: grpc_aio.Channel):
         self.channel = channel
+        self.http_client = None
+        self._use_http_fallback = True  # 当前使用 HTTP 备选方案
+    
+    async def _ensure_http_client(self):
+        """确保 HTTP 客户端已初始化"""
+        if not self.http_client and self._use_http_fallback:
+            try:
+                from services.clouddrive2_http_client import create_http_client
+                self.http_client = await create_http_client()
+                logger.info("✅ HTTP 客户端已初始化（作为 gRPC 备选方案）")
+            except Exception as e:
+                logger.error(f"❌ HTTP 客户端初始化失败: {e}")
     
     async def ListMounts(self, request: Dict = None) -> List[Dict]:
         """
@@ -39,17 +54,23 @@ class CloudDrive2Stub:
             }]
         """
         try:
+            # 使用 HTTP API 作为备选
+            if self._use_http_fallback:
+                await self._ensure_http_client()
+                if self.http_client:
+                    logger.info("📡 使用 HTTP API: GET /api/mounts")
+                    mounts = await self.http_client.list_mounts()
+                    return mounts
+            
             # TODO: 实现真实的 gRPC 调用
             # 方法签名: /clouddrive2.CloudDrive/ListMounts
-            
-            logger.warning("⚠️ ListMounts gRPC 调用尚未实现")
-            logger.info("💡 需要完整的 protobuf 定义和生成的代码")
-            
-            # 返回模拟数据用于测试
+            logger.warning("⚠️ ListMounts gRPC 调用尚未实现，HTTP 备选也不可用")
             return []
         
         except Exception as e:
             logger.error(f"❌ ListMounts 调用失败: {e}")
+            import traceback
+            traceback.print_exc()
             return []
     
     async def GetMountInfo(self, mount_path: str) -> Optional[Dict]:
@@ -164,6 +185,13 @@ class CloudDrive2Stub:
     async def ListFiles(self, path: str) -> List[Dict]:
         """列出文件"""
         try:
+            # 使用 HTTP API 作为备选
+            if self._use_http_fallback:
+                await self._ensure_http_client()
+                if self.http_client:
+                    logger.info(f"📡 使用 HTTP API: GET /api/fs/list?path={path}")
+                    return await self.http_client.list_files(path)
+            
             logger.warning(f"⚠️ ListFiles gRPC 调用尚未实现: {path}")
             return []
         except Exception as e:
@@ -173,6 +201,13 @@ class CloudDrive2Stub:
     async def CreateFolder(self, path: str) -> bool:
         """创建文件夹"""
         try:
+            # 使用 HTTP API 作为备选
+            if self._use_http_fallback:
+                await self._ensure_http_client()
+                if self.http_client:
+                    logger.info(f"📡 使用 HTTP API: POST /api/fs/mkdir {path}")
+                    return await self.http_client.create_folder(path)
+            
             logger.warning(f"⚠️ CreateFolder gRPC 调用尚未实现: {path}")
             return False
         except Exception as e:
