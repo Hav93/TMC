@@ -455,23 +455,6 @@ const MonitorRuleForm: React.FC = () => {
                                 <Input 
                                   placeholder="绝对路径示例：/115open/测试；相对：测试（拼到默认根）" 
                                   addonBefore="规则路径"
-                                  addonAfter={<Button size="small" onClick={async () => {
-                                    try {
-                                      // 调后端 browse，使用系统设置里的 host/port 等由后端读取
-                                      const res = await fetch('/api/settings/clouddrive2/browse', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ path: form.getFieldValue('pan115_remote_path') || '/' })
-                                      }).then(r => r.json());
-                                      const items = (res?.items || []).map((d: any) => ({ title: d.name || d.path.split('/').pop() || d.path, key: d.path }));
-                                      const root = form.getFieldValue('pan115_remote_path') || '/';
-                                      setCd2Tree([{ title: root, key: root, children: items }]);
-                                      setCd2Selected(root);
-                                      setCd2BrowseOpen(true);
-                                    } catch (e) {
-                                      message.error('目录浏览失败');
-                                    }
-                                  }}>浏览</Button>}
                                 />
                               </Form.Item>
                               <Form.Item shouldUpdate={true}>

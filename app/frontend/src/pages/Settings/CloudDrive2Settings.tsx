@@ -281,26 +281,13 @@ const CloudDrive2Settings: React.FC = () => {
           ]}
           tooltip="作为默认根，仅用于相对路径拼接；示例：/115open 或 /。禁止填写 /CloudNAS/..."
         >
-          <Input placeholder="例如: /115open" addonAfter={<Button loading={dirLoading} onClick={handleBrowse}>浏览</Button>} />
+          <Input placeholder="例如: /115open" />
         </Form.Item>
-
-        <Modal
-          title="选择目录"
-          open={browseOpen}
-          onOk={() => { form.setFieldsValue({ mount_point: selectedPath }); setBrowseOpen(false); }}
-          onCancel={() => setBrowseOpen(false)}
-          okText="使用此路径"
-          cancelText="取消"
-          destroyOnClose
-        >
-          <Tree
-            treeData={treeData}
-            loadData={async (node) => loadChildren(node)}
-            onSelect={(keys) => { if (keys && keys[0]) setSelectedPath(String(keys[0])); }}
-            defaultExpandAll
-          />
-          <div style={{ marginTop: 8, color: '#888' }}>当前选择: {selectedPath}</div>
-        </Modal>
+        {/* 提示文案：不再提供目录浏览，避免误导。*/}
+        <div style={{ color: '#888', marginTop: -8, marginBottom: 16 }}>
+          说明：此处仅填写在线根路径（如 /115open 或 /）。最终上传路径由规则路径决定；
+          当规则路径以“/”开头时使用绝对路径，否则会拼接到这里的默认根之后。
+        </div>
 
         <Space>
           <Button
