@@ -258,21 +258,21 @@ def get_clouddrive2_uploader(
     mount_point: str = None
 ) -> CloudDrive2Uploader:
     """
-    获取全局 CloudDrive2 上传器实例
+    获取全局 CloudDrive2 上传器实例（从环境变量读取配置）
     
     Args:
-        host: CloudDrive2 服务地址
-        port: CloudDrive2 服务端口
-        mount_point: 挂载点路径
+        host: CloudDrive2 服务地址（优先使用参数，否则从环境变量读取）
+        port: CloudDrive2 服务端口（优先使用参数，否则从环境变量读取）
+        mount_point: 挂载点路径（优先使用参数，否则从环境变量读取）
     """
     global _uploader
     
-    if _uploader is None:
-        _uploader = CloudDrive2Uploader(
-            clouddrive2_host=host or os.getenv('CLOUDDRIVE2_HOST', 'localhost'),
-            clouddrive2_port=port or int(os.getenv('CLOUDDRIVE2_PORT', '19798')),
-            mount_point=mount_point or os.getenv('CLOUDDRIVE2_MOUNT_POINT', '/115')
-        )
+    # 每次都从环境变量重新读取配置（支持动态更新）
+    _uploader = CloudDrive2Uploader(
+        clouddrive2_host=host or os.getenv('CLOUDDRIVE2_HOST', 'localhost'),
+        clouddrive2_port=port or int(os.getenv('CLOUDDRIVE2_PORT', '19798')),
+        mount_point=mount_point or os.getenv('CLOUDDRIVE2_MOUNT_POINT', '/CloudNAS/115')
+    )
     
     return _uploader
 

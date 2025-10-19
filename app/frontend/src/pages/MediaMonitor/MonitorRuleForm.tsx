@@ -434,9 +434,22 @@ const MonitorRuleForm: React.FC = () => {
                               <Form.Item
                                 label="CloudDrive2 远程路径"
                                 name="pan115_remote_path"
-                                tooltip="文件将通过 CloudDrive2 上传到 115 网盘的此路径下（如 /Telegram媒体）。注意：请先在【系统设置 → CloudDrive2 配置】中配置 CloudDrive2 服务。"
+                                tooltip={
+                                  <div>
+                                    <p>文件将通过 CloudDrive2 上传到 115 网盘的此路径下</p>
+                                    <p><strong>路径优先级：</strong></p>
+                                    <p>1. 规则路径（此处设置）- 优先使用</p>
+                                    <p>2. 全局默认路径（系统设置 → CloudDrive2 配置中的挂载点路径）</p>
+                                    <p style={{ marginTop: '8px', color: '#ff7875' }}>
+                                      <strong>注意：</strong>请先在【系统设置 → CloudDrive2】中配置服务并设置挂载点路径
+                                    </p>
+                                  </div>
+                                }
                               >
-                                <Input placeholder="/Telegram媒体" />
+                                <Input 
+                                  placeholder="留空则使用全局默认路径（如 /Telegram媒体）" 
+                                  addonBefore="规则路径"
+                                />
                               </Form.Item>
                             );
                           }

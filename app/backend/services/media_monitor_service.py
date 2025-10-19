@@ -1095,7 +1095,15 @@ class MediaMonitorService:
                     try:
                         # 获取CloudDrive2配置
                         clouddrive2_enabled = os.getenv('CLOUDDRIVE2_ENABLED', 'false').lower() == 'true'
-                        pan115_remote_base = rule.pan115_remote_path or self._get_config_value('pan115_remote_path', '/Telegram媒体')
+                        
+                        # 路径优先级：规则路径 > 全局挂载点路径
+                        default_mount_path = os.getenv('CLOUDDRIVE2_MOUNT_POINT', '/CloudNAS/115')
+                        pan115_remote_base = rule.pan115_remote_path or default_mount_path
+                        
+                        logger.info(f"📂 CloudDrive2路径配置:")
+                        logger.info(f"   规则路径: {rule.pan115_remote_path or '(未设置)'}")
+                        logger.info(f"   全局挂载点: {default_mount_path}")
+                        logger.info(f"   最终使用: {pan115_remote_base}")
                         
                         if not clouddrive2_enabled:
                             error_msg = "CloudDrive2未启用，请先在【系统设置 → CloudDrive2】中启用并配置"
