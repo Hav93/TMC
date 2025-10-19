@@ -8,6 +8,20 @@ CloudDrive2 gRPC API 客户端
 1. 解决115上传签名问题
 2. 支持大文件分块上传
 3. 支持断点续传
+4. 智能上传策略（本地挂载 + 远程协议）
+5. 秒传支持（通过文件哈希）
+6. 挂载点管理
+7. 文件操作（创建目录、查询文件等）
+
+实现状态:
+✅ 基础连接和认证
+✅ 本地挂载上传
+🚧 远程上传协议（框架已搭建，待实现 gRPC 调用）
+⏳ 文件操作 API
+⏳ 挂载点管理 API
+⏳ 传输任务管理
+
+详见: CLOUDDRIVE2_API_IMPLEMENTATION_PLAN.md
 """
 import os
 import asyncio
@@ -164,12 +178,22 @@ class CloudDrive2Client:
             logger.info(f"   挂载点: {mount_point}")
             logger.info(f"   目标路径: {remote_path}")
             
-            # 方案1: 直接文件复制到挂载目录
-            # CloudDrive2 会自动处理上传到云端
-            result = await self._upload_via_mount(
-                local_path, remote_path, mount_point, 
-                file_size, progress_callback
-            )
+            # 尝试方案1: 本地挂载上传（如果挂载点存在）
+            # 尝试方案2: 远程上传协议（通过 gRPC API）
+            
+            # 检查挂载点是否本地可访问
+            if os.path.exists(mount_point):
+                logger.info("🔧 使用方案1: 本地挂载上传")
+                result = await self._upload_via_mount(
+                    local_path, remote_path, mount_point, 
+                    file_size, progress_callback
+                )
+            else:
+                logger.info("🔧 使用方案2: 远程上传协议（gRPC API）")
+                result = await self._upload_via_remote_protocol(
+                    local_path, remote_path, mount_point,
+                    file_size, progress_callback
+                )
             
             upload_time = time.time() - start_time
             
@@ -265,6 +289,232 @@ class CloudDrive2Client:
                 'success': False,
                 'message': f'挂载上传失败: {e}'
             }
+    
+    async def _upload_via_remote_protocol(
+        self,
+        local_path: str,
+        remote_path: str,
+        mount_point: str,
+        file_size: int,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> Dict[str, Any]:
+        """
+        通过远程上传协议上传文件
+        
+        根据 CloudDrive2 gRPC API 文档的远程上传协议：
+        https://www.clouddrive2.com/api/CloudDrive2_gRPC_API_Guide.html#remote-upload
+        
+        工作流程：
+        1. 客户端发起上传请求（文件名、大小、路径）
+        2. 服务器返回上传会话 ID
+        3. 服务器请求文件数据块
+        4. 客户端发送数据块
+        5. 服务器请求哈希验证
+        6. 完成上传
+        
+        Args:
+            local_path: 本地文件路径
+            remote_path: 远程目标路径
+            mount_point: CloudDrive2 挂载点路径
+            file_size: 文件大小
+            progress_callback: 进度回调
+        
+        Returns:
+            上传结果字典
+        """
+        try:
+            file_name = os.path.basename(local_path)
+            logger.info(f"🌐 远程上传协议开始")
+            logger.info(f"   文件: {file_name}")
+            logger.info(f"   大小: {file_size} bytes")
+            logger.info(f"   目标: {mount_point}{remote_path}")
+            
+            # TODO: 实现完整的远程上传协议
+            # 由于当前没有 protobuf 定义文件，这里提供框架实现
+            
+            # 步骤1: 计算文件哈希（用于快速上传检测）
+            logger.info("🔐 计算文件哈希...")
+            file_hash = await self._calculate_file_hash(local_path)
+            logger.info(f"✅ SHA256: {file_hash[:16]}...")
+            
+            # 步骤2: 创建上传会话
+            logger.info("📋 创建上传会话...")
+            session_id = await self._create_upload_session(
+                file_name=file_name,
+                file_size=file_size,
+                file_hash=file_hash,
+                target_path=f"{mount_point}{remote_path}"
+            )
+            
+            if not session_id:
+                return {
+                    'success': False,
+                    'message': '创建上传会话失败'
+                }
+            
+            logger.info(f"✅ 会话ID: {session_id}")
+            
+            # 步骤3: 分块上传文件数据
+            logger.info("📤 开始传输文件数据...")
+            chunk_size = 4 * 1024 * 1024  # 4MB 每块
+            uploaded_bytes = 0
+            
+            with open(local_path, 'rb') as f:
+                chunk_index = 0
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    
+                    # 上传数据块
+                    success = await self._upload_chunk(
+                        session_id=session_id,
+                        chunk_index=chunk_index,
+                        chunk_data=chunk
+                    )
+                    
+                    if not success:
+                        return {
+                            'success': False,
+                            'message': f'上传数据块 {chunk_index} 失败'
+                        }
+                    
+                    uploaded_bytes += len(chunk)
+                    chunk_index += 1
+                    
+                    # 进度回调
+                    if progress_callback:
+                        await progress_callback(uploaded_bytes, file_size)
+                    
+                    logger.info(f"📊 进度: {uploaded_bytes}/{file_size} ({uploaded_bytes/file_size*100:.1f}%)")
+            
+            # 步骤4: 完成上传
+            logger.info("✅ 文件数据传输完成，等待服务器确认...")
+            result = await self._complete_upload_session(session_id)
+            
+            if result:
+                logger.info(f"✅ 远程上传成功: {file_name}")
+                return {
+                    'success': True,
+                    'message': '文件上传成功（远程协议）',
+                    'file_path': f"{mount_point}{remote_path}",
+                    'local_path': local_path,
+                    'method': 'remote_protocol'
+                }
+            else:
+                return {
+                    'success': False,
+                    'message': '服务器确认上传失败'
+                }
+        
+        except Exception as e:
+            logger.error(f"❌ 远程上传失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                'success': False,
+                'message': f'远程上传失败: {e}'
+            }
+    
+    async def _calculate_file_hash(self, file_path: str) -> str:
+        """计算文件 SHA256 哈希"""
+        sha256 = hashlib.sha256()
+        with open(file_path, 'rb') as f:
+            while True:
+                chunk = f.read(8192)
+                if not chunk:
+                    break
+                sha256.update(chunk)
+        return sha256.hexdigest()
+    
+    async def _create_upload_session(
+        self,
+        file_name: str,
+        file_size: int,
+        file_hash: str,
+        target_path: str
+    ) -> Optional[str]:
+        """
+        创建上传会话
+        
+        通过 gRPC API 调用 CreateUploadSession
+        返回会话ID
+        """
+        try:
+            # TODO: 实现实际的 gRPC 调用
+            # 示例伪代码：
+            # request = UploadSessionRequest(
+            #     file_name=file_name,
+            #     file_size=file_size,
+            #     file_hash=file_hash,
+            #     target_path=target_path
+            # )
+            # response = await self.stub.CreateUploadSession(request)
+            # return response.session_id
+            
+            logger.warning("⚠️ gRPC CreateUploadSession API 尚未实现")
+            logger.info(f"   需要实现: CreateUploadSession(file={file_name}, size={file_size}, target={target_path})")
+            
+            # 返回模拟会话ID用于测试
+            import uuid
+            return str(uuid.uuid4())
+        
+        except Exception as e:
+            logger.error(f"❌ 创建上传会话失败: {e}")
+            return None
+    
+    async def _upload_chunk(
+        self,
+        session_id: str,
+        chunk_index: int,
+        chunk_data: bytes
+    ) -> bool:
+        """
+        上传数据块
+        
+        通过 gRPC API 发送文件数据块
+        """
+        try:
+            # TODO: 实现实际的 gRPC 调用
+            # request = UploadChunkRequest(
+            #     session_id=session_id,
+            #     chunk_index=chunk_index,
+            #     chunk_data=chunk_data
+            # )
+            # response = await self.stub.UploadChunk(request)
+            # return response.success
+            
+            logger.debug(f"   上传块 {chunk_index}: {len(chunk_data)} bytes")
+            
+            # 模拟网络延迟
+            await asyncio.sleep(0.01)
+            
+            return True
+        
+        except Exception as e:
+            logger.error(f"❌ 上传数据块失败: {e}")
+            return False
+    
+    async def _complete_upload_session(self, session_id: str) -> bool:
+        """
+        完成上传会话
+        
+        通知服务器所有数据已上传完成
+        """
+        try:
+            # TODO: 实现实际的 gRPC 调用
+            # request = CompleteUploadRequest(session_id=session_id)
+            # response = await self.stub.CompleteUpload(request)
+            # return response.success
+            
+            logger.warning("⚠️ gRPC CompleteUpload API 尚未实现")
+            logger.info(f"   需要实现: CompleteUpload(session={session_id})")
+            
+            return False  # 暂时返回失败，等待实际实现
+        
+        except Exception as e:
+            logger.error(f"❌ 完成上传会话失败: {e}")
+            return False
     
     async def get_mount_points(self) -> List[Dict[str, Any]]:
         """
@@ -395,6 +645,215 @@ class CloudDrive2Client:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """异步上下文管理器出口"""
         await self.disconnect()
+    
+    # ==================== 文件操作 API ====================
+    
+    async def create_folder(self, path: str) -> Dict[str, Any]:
+        """
+        创建文件夹
+        
+        Args:
+            path: 文件夹路径（如 /CloudNAS/115/测试/新文件夹）
+        
+        Returns:
+            {'success': bool, 'message': str}
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            # request = CreateFolderRequest(path=path)
+            # response = await self.stub.CreateFolder(request)
+            
+            logger.warning(f"⚠️ CreateFolder API 尚未实现: {path}")
+            
+            # 临时方案：如果是本地挂载，直接创建
+            if os.path.exists(os.path.dirname(path)):
+                os.makedirs(path, exist_ok=True)
+                return {'success': True, 'message': '文件夹创建成功（本地）'}
+            
+            return {'success': False, 'message': 'gRPC API 尚未实现'}
+        
+        except Exception as e:
+            logger.error(f"❌ 创建文件夹失败: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    async def list_files(self, path: str = "/") -> List[Dict[str, Any]]:
+        """
+        列出目录中的文件
+        
+        Args:
+            path: 目录路径
+        
+        Returns:
+            List[{
+                'name': str,
+                'path': str,
+                'type': str,  # 'file' | 'folder'
+                'size': int,
+                'modified_time': str
+            }]
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            # request = ListFilesRequest(path=path)
+            # response = await self.stub.ListFiles(request)
+            
+            logger.warning(f"⚠️ ListFiles API 尚未实现: {path}")
+            
+            # 临时方案：如果是本地挂载，直接读取
+            if os.path.exists(path):
+                files = []
+                for item in os.listdir(path):
+                    item_path = os.path.join(path, item)
+                    stat = os.stat(item_path)
+                    files.append({
+                        'name': item,
+                        'path': item_path,
+                        'type': 'folder' if os.path.isdir(item_path) else 'file',
+                        'size': stat.st_size,
+                        'modified_time': stat.st_mtime
+                    })
+                return files
+            
+            return []
+        
+        except Exception as e:
+            logger.error(f"❌ 列出文件失败: {e}")
+            return []
+    
+    async def get_file_info(self, path: str) -> Optional[Dict[str, Any]]:
+        """
+        获取文件信息
+        
+        Args:
+            path: 文件路径
+        
+        Returns:
+            {
+                'name': str,
+                'path': str,
+                'type': str,
+                'size': int,
+                'hash': str,
+                'created_time': str,
+                'modified_time': str
+            }
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning(f"⚠️ GetFileInfo API 尚未实现: {path}")
+            
+            # 临时方案：本地文件
+            if os.path.exists(path):
+                stat = os.stat(path)
+                return {
+                    'name': os.path.basename(path),
+                    'path': path,
+                    'type': 'folder' if os.path.isdir(path) else 'file',
+                    'size': stat.st_size,
+                    'created_time': stat.st_ctime,
+                    'modified_time': stat.st_mtime
+                }
+            
+            return None
+        
+        except Exception as e:
+            logger.error(f"❌ 获取文件信息失败: {e}")
+            return None
+    
+    async def delete_file(self, path: str) -> Dict[str, Any]:
+        """
+        删除文件或文件夹
+        
+        Args:
+            path: 文件路径
+        
+        Returns:
+            {'success': bool, 'message': str}
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning(f"⚠️ DeleteFile API 尚未实现: {path}")
+            return {'success': False, 'message': 'gRPC API 尚未实现'}
+        
+        except Exception as e:
+            logger.error(f"❌ 删除文件失败: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    # ==================== 传输任务管理 ====================
+    
+    async def get_transfer_tasks(self) -> List[Dict[str, Any]]:
+        """
+        获取所有传输任务
+        
+        Returns:
+            List[{
+                'task_id': str,
+                'type': str,  # 'upload' | 'download'
+                'file_name': str,
+                'progress': float,  # 0-100
+                'status': str,  # 'running' | 'paused' | 'completed' | 'failed'
+                'speed': int,  # bytes/s
+            }]
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning("⚠️ GetTransferTasks API 尚未实现")
+            return []
+        
+        except Exception as e:
+            logger.error(f"❌ 获取传输任务失败: {e}")
+            return []
+    
+    async def get_task_progress(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取任务进度
+        
+        Args:
+            task_id: 任务ID
+        
+        Returns:
+            {
+                'progress': float,
+                'uploaded_bytes': int,
+                'total_bytes': int,
+                'speed': int
+            }
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning(f"⚠️ GetTaskProgress API 尚未实现: {task_id}")
+            return None
+        
+        except Exception as e:
+            logger.error(f"❌ 获取任务进度失败: {e}")
+            return None
+    
+    # ==================== 服务器信息 ====================
+    
+    async def get_server_info(self) -> Optional[Dict[str, Any]]:
+        """
+        获取 CloudDrive2 服务器信息
+        
+        Returns:
+            {
+                'version': str,
+                'build': str,
+                'uptime': int,
+                'mounts_count': int
+            }
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning("⚠️ GetServerInfo API 尚未实现")
+            return {
+                'version': 'unknown',
+                'build': 'unknown',
+                'connected': self._connected
+            }
+        
+        except Exception as e:
+            logger.error(f"❌ 获取服务器信息失败: {e}")
+            return None
 
 
 def create_clouddrive2_client(
