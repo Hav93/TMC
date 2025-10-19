@@ -44,7 +44,9 @@ async def lifespan(app: FastAPI):
     
     try:
         # 检查并应用数据库迁移
-        auto_migrate = os.getenv("AUTO_MIGRATE", "false").lower() == "true"
+        # 默认开启自动迁移；仅当显式设置为 false/0/no 时关闭
+        auto_migrate_env = os.getenv("AUTO_MIGRATE", "true").lower()
+        auto_migrate = auto_migrate_env not in ("false", "0", "no")
         if auto_migrate:
             logger.info("🔍 检查数据库迁移...")
             from services.migration_manager import check_and_migrate
