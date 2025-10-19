@@ -309,8 +309,9 @@ async def generate_regular_qrcode(
                 "success": True,
                 "qrcode_url": result.get('qrcode_url'),
                 "qrcode_token": result.get('qrcode_token'),
-                "app": result.get('app', payload.app),
-                "device_type": result.get('app', payload.app)
+                # 返回归一化后的 app，供前端用同样的类型继续轮询
+                "app": result.get('app') or payload.app,
+                "device_type": result.get('app') or payload.app
             }
         raise HTTPException(status_code=400, detail=result.get('message', '获取二维码失败'))
     except HTTPException:

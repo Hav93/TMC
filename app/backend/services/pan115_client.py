@@ -3300,6 +3300,19 @@ class Pan115Client:
             }
         """
         try:
+            # 统一规范设备类型，避免 115 接口不支持导致 405/404
+            original_app = app
+            app_alias_map = {
+                'ipad': 'ios',
+                'harmony': 'android',
+            }
+            allowed_apps = {
+                'web', 'android', 'ios', 'tv', 'alipaymini', 'wechatmini', 'qandroid', 'qios'
+            }
+            app = app_alias_map.get(app, app)
+            if app not in allowed_apps:
+                app = 'web'
+            logger.info(f"📱 常规二维码设备类型: requested={original_app}, normalized={app}")
             # 始终使用常规登录二维码（纯Cookie模式）
             # 115 常规登录二维码 API
             # 参考：https://github.com/ChenyangGao/web-mount-packs/tree/main/python-115-client
@@ -3380,6 +3393,19 @@ class Pan115Client:
             }
         """
         try:
+            # 统一规范设备类型，确保与获取二维码时保持一致
+            original_app = app
+            app_alias_map = {
+                'ipad': 'ios',
+                'harmony': 'android',
+            }
+            allowed_apps = {
+                'web', 'android', 'ios', 'tv', 'alipaymini', 'wechatmini', 'qandroid', 'qios'
+            }
+            app = app_alias_map.get(app, app)
+            if app not in allowed_apps:
+                app = 'web'
+            logger.info(f"📡 常规二维码状态检查设备类型: requested={original_app}, normalized={app}")
             uid = qrcode_token.get('uid', '')
             time_val = qrcode_token.get('time', 0)
             sign = qrcode_token.get('sign', '')
