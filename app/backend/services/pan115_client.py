@@ -486,21 +486,13 @@ class Pan115Client:
         
         Args:
             file_path: 本地文件路径
-            target_dir_id: 目标目录ID，0表示根目录
-            target_path: 目标路径（如果提供，会先创建目录）
+            target_dir_id: 目标目录ID，0表示根目录（使用Web API时）
+            target_path: 目标路径（如果提供，会传递给CloudDrive2）
             
         Returns:
             {"success": bool, "message": str, "file_id": str}
         """
         try:
-            # 如果提供了路径，先创建目录
-            if target_path and target_path != '/':
-                dir_result = await self.create_directory_path(target_path)
-                if dir_result['success']:
-                    target_dir_id = dir_result['dir_id']
-                else:
-                    logger.warning(f"⚠️ 创建目录失败: {dir_result['message']}")
-            
             # 使用 CloudDrive2 上传
             clouddrive2_enabled = os.getenv('CLOUDDRIVE2_ENABLED', 'false').lower() == 'true'
             
@@ -510,9 +502,12 @@ class Pan115Client:
                     from services.clouddrive2_uploader import get_clouddrive2_uploader
                     
                     uploader = get_clouddrive2_uploader()
+                    
+                    # CloudDrive2 使用路径，不使用目录ID
+                    # 传递 target_path（完整路径），让 CloudDrive2 自动创建目录
                     result = await uploader.upload_file(
                         file_path=file_path,
-                        target_dir=target_dir_id,
+                        target_dir=target_path or "/",  # 传递路径而不是ID
                         enable_quick_upload=True,
                         enable_resume=True
                     )
