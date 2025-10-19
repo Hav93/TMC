@@ -303,7 +303,7 @@ class CloudDrive2Client:
             logger.info(f"   实际目标路径: {actual_remote_path}")
             
             # 尝试方案1: 本地挂载上传（如果挂载点存在）
-            # 尝试方案2: 远程上传协议（通过 gRPC API）
+            # 尝试方案2: gRPC API 上传（CreateFile + WriteToFile + CloseFile）
             
             # 检查挂载点是否本地可访问
             if os.path.exists(actual_mount_point):
@@ -313,9 +313,9 @@ class CloudDrive2Client:
                     file_size, progress_callback
                 )
             else:
-                logger.info("🔧 使用方案2: 远程上传协议（gRPC API）")
-                result = await self._upload_via_remote_protocol(
-                    local_path, actual_remote_path, actual_mount_point,
+                logger.info("🔧 使用方案2: gRPC API 上传（CreateFile + WriteToFile + CloseFile）")
+                result = await self._upload_via_grpc(
+                    local_path, actual_remote_path,
                     file_size, progress_callback
                 )
             
@@ -412,6 +412,121 @@ class CloudDrive2Client:
             return {
                 'success': False,
                 'message': f'挂载上传失败: {e}'
+            }
+    
+    async def _upload_via_grpc(
+        self,
+        local_path: str,
+        remote_path: str,
+        file_size: int,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> Dict[str, Any]:
+        """
+        使用 gRPC API 上传文件
+        
+        CloudDrive2 标准上传方法：
+        1. CreateFile(parentPath, fileName) → fileHandle
+        2. WriteToFile(fileHandle, startPos, buffer) → 循环写入
+        3. CloseFile(fileHandle) → 完成
+        
+        Args:
+            local_path: 本地文件路径
+            remote_path: 远程完整路径（如 /CloudNAS/115/2025/10/19/file.mp4）
+            file_size: 文件大小
+            progress_callback: 进度回调
+        
+        Returns:
+            上传结果字典
+        """
+        try:
+            from protos import clouddrive_pb2
+            
+            file_name = os.path.basename(remote_path)
+            parent_path = os.path.dirname(remote_path)
+            
+            logger.info(f"📝 gRPC API 上传")
+            logger.info(f"   父目录: {parent_path}")
+            logger.info(f"   文件名: {file_name}")
+            logger.info(f"   大小: {file_size} bytes")
+            
+            # 步骤1: 创建文件
+            logger.info("📄 步骤1: 创建文件...")
+            create_request = clouddrive_pb2.CreateFileRequest(
+                parentPath=parent_path,
+                fileName=file_name
+            )
+            
+            create_response = await self.stub.official_stub.CreateFile(
+                create_request,
+                metadata=self.stub._get_metadata()
+            )
+            
+            file_handle = create_response.fileHandle
+            logger.info(f"✅ 文件已创建，fileHandle={file_handle}")
+            
+            # 步骤2: 分块写入文件
+            logger.info(f"📤 步骤2: 写入文件数据...")
+            chunk_size = 4 * 1024 * 1024  # 4MB 块
+            uploaded_bytes = 0
+            
+            with open(local_path, 'rb') as f:
+                chunk_index = 0
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    
+                    # 写入数据块
+                    write_request = clouddrive_pb2.WriteFileRequest(
+                        fileHandle=file_handle,
+                        startPos=uploaded_bytes,
+                        length=len(chunk),
+                        buffer=chunk,
+                        closeFile=False
+                    )
+                    
+                    write_response = await self.stub.official_stub.WriteToFile(
+                        write_request,
+                        metadata=self.stub._get_metadata()
+                    )
+                    
+                    uploaded_bytes += write_response.bytesWritten
+                    chunk_index += 1
+                    
+                    # 进度回调
+                    if progress_callback:
+                        await progress_callback(uploaded_bytes, file_size)
+                    
+                    progress_percent = (uploaded_bytes / file_size * 100) if file_size > 0 else 100
+                    logger.info(f"   块 {chunk_index}: {uploaded_bytes}/{file_size} ({progress_percent:.1f}%)")
+            
+            # 步骤3: 关闭文件
+            logger.info("🔒 步骤3: 关闭文件...")
+            close_request = clouddrive_pb2.CloseFileRequest(
+                fileHandle=file_handle
+            )
+            await self.stub.official_stub.CloseFile(
+                close_request,
+                metadata=self.stub._get_metadata()
+            )
+            
+            logger.info(f"✅ 上传完成: {file_name} ({uploaded_bytes} bytes)")
+            
+            return {
+                'success': True,
+                'message': 'Upload successful',
+                'file_path': remote_path,
+                'uploaded_bytes': uploaded_bytes
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ gRPC 上传失败: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            return {
+                'success': False,
+                'message': f'gRPC upload failed: {str(e)}'
             }
     
     async def _upload_via_remote_protocol(
