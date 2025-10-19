@@ -104,12 +104,12 @@ class CloudDrive2Client:
             else:
                 self.channel = grpc_aio.insecure_channel(self.config.address)
             
-            # 创建 gRPC stub
-            self.stub = create_stub(self.channel)
-            logger.info("✅ gRPC Stub 已创建")
-            
-            # 验证连接
+            # 验证连接并获取认证 token
             await self._authenticate()
+            
+            # 创建 gRPC stub（传入 auth token）
+            self.stub = create_stub(self.channel, self.auth_token)
+            logger.info("✅ gRPC Stub 已创建")
             
             self._connected = True
             logger.info("✅ CloudDrive2 连接成功")
@@ -123,11 +123,59 @@ class CloudDrive2Client:
         """
         身份验证
         
-        CloudDrive2 使用 username/password 或 API token 认证
+        CloudDrive2 支持两种认证方式：
+        1. 方法一：使用用户名/密码获取 JWT token（调用 GetToken）
+        2. 方法二：直接使用 API Token（推荐）
+        
+        优先级：API Token > 用户名/密码
         """
-        # TODO: 实现具体的认证逻辑
-        # 根据官方文档，可能需要调用 Login 或 GetToken 方法
-        pass
+        # 方法二：检查是否配置了 API Token（推荐）
+        api_token = os.getenv('CLOUDDRIVE2_API_TOKEN') or self.config.password
+        
+        # 如果 password 字段看起来像 JWT token，直接使用
+        if api_token and (api_token.startswith('eyJ') or len(api_token) > 100):
+            self.auth_token = api_token
+            logger.info("✅ 使用 API Token 认证")
+            return
+        
+        # 方法一：使用用户名/密码获取 JWT token
+        if not self.config.username or not self.config.password:
+            logger.warning("⚠️ 未配置认证信息（用户名/密码或 API Token）")
+            logger.warning("   提示：推荐使用 API Token，在 CloudDrive2 设置中创建")
+            self.auth_token = None
+            return
+        
+        try:
+            # 导入 proto
+            from protos import clouddrive_pb2
+            
+            logger.info("🔐 使用用户名/密码获取 JWT token...")
+            
+            # 调用 GetToken 获取 JWT
+            request = clouddrive_pb2.GetTokenRequest(
+                userName=self.config.username,
+                password=self.config.password
+            )
+            
+            from protos import clouddrive_pb2_grpc
+            auth_stub = clouddrive_pb2_grpc.CloudDriveFileSrvStub(self.channel)
+            response = await auth_stub.GetToken(request)
+            
+            if response.success and response.token:
+                self.auth_token = response.token
+                logger.info("✅ 认证成功，已获取 JWT token")
+            else:
+                error_msg = response.errorMessage or "Unknown error"
+                logger.error(f"❌ 认证失败: {error_msg}")
+                logger.warning("   提示：建议在 CloudDrive2 设置中创建 API Token")
+                self.auth_token = None
+        except ImportError:
+            logger.warning("⚠️ proto 不可用，跳过认证")
+            self.auth_token = None
+        except Exception as e:
+            logger.error(f"❌ 认证异常: {e}")
+            logger.warning("   提示：如使用 API Token，请将其配置在密码字段或 CLOUDDRIVE2_API_TOKEN 环境变量")
+            self.auth_token = None
     
     async def disconnect(self):
         """断开连接"""

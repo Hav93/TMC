@@ -78,8 +78,9 @@ class CloudDrive2Stub:
     优先使用官方 proto，回退到 HTTP API
     """
     
-    def __init__(self, channel: grpc_aio.Channel):
+    def __init__(self, channel: grpc_aio.Channel, auth_token: str = None):
         self.channel = channel
+        self.auth_token = auth_token
         self.http_client = None
         self._use_http_fallback = not OFFICIAL_PROTO_AVAILABLE
         
@@ -90,6 +91,12 @@ class CloudDrive2Stub:
         else:
             self.official_stub = None
             logger.info("⚠️ 将使用 HTTP API 备选方案")
+    
+    def _get_metadata(self):
+        """获取 gRPC metadata（包含认证 token）"""
+        if self.auth_token:
+            return (('authorization', f'Bearer {self.auth_token}'),)
+        return ()
     
     async def _ensure_http_client(self):
         """确保 HTTP 客户端已初始化"""
@@ -119,7 +126,10 @@ class CloudDrive2Stub:
             # 优先使用官方 gRPC
             if self.official_stub:
                 logger.info("📡 使用官方 gRPC: GetMountPoints")
-                response = await self.official_stub.GetMountPoints(empty_pb2.Empty())
+                response = await self.official_stub.GetMountPoints(
+                    empty_pb2.Empty(),
+                    metadata=self._get_metadata()
+                )
                 
                 # 转换为字典列表
                 mounts = []
@@ -217,10 +227,14 @@ class CloudDrive2Stub:
                 request = clouddrive_pb2.StartRemoteUploadRequest(
                     file_path=target_path,  # 目标路径
                     file_size=file_size,
-                    device_id="TMC"
+                    client_can_calculate_hashes=True,  # 客户端可以计算哈希
+                    known_hashes={}  # 可选：已知的哈希值
                 )
                 
-                response = await self.official_stub.StartRemoteUpload(request)
+                response = await self.official_stub.StartRemoteUpload(
+                    request,
+                    metadata=self._get_metadata()
+                )
                 
                 logger.info(f"✅ 上传会话已创建: {response.upload_id}")
                 
@@ -502,15 +516,16 @@ class CloudDrive2Stub:
             return []
 
 
-def create_stub(channel: grpc_aio.Channel) -> CloudDrive2Stub:
+def create_stub(channel: grpc_aio.Channel, auth_token: str = None) -> CloudDrive2Stub:
     """
     创建 CloudDrive2 Stub
     
     Args:
         channel: gRPC channel
+        auth_token: 认证 token（可选）
     
     Returns:
         CloudDrive2Stub 实例
     """
-    return CloudDrive2Stub(channel)
+    return CloudDrive2Stub(channel, auth_token)
 
