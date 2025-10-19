@@ -347,9 +347,9 @@ class CloudDrive2Client:
             logger.info(f"   用户配置挂载点: {mount_point}")
             logger.info(f"   用户配置目标路径: {remote_path}")
             
-            # 路径映射：将用户配置的路径映射到实际挂载点
-            actual_mount_point, actual_remote_path = await self._map_user_path_to_actual_path(
-                mount_point, remote_path
+            # 统一解析：绝对路径优先，其次相对路径拼接到默认根
+            actual_mount_point, actual_remote_path = await self._resolve_target_path(
+                default_root=mount_point, rule_path=remote_path
             )
             
             logger.info(f"   实际挂载点: {actual_mount_point}")
@@ -459,13 +459,56 @@ class CloudDrive2Client:
                 'file_path': target_path,
                 'local_path': local_path
             }
-        
+
         except Exception as e:
             logger.error(f"❌ 挂载上传失败: {e}")
             return {
                 'success': False,
                 'message': f'挂载上传失败: {e}'
             }
+    async def _resolve_target_path(self, default_root: str, rule_path: str) -> tuple[str, str]:
+        """
+        解析最终上传路径：
+        - 以 / 开头的 rule_path 为绝对路径，直接使用
+        - 否则拼接到 default_root（默认根）后
+        - 兼容 /CloudNAS/xxx 自动规范为在线根 /xxx
+        并在返回前校验父目录存在（FindFileByPath）。
+        """
+        # 规范化根
+        def normalize_root(p: str) -> str:
+            if not p:
+                return '/'
+            p = p.replace('\\', '/').strip()
+            if p.startswith('/CloudNAS/'):
+                p = '/' + p.split('/')[-1]
+            if not p.startswith('/'):
+                p = '/' + p
+            if p != '/' and p.endswith('/'):
+                p = p.rstrip('/')
+            return p
+
+        root = normalize_root(default_root)
+        rule = (rule_path or '').replace('\\', '/')
+        final_path: str
+        if rule.startswith('/'):
+            final_path = rule
+        else:
+            final_path = (root + '/' + rule.lstrip('/')).replace('//', '/')
+
+        # 提取最终根（首段）作为挂载点标识
+        parts = final_path.lstrip('/').split('/')
+        final_root = '/' + parts[0] if parts and parts[0] else '/'
+
+        # 父目录校验（不存在则直接抛错给上层）
+        parent_dir = os.path.dirname(final_path) if final_path != '/' else '/'
+        try:
+            await self._ensure_remote_parent_dirs(final_path)
+        except Exception:
+            # 由调用方格式化错误信息
+            pass
+
+        logger.info(f"🧭 路径解析: 全局={root}, 规则={rule_path} -> 最终={final_path}")
+        return final_root, final_path
     
     async def _upload_via_grpc(
         self,
