@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Form,
   Input,
@@ -28,6 +28,9 @@ const CloudDrive2Settings: React.FC = () => {
     queryKey: ['clouddrive2-settings'],
     queryFn: clouddrive2SettingsApi.getConfig,
   });
+
+  const [dirLoading, setDirLoading] = useState(false);
+  const [dirOptions, setDirOptions] = useState<{ name: string; path: string }[]>([]);
 
   // 更新配置
   const updateMutation = useMutation({
@@ -105,6 +108,31 @@ const CloudDrive2Settings: React.FC = () => {
       await testMutation.mutateAsync(values as CloudDrive2Config);
     } catch (error) {
       console.error('表单验证失败:', error);
+    }
+  };
+
+  const handleBrowse = async () => {
+    try {
+      const values = form.getFieldsValue();
+      if (!values.host || !values.port) {
+        message.warning('请先填写主机和端口');
+        return;
+      }
+      setDirLoading(true);
+      const browsePath: string = values.mount_point || '/';
+      const res = await clouddrive2SettingsApi.browse({
+        host: values.host,
+        port: values.port,
+        username: values.username,
+        password: values.password,
+        path: browsePath,
+      });
+      setDirOptions(res?.items || []);
+      if (!res?.success) message.warning('目录浏览失败');
+    } catch (e) {
+      message.error('目录浏览失败');
+    } finally {
+      setDirLoading(false);
     }
   };
 
@@ -191,11 +219,28 @@ const CloudDrive2Settings: React.FC = () => {
         <Form.Item
           label="挂载点路径"
           name="mount_point"
-          rules={[{ required: true, message: '请输入挂载点路径' }]}
-          tooltip="115网盘在CloudDrive2中的挂载路径"
+          rules={[{ required: true, message: '请选择或输入挂载点路径' }]}
+          tooltip="从 CloudDrive2 返回的目录中选择，或手动输入"
         >
-          <Input placeholder="例如: /CloudNAS/115" />
+          <Input placeholder="例如: /115open" addonAfter={<Button loading={dirLoading} onClick={handleBrowse}>浏览</Button>} />
         </Form.Item>
+
+        {/* 单独的浏览按钮，确保在某些主题/布局下也可见 */}
+        <Form.Item>
+          <Button onClick={handleBrowse} loading={dirLoading}>浏览目录</Button>
+        </Form.Item>
+
+        {dirOptions?.length > 0 && (
+          <Form.Item label="可选目录">
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {dirOptions.map((d) => (
+                <Button key={d.path} size="small" onClick={() => form.setFieldsValue({ mount_point: d.path })}>
+                  {d.path}
+                </Button>
+              ))}
+            </div>
+          </Form.Item>
+        )}
 
         <Space>
           <Button

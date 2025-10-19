@@ -38,5 +38,13 @@ export const clouddrive2SettingsApi = {
     const response = await apiClient.post(`${API_BASE}/test`, data);
     return response.data;
   },
+
+  /**
+   * 浏览目录（仅返回文件夹）
+   */
+  browse: async (payload: { host: string; port: number; username?: string; password?: string; path: string }): Promise<{ success: boolean; path: string; items: { name: string; path: string }[] }> => {
+    const response = await apiClient.post(`${API_BASE}/browse`, payload);
+    return response.data;
+  },
 };
 

@@ -195,3 +195,45 @@ async def test_clouddrive2_connection(
             "message": f"❌ 测试失败: {str(e)}"
         }
 
+
+class BrowseRequest(BaseModel):
+    """目录浏览请求"""
+    host: str = "localhost"
+    port: int = 19798
+    username: str = ""
+    password: str = ""
+    path: str = "/"
+
+
+@router.post("/browse")
+async def browse_directories(
+    data: BrowseRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """浏览 CloudDrive2 目录，仅返回文件夹列表"""
+    try:
+        from services.clouddrive2_client import CloudDrive2Client, CloudDrive2Config
+
+        config = CloudDrive2Config(
+            host=data.host,
+            port=data.port,
+            username=data.username,
+            password=data.password if data.password != '***' else os.getenv('CLOUDDRIVE2_PASSWORD', '')
+        )
+
+        client = CloudDrive2Client(config)
+        await client.connect()
+        items = await client.list_files(data.path or "/")
+        await client.disconnect()
+
+        # 仅返回目录项
+        dirs = [
+            {"name": it.get("name"), "path": it.get("path")}
+            for it in items if it.get("type") == "folder"
+        ]
+        return {"success": True, "path": data.path or "/", "items": dirs}
+
+    except Exception as e:
+        logger.error(f"❌ 目录浏览失败: {e}")
+        return {"success": False, "message": str(e)}
+
