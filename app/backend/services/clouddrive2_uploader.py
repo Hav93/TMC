@@ -147,8 +147,9 @@ class CloudDrive2Uploader:
                 progress.status = UploadStatus.UPLOADING
                 self.progress_mgr.update_progress(progress)
                 
-                # 构建远程路径
-                remote_path = os.path.join(target_dir, file_name)
+                # 构建远程路径（确保使用正斜杠，兼容所有平台）
+                # target_dir 已经是完整路径（如 /Telegram媒体/2025/10/19）
+                remote_path = os.path.join(target_dir, file_name).replace('\\', '/')
                 
                 # 进度回调
                 def progress_callback(uploaded: int, total: int):

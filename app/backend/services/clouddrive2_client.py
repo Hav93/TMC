@@ -203,17 +203,30 @@ class CloudDrive2Client:
         """
         try:
             # 构建完整的目标路径
-            target_path = os.path.join(mount_point, remote_path.lstrip('/'))
+            # 确保 remote_path 使用正斜杠（Unix风格），然后转换为系统路径
+            remote_path_normalized = remote_path.lstrip('/').replace('\\', '/')
+            target_path = os.path.join(mount_point, remote_path_normalized)
             target_dir = os.path.dirname(target_path)
+            
+            logger.info(f"📂 目标路径: {target_path}")
+            logger.info(f"📁 目标目录: {target_dir}")
             
             # 确保目标目录存在
             if not os.path.exists(target_dir):
                 logger.info(f"📁 创建目录: {target_dir}")
                 os.makedirs(target_dir, exist_ok=True)
+            else:
+                logger.info(f"✅ 目录已存在: {target_dir}")
+            
+            # 检查目标文件是否已存在
+            if os.path.exists(target_path):
+                logger.warning(f"⚠️ 目标文件已存在，将覆盖: {target_path}")
             
             # 分块复制文件（支持进度回调）
             chunk_size = 8 * 1024 * 1024  # 8MB
             uploaded_bytes = 0
+            
+            logger.info(f"📤 开始复制文件: {os.path.basename(local_path)} ({file_size} bytes)")
             
             with open(local_path, 'rb') as src:
                 with open(target_path, 'wb') as dst:
@@ -233,6 +246,7 @@ class CloudDrive2Client:
                         await asyncio.sleep(0)
             
             logger.info(f"✅ 文件已复制到挂载目录: {target_path}")
+            logger.info(f"📊 复制完成: {uploaded_bytes}/{file_size} bytes ({uploaded_bytes/file_size*100:.1f}%)")
             
             # 等待 CloudDrive2 同步到云端
             # TODO: 可以通过 gRPC API 查询上传状态

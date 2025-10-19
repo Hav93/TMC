@@ -486,8 +486,8 @@ class Pan115Client:
         
         Args:
             file_path: 本地文件路径
-            target_dir_id: 目标目录ID，0表示根目录（使用Web API时）
-            target_path: 目标路径（如果提供，会传递给CloudDrive2）
+            target_dir_id: 目标目录ID，0表示根目录（已弃用，CloudDrive2使用路径）
+            target_path: 目标目录路径（如 /Telegram媒体/2025/10/19）
             
         Returns:
             {"success": bool, "message": str, "file_id": str}
@@ -498,16 +498,20 @@ class Pan115Client:
             
             if clouddrive2_enabled:
                 logger.info("🚀 使用 CloudDrive2 上传")
+                logger.info(f"📂 目标路径: {target_path or '/'}")
+                logger.info(f"📄 文件: {os.path.basename(file_path)}")
+                
                 try:
                     from services.clouddrive2_uploader import get_clouddrive2_uploader
                     
                     uploader = get_clouddrive2_uploader()
                     
                     # CloudDrive2 使用路径，不使用目录ID
-                    # 传递 target_path（完整路径），让 CloudDrive2 自动创建目录
+                    # target_path 应该是完整的目录路径（如 /Telegram媒体/2025/10/19）
+                    # CloudDrive2会自动在挂载点创建这个目录结构
                     result = await uploader.upload_file(
                         file_path=file_path,
-                        target_dir=target_path or "/",  # 传递路径而不是ID
+                        target_dir=target_path or "/",  # 传递目录路径
                         enable_quick_upload=True,
                         enable_resume=True
                     )
