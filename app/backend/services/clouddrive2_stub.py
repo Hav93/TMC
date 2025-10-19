@@ -28,15 +28,47 @@ clouddrive_pb2_grpc = None
 empty_pb2 = None
 
 try:
-    from protos import clouddrive_pb2
-    from protos import clouddrive_pb2_grpc
-    from google.protobuf import empty_pb2
-    
-    OFFICIAL_PROTO_AVAILABLE = True
-    logger.info("✅ 官方 proto 可用")
+    # 方法1: 尝试从 protos 包导入
+    try:
+        from protos import clouddrive_pb2
+        from protos import clouddrive_pb2_grpc
+        from google.protobuf import empty_pb2
+        logger.info("✅ 官方 proto 可用 (从 protos 包)")
+        OFFICIAL_PROTO_AVAILABLE = True
+    except ImportError as e1:
+        logger.debug(f"从 protos 包导入失败: {e1}")
+        
+        # 方法2: 尝试直接导入（兼容旧版本）
+        try:
+            import clouddrive_pb2
+            import clouddrive_pb2_grpc
+            from google.protobuf import empty_pb2
+            logger.info("✅ 官方 proto 可用 (直接导入)")
+            OFFICIAL_PROTO_AVAILABLE = True
+        except ImportError as e2:
+            logger.debug(f"直接导入失败: {e2}")
+            
+            # 方法3: 尝试从当前目录的 protos 导入
+            import os
+            current_dir = Path(__file__).parent.parent
+            protos_dir = current_dir / 'protos'
+            
+            if protos_dir.exists():
+                logger.debug(f"protos 目录存在: {protos_dir}")
+                logger.debug(f"protos 目录内容: {list(protos_dir.glob('*.py'))}")
+            else:
+                logger.debug(f"protos 目录不存在: {protos_dir}")
+            
+            raise ImportError(f"无法导入 proto 文件。尝试1: {e1}, 尝试2: {e2}")
+            
 except ImportError as e:
     OFFICIAL_PROTO_AVAILABLE = False
-    logger.warning(f"⚠️ 官方 proto 不可用，将使用 HTTP 备选方案: {e}")
+    logger.warning(f"⚠️ 官方 proto 不可用，将使用 HTTP 备选方案")
+    logger.warning(f"   详细错误: {e}")
+    logger.warning(f"   Python 路径: {sys.path[:3]}")
+except Exception as e:
+    OFFICIAL_PROTO_AVAILABLE = False
+    logger.error(f"❌ 导入 proto 时发生未预期错误: {e}", exc_info=True)
 
 
 class CloudDrive2Stub:
