@@ -32,6 +32,10 @@ protobuf>=4.21.0
 lz4>=4.3.2  # LZ4压缩/解压
 oss2>=2.18.0  # 阿里云OSS SDK
 
+# CloudDrive2 gRPC API（推荐的上传方案）
+grpcio>=1.60.0  # gRPC核心库
+grpcio-tools>=1.60.0  # gRPC工具（用于生成proto代码）
+
 # 115网盘SDK  
 # p115client库 - 因依赖p115cipher.fast(C扩展)无法在当前环境使用,已禁用
 # 依赖问题: ModuleNotFoundError: No module named 'p115cipher.fast'

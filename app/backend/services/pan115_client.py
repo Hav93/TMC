@@ -700,8 +700,33 @@ class Pan115Client:
             file_name = os.path.basename(file_path)
             file_size = os.path.getsize(file_path)
             
-            # 旧的上传实现已删除
-            # 等待新的上传方案
+            # 优先使用 CloudDrive2 上传（推荐方案）
+            clouddrive2_enabled = os.getenv('CLOUDDRIVE2_ENABLED', 'false').lower() == 'true'
+            
+            if clouddrive2_enabled:
+                logger.info("🚀 使用 CloudDrive2 上传")
+                try:
+                    from services.clouddrive2_uploader import get_clouddrive2_uploader
+                    
+                    uploader = get_clouddrive2_uploader()
+                    result = await uploader.upload_file(
+                        file_path=file_path,
+                        target_dir=target_dir_id,
+                        enable_quick_upload=True,
+                        enable_resume=True
+                    )
+                    
+                    if result.get('success'):
+                        logger.info("✅ CloudDrive2 上传成功")
+                        return result
+                    else:
+                        logger.warning(f"⚠️ CloudDrive2 上传失败: {result.get('message')}")
+                        logger.info("回退到传统上传方式")
+                
+                except ImportError:
+                    logger.warning("⚠️ CloudDrive2 模块未安装，回退到传统上传")
+                except Exception as e:
+                    logger.warning(f"⚠️ CloudDrive2 上传异常: {e}，回退到传统上传")
             
             # 步骤1: 计算文件哈希（SHA1和sig）
             logger.info(f"📝 计算文件哈希: {file_name}, size={file_size}")
