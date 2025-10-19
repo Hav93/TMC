@@ -88,7 +88,7 @@ class CloudDrive2Uploader:
             logger.info(f"   断点续传: {'开启' if enable_resume else '关闭'}")
             
             # 创建进度跟踪
-            progress = self.progress_mgr.create_progress(
+            progress = await self.progress_mgr.create_progress(
                 file_path=file_path,
                 file_name=file_name,
                 file_size=file_size,
@@ -98,8 +98,7 @@ class CloudDrive2Uploader:
             try:
                 # 步骤1: 秒传检测
                 if enable_quick_upload:
-                    progress.status = UploadStatus.CHECKING
-                    self.progress_mgr.update_progress(progress)
+                    await self.progress_mgr.update_status(file_path, UploadStatus.CHECKING)
                     
                     logger.info("🔍 检查秒传...")
                     quick_result = self.quick_service.calculate_sha1(file_path)
@@ -144,18 +143,15 @@ class CloudDrive2Uploader:
                 logger.info("✅ 挂载点可用")
                 
                 # 步骤5: 执行上传
-                progress.status = UploadStatus.UPLOADING
-                self.progress_mgr.update_progress(progress)
+                await self.progress_mgr.update_status(file_path, UploadStatus.UPLOADING)
                 
                 # 构建远程路径（确保使用正斜杠，兼容所有平台）
                 # target_dir 已经是完整路径（如 /Telegram媒体/2025/10/19）
                 remote_path = os.path.join(target_dir, file_name).replace('\\', '/')
                 
                 # 进度回调
-                def progress_callback(uploaded: int, total: int):
-                    progress.uploaded_bytes = uploaded
-                    progress.percentage = (uploaded / total * 100) if total > 0 else 0
-                    self.progress_mgr.update_progress(progress)
+                async def progress_callback(uploaded: int, total: int):
+                    await self.progress_mgr.update_progress(file_path, uploaded)
                 
                 result = await self.client.upload_file(
                     local_path=file_path,
@@ -166,9 +162,8 @@ class CloudDrive2Uploader:
                 
                 # 步骤6: 更新状态
                 if result['success']:
-                    progress.status = UploadStatus.SUCCESS
-                    progress.uploaded_bytes = file_size
-                    progress.percentage = 100
+                    await self.progress_mgr.update_status(file_path, UploadStatus.SUCCESS)
+                    await self.progress_mgr.update_progress(file_path, file_size)
                     
                     # 清理断点续传会话
                     if session:
@@ -176,10 +171,12 @@ class CloudDrive2Uploader:
                     
                     logger.info(f"✅ 上传成功: {file_name}")
                 else:
-                    progress.status = UploadStatus.FAILED
+                    await self.progress_mgr.update_status(
+                        file_path, 
+                        UploadStatus.FAILED,
+                        error_message=result.get('message')
+                    )
                     logger.error(f"❌ 上传失败: {result.get('message')}")
-                
-                self.progress_mgr.update_progress(progress)
                 
                 return result
             
@@ -194,8 +191,11 @@ class CloudDrive2Uploader:
             # 更新进度状态
             if hasattr(self, 'progress_mgr'):
                 try:
-                    progress.status = UploadStatus.FAILED
-                    self.progress_mgr.update_progress(progress)
+                    await self.progress_mgr.update_status(
+                        file_path,
+                        UploadStatus.FAILED,
+                        error_message=str(e)
+                    )
                 except:
                     pass
             
