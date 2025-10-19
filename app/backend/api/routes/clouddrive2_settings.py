@@ -8,7 +8,6 @@ from models import User
 from auth import get_current_user
 from log_manager import get_logger
 import os
-from services.clouddrive2_client import CloudDrive2Client
 
 logger = get_logger('api.clouddrive2_settings')
 router = APIRouter()
@@ -86,18 +85,26 @@ async def test_clouddrive2_connection(
     try:
         logger.info(f"🔍 测试CloudDrive2连接: {data.host}:{data.port}")
         
-        # 创建临时客户端进行测试
-        client = CloudDrive2Client(
+        # 导入CloudDrive2相关类
+        from services.clouddrive2_client import CloudDrive2Client, CloudDrive2Config
+        
+        # 创建配置对象
+        config = CloudDrive2Config(
             host=data.host,
             port=data.port,
             username=data.username,
             password=data.password if data.password != '***' else os.getenv('CLOUDDRIVE2_PASSWORD', '')
         )
         
+        # 创建临时客户端进行测试
+        client = CloudDrive2Client(config)
+        
         # 测试连接
-        success = await client.test_connection()
+        success = await client.connect()
         
         if success:
+            # 关闭连接
+            await client.disconnect()
             logger.info("✅ CloudDrive2连接测试成功")
             return {
                 "success": True,
@@ -117,6 +124,8 @@ async def test_clouddrive2_connection(
         }
     except Exception as e:
         logger.error(f"❌ CloudDrive2连接测试异常: {e}")
+        import traceback
+        traceback.print_exc()
         return {
             "success": False,
             "message": f"❌ 测试失败: {str(e)}"
