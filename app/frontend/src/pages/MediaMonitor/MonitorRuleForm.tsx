@@ -14,7 +14,9 @@ import {
   Row,
   Col,
   Tabs,
-  Alert
+  Alert,
+  Modal,
+  Tree
 } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -48,6 +50,9 @@ const MonitorRuleForm: React.FC = () => {
   
   // 目录浏览器状态
   const [localArchiveBrowserVisible, setLocalArchiveBrowserVisible] = useState(false);
+  const [cd2BrowseOpen, setCd2BrowseOpen] = useState(false);
+  const [cd2Tree, setCd2Tree] = useState<any[]>([]);
+  const [cd2Selected, setCd2Selected] = useState<string>('');
 
   // 获取客户端列表
   const { data: clientsData } = useQuery({
@@ -447,9 +452,38 @@ const MonitorRuleForm: React.FC = () => {
                                 }
                               >
                                 <Input 
-                                  placeholder="留空则使用全局默认路径（如 /Telegram媒体）" 
+                                  placeholder="绝对路径示例：/115open/测试；相对：测试（拼到默认根）" 
                                   addonBefore="规则路径"
+                                  addonAfter={<Button size="small" onClick={async () => {
+                                    try {
+                                      // 调后端 browse，使用系统设置里的 host/port 等由后端读取
+                                      const res = await fetch('/api/settings/clouddrive2/browse', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ path: form.getFieldValue('pan115_remote_path') || '/' })
+                                      }).then(r => r.json());
+                                      const items = (res?.items || []).map((d: any) => ({ title: d.name || d.path.split('/').pop() || d.path, key: d.path }));
+                                      const root = form.getFieldValue('pan115_remote_path') || '/';
+                                      setCd2Tree([{ title: root, key: root, children: items }]);
+                                      setCd2Selected(root);
+                                      setCd2BrowseOpen(true);
+                                    } catch (e) {
+                                      message.error('目录浏览失败');
+                                    }
+                                  }}>浏览</Button>}
                                 />
+                              </Form.Item>
+                              <Form.Item shouldUpdate>
+                                {({ getFieldValue }) => {
+                                  const rulePath = getFieldValue('pan115_remote_path') || '';
+                                  const globalRoot = '（将使用系统设置中的“默认根路径”）';
+                                  const finalPath = rulePath.startsWith('/') ? rulePath : `${globalRoot} + /${rulePath}`;
+                                  return (
+                                    <div style={{ color: '#888', marginTop: -8, marginBottom: 8 }}>
+                                      最终上传路径预览：{finalPath}
+                                    </div>
+                                  );
+                                }}
                               </Form.Item>
                             );
                           }
@@ -612,6 +646,31 @@ const MonitorRuleForm: React.FC = () => {
         type="local"
         initialPath={form.getFieldValue('organize_local_path') || '/app/media/archive'}
       />
+
+      {/* CloudDrive2 目录浏览弹窗 */}
+      <Modal
+        title="选择 CloudDrive2 目录"
+        open={cd2BrowseOpen}
+        onOk={() => { form.setFieldValue('pan115_remote_path', cd2Selected); setCd2BrowseOpen(false); }}
+        onCancel={() => setCd2BrowseOpen(false)}
+        okText="使用此路径"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Tree
+          treeData={cd2Tree}
+          loadData={async (node) => {
+            const res = await fetch('/api/settings/clouddrive2/browse', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: node.key })
+            }).then(r => r.json());
+            const children = (res?.items || []).map((d: any) => ({ title: d.name || d.path.split('/').pop() || d.path, key: d.path }));
+            setCd2Tree(prev => prev.map(n => n.key === node.key ? { ...n, children } : n));
+          }}
+          onSelect={(keys) => { if (keys && keys[0]) setCd2Selected(String(keys[0])); }}
+          defaultExpandAll
+        />
+        <div style={{ marginTop: 8, color: '#888' }}>当前选择: {cd2Selected}</div>
+      </Modal>
     </div>
   );
 };

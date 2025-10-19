@@ -262,10 +262,21 @@ const CloudDrive2Settings: React.FC = () => {
         </Form.Item>
 
         <Form.Item
-          label="挂载点路径"
+          label="默认根路径（在线路径）"
           name="mount_point"
-          rules={[{ required: true, message: '请选择或输入挂载点路径' }]}
-          tooltip="默认根路径（在线路径，如 /115open 或 /）。点击浏览选择。"
+          rules={[
+            { required: true, message: '请选择或输入默认根路径' },
+            {
+              validator: (_, value) => {
+                if (!value) return Promise.resolve();
+                const v = String(value);
+                if (!v.startsWith('/')) return Promise.reject(new Error('必须以 / 开头的在线路径，如 /115open'));
+                if (v.startsWith('/CloudNAS/')) return Promise.reject(new Error('请使用在线路径（如 /115open），不要使用 /CloudNAS/...'));
+                return Promise.resolve();
+              },
+            },
+          ]}
+          tooltip="作为默认根，仅用于相对路径拼接；示例：/115open 或 /。禁止填写 /CloudNAS/..."
         >
           <Input placeholder="例如: /115open" addonAfter={<Button loading={dirLoading} onClick={handleBrowse}>浏览</Button>} />
         </Form.Item>
