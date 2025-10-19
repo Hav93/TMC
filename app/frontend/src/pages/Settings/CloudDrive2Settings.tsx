@@ -9,8 +9,6 @@ import {
   message,
   Alert,
   Typography,
-  Modal,
-  Tree,
 } from 'antd';
 import { SaveOutlined, ExperimentOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -31,11 +29,7 @@ const CloudDrive2Settings: React.FC = () => {
     queryFn: clouddrive2SettingsApi.getConfig,
   });
 
-  const [dirLoading, setDirLoading] = useState(false);
-  // 目录选择弹窗
-  const [browseOpen, setBrowseOpen] = useState(false);
-  const [treeData, setTreeData] = useState<any[]>([]);
-  const [selectedPath, setSelectedPath] = useState<string>('');
+  // 已移除目录浏览相关状态，避免未使用变量告警
 
   // 更新配置
   const updateMutation = useMutation({
@@ -119,70 +113,7 @@ const CloudDrive2Settings: React.FC = () => {
     }
   };
 
-  const handleBrowse = async () => {
-    try {
-      const values = form.getFieldsValue();
-      if (!values.host || !values.port) {
-        message.warning('请先填写主机和端口');
-        return;
-      }
-      setDirLoading(true);
-      const browsePath: string = values.mount_point || '/';
-      const res = await clouddrive2SettingsApi.browse({
-        host: values.host,
-        port: values.port,
-        username: values.username,
-        password: values.password,
-        path: browsePath,
-      });
-      if (!res?.success) {
-        message.warning('目录浏览失败');
-      }
-      // 初始化树：将当前路径的下一级目录作为 children，当前路径作为根
-      const items = (res?.items || []).map((d: any) => ({
-        title: d.name || d.path.split('/').pop() || d.path,
-        key: d.path,
-        isLeaf: false,
-      }));
-      const rootKey = browsePath || '/';
-      const rootNode = {
-        title: rootKey,
-        key: rootKey,
-        children: items,
-      };
-      setTreeData([rootNode]);
-      setSelectedPath(rootKey);
-      setBrowseOpen(true);
-    } catch (e) {
-      message.error('目录浏览失败');
-    } finally {
-      setDirLoading(false);
-    }
-  };
-
-  const loadChildren = async (node: any) => {
-    const values = form.getFieldsValue();
-    const res = await clouddrive2SettingsApi.browse({
-      host: values.host,
-      port: values.port,
-      username: values.username,
-      password: values.password,
-      path: node.key,
-    });
-    const children = (res?.items || []).map((d: any) => ({
-      title: d.name || d.path.split('/').pop() || d.path,
-      key: d.path,
-      isLeaf: false,
-    }));
-    // 更新树节点
-    setTreeData((prev) =>
-      prev.map((n) =>
-        n.key === node.key
-          ? { ...n, children }
-          : n
-      )
-    );
-  };
+  // 已移除目录浏览方法，避免未使用变量/导入告警
 
   if (isLoading) {
     return <div style={{ padding: '24px', textAlign: 'center' }}>加载中...</div>;
