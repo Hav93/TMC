@@ -79,6 +79,11 @@ def check_and_migrate(auto_migrate: bool = True, backup_first: bool = True) -> b
         )
         if result.returncode == 0:
             logger.info("✅ Alembic 迁移完成")
+            # 迁移完成后做一次兼容性补丁（针对历史数据库缺列）
+            try:
+                _post_migration_fix(Config.DATABASE_URL)
+            except Exception as fix_err:
+                logger.warning(f"⚠️ 迁移后兼容性补丁失败: {fix_err}")
             return True
         else:
             logger.error(f"❌ Alembic 迁移失败: \n{result.stdout}")
@@ -90,5 +95,33 @@ def check_and_migrate(auto_migrate: bool = True, backup_first: bool = True) -> b
     except Exception as e:
         logger.error(f"❌ 执行数据库迁移异常: {e}")
         return False
+
+
+def _post_migration_fix(db_url: str) -> None:
+    """迁移后的兼容性修复。
+
+    目前主要修复早期版本缺失 message_logs.original_text 等列的问题。
+    """
+    if not db_url.startswith("sqlite:///"):
+        return
+    import sqlite3
+    db_file = db_url.replace("sqlite:///", "")
+    conn = sqlite3.connect(db_file)
+    try:
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info('message_logs')")
+        cols = {row[1] for row in cur.fetchall()}  # 第二列是列名
+        # 需要确保存在的列（与 models.MessageLog 保持一致）
+        required = {
+            "original_text": "TEXT",
+            "processed_text": "TEXT",
+        }
+        for col, typ in required.items():
+            if col not in cols:
+                cur.execute(f"ALTER TABLE message_logs ADD COLUMN {col} {typ}")
+                logger.info(f"✅ 修复: 为 message_logs 添加缺失列 {col}")
+        conn.commit()
+    finally:
+        conn.close()
 
 
