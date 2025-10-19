@@ -255,7 +255,19 @@ class CloudDrive2Stub:
                 'message': 'Session created (fallback)'
             }
         except Exception as e:
+            error_msg = str(e)
             logger.error(f"❌ CreateUploadSession 调用失败: {e}")
+            
+            # 如果是 UNIMPLEMENTED 错误，说明远程上传协议不可用
+            if 'UNIMPLEMENTED' in error_msg:
+                logger.warning("⚠️ 远程上传协议不可用，将使用 WriteToFile API")
+                # 返回一个特殊标记，让调用方知道需要使用其他方法
+                return {
+                    'success': False,
+                    'use_write_file_api': True,
+                    'message': 'Remote upload protocol not available, use WriteToFile API'
+                }
+            
             import traceback
             traceback.print_exc()
             return None

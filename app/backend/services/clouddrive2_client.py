@@ -177,6 +177,68 @@ class CloudDrive2Client:
             logger.warning("   提示：如使用 API Token，请将其配置在密码字段或 CLOUDDRIVE2_API_TOKEN 环境变量")
             self.auth_token = None
     
+    async def _map_user_path_to_actual_path(
+        self, 
+        user_mount_point: str, 
+        user_remote_path: str
+    ) -> tuple[str, str]:
+        """
+        将用户配置的路径映射到 CloudDrive2 实际的挂载点路径
+        
+        例如：
+        - 用户配置：/115open/测试
+        - 实际挂载：/CloudNAS/115
+        - 映射结果：/CloudNAS/115/测试
+        
+        Args:
+            user_mount_point: 用户配置的挂载点（如 /115open）
+            user_remote_path: 用户配置的完整路径（如 /115open/测试/file.mp4）
+        
+        Returns:
+            (actual_mount_point, actual_remote_path)
+        """
+        try:
+            # 获取实际的挂载点列表
+            mounts = await self.get_mount_points()
+            
+            if not mounts:
+                logger.warning("⚠️ 未找到挂载点，使用用户配置的路径")
+                return user_mount_point, user_remote_path
+            
+            # 提取用户路径中的相对部分
+            # 例如：/115open/测试/file.mp4 -> 测试/file.mp4
+            if user_remote_path.startswith(user_mount_point):
+                relative_path = user_remote_path[len(user_mount_point):].lstrip('/')
+            else:
+                # 如果路径不以挂载点开头，直接使用
+                relative_path = user_remote_path.lstrip('/')
+            
+            # 尝试匹配挂载点
+            # 优先匹配名称包含 "115" 的挂载点
+            best_mount = None
+            for mount in mounts:
+                mount_path = mount.get('mount_path') or mount.get('path', '')
+                if '115' in mount_path.lower():
+                    best_mount = mount_path
+                    break
+            
+            # 如果没找到，使用第一个挂载点
+            if not best_mount and mounts:
+                best_mount = mounts[0].get('mount_path') or mounts[0].get('path', '')
+            
+            if best_mount:
+                # 构建实际路径
+                actual_path = f"{best_mount}/{relative_path}".replace('//', '/')
+                logger.info(f"🔄 路径映射: {user_remote_path} -> {actual_path}")
+                return best_mount, actual_path
+            else:
+                logger.warning("⚠️ 未找到合适的挂载点，使用用户配置的路径")
+                return user_mount_point, user_remote_path
+                
+        except Exception as e:
+            logger.error(f"❌ 路径映射失败: {e}")
+            return user_mount_point, user_remote_path
+    
     async def disconnect(self):
         """断开连接"""
         if self.channel:
@@ -229,23 +291,31 @@ class CloudDrive2Client:
             file_name = os.path.basename(local_path)
             
             logger.info(f"📤 开始上传: {file_name} ({file_size} bytes)")
-            logger.info(f"   挂载点: {mount_point}")
-            logger.info(f"   目标路径: {remote_path}")
+            logger.info(f"   用户配置挂载点: {mount_point}")
+            logger.info(f"   用户配置目标路径: {remote_path}")
+            
+            # 路径映射：将用户配置的路径映射到实际挂载点
+            actual_mount_point, actual_remote_path = await self._map_user_path_to_actual_path(
+                mount_point, remote_path
+            )
+            
+            logger.info(f"   实际挂载点: {actual_mount_point}")
+            logger.info(f"   实际目标路径: {actual_remote_path}")
             
             # 尝试方案1: 本地挂载上传（如果挂载点存在）
             # 尝试方案2: 远程上传协议（通过 gRPC API）
             
             # 检查挂载点是否本地可访问
-            if os.path.exists(mount_point):
+            if os.path.exists(actual_mount_point):
                 logger.info("🔧 使用方案1: 本地挂载上传")
                 result = await self._upload_via_mount(
-                    local_path, remote_path, mount_point, 
+                    local_path, actual_remote_path, actual_mount_point, 
                     file_size, progress_callback
                 )
             else:
                 logger.info("🔧 使用方案2: 远程上传协议（gRPC API）")
                 result = await self._upload_via_remote_protocol(
-                    local_path, remote_path, mount_point,
+                    local_path, actual_remote_path, actual_mount_point,
                     file_size, progress_callback
                 )
             
@@ -401,6 +471,12 @@ class CloudDrive2Client:
             )
             
             if not session_id:
+                # 检查是否需要使用 WriteToFile API
+                if isinstance(session_id, dict) and session_id.get('use_write_file_api'):
+                    logger.info("🔄 切换到 WriteToFile API 上传")
+                    return await self._upload_via_write_file_api(
+                        local_path, actual_remote_path, file_size, progress_callback
+                    )
                 return {
                     'success': False,
                     'message': '创建上传会话失败'
@@ -432,6 +508,107 @@ class CloudDrive2Client:
             return {
                 'success': False,
                 'message': f'远程上传失败: {e}'
+            }
+    
+    async def _upload_via_write_file_api(
+        self,
+        local_path: str,
+        remote_path: str,
+        file_size: int,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> Dict[str, Any]:
+        """
+        使用 WriteToFile API 上传文件
+        
+        流程：
+        1. CreateFile - 创建文件并获取 fileHandle
+        2. WriteToFile - 分块写入文件数据
+        3. CloseFile - 关闭文件
+        """
+        try:
+            from protos import clouddrive_pb2
+            
+            file_name = os.path.basename(remote_path)
+            parent_path = os.path.dirname(remote_path)
+            
+            logger.info(f"📝 使用 WriteToFile API 上传")
+            logger.info(f"   父目录: {parent_path}")
+            logger.info(f"   文件名: {file_name}")
+            
+            # 步骤1: 创建文件
+            logger.info("📄 创建文件...")
+            create_request = clouddrive_pb2.CreateFileRequest(
+                parentPath=parent_path,
+                fileName=file_name
+            )
+            
+            create_response = await self.stub.official_stub.CreateFile(
+                create_request,
+                metadata=self.stub._get_metadata()
+            )
+            
+            file_handle = create_response.fileHandle
+            logger.info(f"✅ 文件已创建，handle: {file_handle}")
+            
+            # 步骤2: 分块写入文件
+            chunk_size = 4 * 1024 * 1024  # 4MB
+            uploaded_bytes = 0
+            
+            with open(local_path, 'rb') as f:
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    
+                    # 写入数据块
+                    write_request = clouddrive_pb2.WriteFileRequest(
+                        fileHandle=file_handle,
+                        startPos=uploaded_bytes,
+                        length=len(chunk),
+                        buffer=chunk,
+                        closeFile=False
+                    )
+                    
+                    write_response = await self.stub.official_stub.WriteToFile(
+                        write_request,
+                        metadata=self.stub._get_metadata()
+                    )
+                    
+                    uploaded_bytes += write_response.bytesWritten
+                    
+                    # 进度回调
+                    if progress_callback:
+                        await progress_callback(uploaded_bytes, file_size)
+                    
+                    logger.info(f"📤 已上传: {uploaded_bytes}/{file_size} ({uploaded_bytes*100//file_size}%)")
+            
+            # 步骤3: 关闭文件
+            logger.info("🔒 关闭文件...")
+            close_request = clouddrive_pb2.CloseFileRequest(
+                fileHandle=file_handle
+            )
+            await self.stub.official_stub.CloseFile(
+                close_request,
+                metadata=self.stub._get_metadata()
+            )
+            
+            logger.info(f"✅ 文件上传成功: {file_name}")
+            
+            return {
+                'success': True,
+                'file_path': remote_path,
+                'file_size': uploaded_bytes,
+                'message': 'Upload successful via WriteToFile API'
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ WriteToFile API 上传失败: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            return {
+                'success': False,
+                'message': f'Upload failed: {str(e)}'
             }
     
     async def _calculate_file_hash(self, file_path: str) -> str:
