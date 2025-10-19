@@ -205,6 +205,9 @@ class CloudDrive2Client:
 
             user_root = first_segment(user_remote_path)
             mount_root = first_segment(user_mount_point)
+            env_root = os.getenv('CLOUDDRIVE2_API_ROOT', '').strip()
+            if env_root and not env_root.startswith('/'):
+                env_root = '/' + env_root
 
             api_root = None
             # 如果用户路径根不是 CloudNAS，则直接以其为 API 根（如 /115open）
@@ -213,6 +216,9 @@ class CloudDrive2Client:
             # 否则用挂载点参数的根（常为 /115open）
             elif mount_root and mount_root.lower() != '/cloudnas':
                 api_root = mount_root
+            # 最后使用显式配置
+            elif env_root:
+                api_root = env_root
 
             # 计算相对路径（去掉根段）
             relative_path = user_remote_path.replace('\\', '/').lstrip('/')
@@ -227,19 +233,9 @@ class CloudDrive2Client:
                 logger.info(f"🔄 路径映射: {user_remote_path} -> {actual_path}")
                 return api_root, actual_path
 
-            # 回退：查询挂载点并推断
-            mounts = await self.get_mount_points()
-            if mounts:
-                best_mount = mounts[0].get('mount_path') or mounts[0].get('path', '')
-                # 将 /CloudNAS/xxx 规范化为 /xxx（尽力）
-                if best_mount.startswith('/CloudNAS/'):
-                    best_mount = '/' + best_mount.split('/')[-1]
-                actual_path = f"{best_mount}/{relative_path}".replace('//', '/')
-                logger.info(f"🔄 路径映射(回退): {user_remote_path} -> {actual_path}")
-                return best_mount, actual_path
-
-            logger.warning("⚠️ 未找到挂载点，使用用户配置的路径")
-            return user_mount_point, user_remote_path
+            # 彻底禁用对本地物理挂载(/CloudNAS/...)的依赖，仅按在线根工作
+            logger.info("ℹ️ 未检测到有效根，按用户原样使用在线路径")
+            return first_segment(user_remote_path) or '/','/' + user_remote_path.lstrip('/')
                 
         except Exception as e:
             logger.error(f"❌ 路径映射失败: {e}")
