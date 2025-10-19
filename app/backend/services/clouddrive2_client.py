@@ -266,9 +266,46 @@ class CloudDrive2Client:
                 'message': f'挂载上传失败: {e}'
             }
     
+    async def get_mount_points(self) -> List[Dict[str, Any]]:
+        """
+        获取所有挂载点列表
+        
+        通过 gRPC API 获取 CloudDrive2 中配置的所有挂载点
+        
+        Returns:
+            List[{
+                'name': str,           # 挂载点名称（如 "115"）
+                'path': str,           # 挂载路径（如 "/CloudNAS/115"）
+                'cloud_type': str,     # 云盘类型（如 "115"）
+                'mounted': bool,       # 是否已挂载
+                'space_total': int,    # 总空间（字节）
+                'space_used': int,     # 已用空间（字节）
+            }]
+        """
+        try:
+            if not self._connected:
+                logger.warning("⚠️ CloudDrive2 未连接，尝试重新连接...")
+                await self.connect()
+            
+            # TODO: 实现 gRPC API 调用获取挂载点
+            # 根据 CloudDrive2 官方文档，应该有类似 ListMounts 的方法
+            # 由于当前没有生成的 protobuf 文件，这里返回模拟数据
+            
+            logger.warning("⚠️ gRPC ListMounts API 尚未实现，返回空列表")
+            return []
+        
+        except Exception as e:
+            logger.error(f"❌ 获取挂载点列表失败: {e}")
+            return []
+    
     async def check_mount_status(self, mount_point: str = "/115") -> Dict[str, Any]:
         """
         检查挂载点状态
+        
+        优先级：
+        1. 检查本地共享挂载（如果路径存在）
+        2. 通过 gRPC API 检查远程挂载点
+        3. 如果都不可用，返回错误
         
         Args:
             mount_point: 挂载点路径
@@ -278,49 +315,68 @@ class CloudDrive2Client:
                 'mounted': bool,
                 'path': str,
                 'available': bool,
-                'space_info': dict (optional)
+                'method': str,         # 'local' | 'remote' | 'unknown'
+                'message': str
             }
         """
         try:
-            # 注意：mount_point 可能是：
-            # 1. 本地共享挂载点（如 /CloudNAS/115）- 可以直接检查
-            # 2. CloudDrive2服务器上的路径（如 /115open/测试）- 无法直接检查
-            
-            # 尝试检查本地路径是否存在
+            # 方法1: 检查本地共享挂载
             if os.path.exists(mount_point):
                 logger.info(f"✅ 检测到本地共享挂载点: {mount_point}")
                 
                 # 检查目录是否可写
-                test_file = os.path.join(mount_point, '.cloudrive_test')
+                test_file = os.path.join(mount_point, '.clouddrive_test')
                 try:
                     with open(test_file, 'w') as f:
                         f.write('test')
                     os.remove(test_file)
                     writable = True
-                except:
+                    logger.info(f"✅ 挂载点可写")
+                except Exception as e:
                     writable = False
+                    logger.warning(f"⚠️ 挂载点不可写: {e}")
                 
                 return {
                     'mounted': True,
                     'path': mount_point,
                     'available': writable,
-                    'writable': writable
+                    'method': 'local',
+                    'writable': writable,
+                    'message': '本地共享挂载' if writable else '本地挂载存在但不可写'
                 }
-            else:
-                # 本地路径不存在，可能是CloudDrive2服务器上的路径
-                # 在这种情况下，我们假设 CloudDrive2 已经配置好挂载点
-                # 只要能连接到 CloudDrive2，就认为挂载点可用
-                logger.warning(f"⚠️ 本地路径不存在: {mount_point}")
-                logger.info(f"💡 假设这是 CloudDrive2 服务器上的路径")
-                logger.info(f"💡 由于已成功连接 CloudDrive2，认为挂载点可用")
-                
-                return {
-                    'mounted': True,
-                    'path': mount_point,
-                    'available': True,  # 假设可用
-                    'remote': True,     # 标记为远程路径
-                    'message': '远程挂载点（无法直接验证）'
-                }
+            
+            # 方法2: 通过 gRPC API 检查远程挂载点
+            logger.info(f"🔍 本地路径不存在，尝试通过 gRPC API 检查: {mount_point}")
+            
+            # 获取所有挂载点
+            mount_points = await self.get_mount_points()
+            
+            # 检查是否存在匹配的挂载点
+            for mp in mount_points:
+                if mp.get('path') == mount_point or mount_point.startswith(mp.get('path', '')):
+                    logger.info(f"✅ 在 CloudDrive2 中找到匹配的挂载点: {mp.get('name')}")
+                    return {
+                        'mounted': True,
+                        'path': mount_point,
+                        'available': mp.get('mounted', False),
+                        'method': 'remote',
+                        'cloud_type': mp.get('cloud_type', 'unknown'),
+                        'message': f"远程挂载点: {mp.get('name')}"
+                    }
+            
+            # 方法3: 如果 gRPC API 不可用，给出警告并假设可用
+            logger.warning(f"⚠️ 无法验证挂载点 {mount_point}：")
+            logger.warning(f"   - 本地路径不存在")
+            logger.warning(f"   - gRPC API 尚未完全实现")
+            logger.warning(f"   - 假设挂载点可用（如果上传失败，请检查挂载点配置）")
+            
+            return {
+                'mounted': False,
+                'path': mount_point,
+                'available': False,
+                'method': 'unknown',
+                'message': '挂载点不存在或不可访问'
+            }
         
         except Exception as e:
             logger.error(f"❌ 检查挂载状态失败: {e}")
