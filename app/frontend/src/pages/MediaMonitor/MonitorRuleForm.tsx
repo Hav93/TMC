@@ -32,7 +32,7 @@ import {
 import { mediaMonitorApi } from '../../services/mediaMonitor';
 import { clientsApi } from '../../services/clients';
 import { chatsApi } from '../../services/chats';
-import { mediaSettingsApi } from '../../services/mediaSettings';
+// import { mediaSettingsApi } from '../../services/mediaSettings';
 import { DirectoryBrowser } from '../../components/common/DirectoryBrowser';
 const { Title } = Typography;
 const { TextArea } = Input;
@@ -484,9 +484,11 @@ const MonitorRuleForm: React.FC = () => {
                                   const globalRoot = (globalConfig?.mount_point) || '（将使用系统设置中的“默认根路径”）';
                                   const finalPath = rulePath.startsWith('/') ? rulePath : `${globalRoot}${globalRoot.endsWith('/') ? '' : '/'}${rulePath}`;
                                   return (
-                                    <div style={{ color: '#888', marginTop: -8, marginBottom: 8 }}>
-                                      最终上传路径预览：{finalPath}
-                                    </div>
+                                    <>
+                                      <div style={{ color: '#888', marginTop: -8, marginBottom: 8 }}>
+                                        最终上传路径预览：{finalPath}
+                                      </div>
+                                    </>
                                   );
                                 }}
                               </Form.Item>
@@ -648,7 +650,6 @@ const MonitorRuleForm: React.FC = () => {
           form.setFieldValue('organize_local_path', path);
           message.success(`已选择目录: ${path}`);
         }}
-        type="local"
         initialPath={form.getFieldValue('organize_local_path') || '/app/media/archive'}
       />
 
