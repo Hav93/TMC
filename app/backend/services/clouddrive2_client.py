@@ -178,8 +178,8 @@ class CloudDrive2Client:
             self.auth_token = None
     
     async def _map_user_path_to_actual_path(
-        self, 
-        user_mount_point: str, 
+        self,
+        user_mount_point: str,
         user_remote_path: str
     ) -> tuple[str, str]:
         """
@@ -198,49 +198,48 @@ class CloudDrive2Client:
             (actual_mount_point, actual_remote_path)
         """
         try:
-            # 获取实际的挂载点列表
-            mounts = await self.get_mount_points()
-            
-            if not mounts:
-                logger.warning("⚠️ 未找到挂载点，使用用户配置的路径")
-                return user_mount_point, user_remote_path
-            
-            # 提取用户路径中的相对部分
-            # 例如：/115open/测试/file.mp4 -> 测试/file.mp4
-            if user_remote_path.startswith(user_mount_point):
-                relative_path = user_remote_path[len(user_mount_point):].lstrip('/')
-            else:
-                # 如果路径不以挂载点开头，直接使用
-                relative_path = user_remote_path.lstrip('/')
-            
-            # 尝试匹配挂载点
-            # 优先匹配名称包含 "115" 的挂载点
-            best_mount = None
-            for mount in mounts:
-                mount_path = mount.get('mount_path') or mount.get('path', '')
-                if '115' in mount_path.lower():
-                    best_mount = mount_path
-                    break
-            
-            # 如果没找到，使用第一个挂载点
-            if not best_mount and mounts:
-                best_mount = mounts[0].get('mount_path') or mounts[0].get('path', '')
-            
-            if best_mount:
-                # CloudDrive2 gRPC 的路径根通常使用挂载名（如 "/115"），
-                # 一些环境会返回物理源目录（如 "/CloudNAS/115"）。
-                # 如果发现以 "/CloudNAS/" 开头，则将 API 根规范化为最后一级（如 "/115"）。
-                api_root = best_mount
-                if api_root.startswith('/CloudNAS/'):
-                    api_root = '/' + api_root.split('/')[-1]
+            # 优先使用用户显式选择的云根（UI 显示如 /115open）
+            def first_segment(p: str) -> str:
+                parts = p.replace('\\', '/').lstrip('/').split('/')
+                return f"/{parts[0]}" if parts and parts[0] else '/'
 
-                # 构建实际路径（用于 gRPC API）
-                actual_path = f"{api_root}/{relative_path}".replace('//', '/')
+            user_root = first_segment(user_remote_path)
+            mount_root = first_segment(user_mount_point)
+
+            api_root = None
+            # 如果用户路径根不是 CloudNAS，则直接以其为 API 根（如 /115open）
+            if user_root and user_root.lower() != '/cloudnas':
+                api_root = user_root
+            # 否则用挂载点参数的根（常为 /115open）
+            elif mount_root and mount_root.lower() != '/cloudnas':
+                api_root = mount_root
+
+            # 计算相对路径（去掉根段）
+            relative_path = user_remote_path.replace('\\', '/').lstrip('/')
+            if '/' in relative_path:
+                first = relative_path.split('/', 1)[0]
+                relative_path = relative_path[len(first):].lstrip('/')
+            else:
+                relative_path = ''
+
+            if api_root:
+                actual_path = f"{api_root}/{relative_path}".rstrip('/') if relative_path else api_root
                 logger.info(f"🔄 路径映射: {user_remote_path} -> {actual_path}")
                 return api_root, actual_path
-            else:
-                logger.warning("⚠️ 未找到合适的挂载点，使用用户配置的路径")
-                return user_mount_point, user_remote_path
+
+            # 回退：查询挂载点并推断
+            mounts = await self.get_mount_points()
+            if mounts:
+                best_mount = mounts[0].get('mount_path') or mounts[0].get('path', '')
+                # 将 /CloudNAS/xxx 规范化为 /xxx（尽力）
+                if best_mount.startswith('/CloudNAS/'):
+                    best_mount = '/' + best_mount.split('/')[-1]
+                actual_path = f"{best_mount}/{relative_path}".replace('//', '/')
+                logger.info(f"🔄 路径映射(回退): {user_remote_path} -> {actual_path}")
+                return best_mount, actual_path
+
+            logger.warning("⚠️ 未找到挂载点，使用用户配置的路径")
+            return user_mount_point, user_remote_path
                 
         except Exception as e:
             logger.error(f"❌ 路径映射失败: {e}")
