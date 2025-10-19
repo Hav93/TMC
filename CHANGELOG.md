@@ -7,6 +7,50 @@
 
 ---
 
+## [1.3.0-test] - 2025-10-19 🎉
+
+**CloudDrive2 集成 - Web 配置界面**
+
+### ✨ 新增
+- **CloudDrive2 配置界面** - 在设置页面新增 CloudDrive2 标签页
+  - Web 界面友好配置，无需手动编辑环境变量
+  - 支持主机地址、端口、认证信息配置
+  - 挂载点路径可视化设置
+  - 实时表单验证和错误提示
+- **连接测试功能** - 一键测试 CloudDrive2 连接
+  - 验证 gRPC 服务可用性
+  - 实时显示测试结果和错误信息
+  - 帮助用户快速排查配置问题
+- **配置管理 API** - 新增后端配置管理接口
+  - `GET /api/settings/clouddrive2/` 获取配置
+  - `PUT /api/settings/clouddrive2/` 更新配置
+  - `POST /api/settings/clouddrive2/test` 测试连接
+
+### 🔧 优化
+- **115网盘上传方案优化** - 完全移除不稳定的直接上传实现
+  - 删除 Python ECDH 加密实现（不稳定）
+  - 删除 Go 二进制外部调用方案（维护困难）
+  - 统一采用 CloudDrive2 方案（稳定可靠）
+- **环境变量管理** - 改进配置持久化
+  - 支持通过 Web 界面更新环境变量
+  - 密码字段安全处理（显示为 ***）
+  - 配置更新后提示重启生效
+
+### 📚 文档
+- 新增 `CLOUDDRIVE2_CONFIG_GUIDE.md` - 详细配置指南
+- 新增 `CLOUDDRIVE2_QUICK_START.md` - 3分钟快速开始
+- 新增 `CLOUDDRIVE2_SETTINGS_ADDED.md` - 功能说明文档
+- 更新 `env.example` - 添加配置示例和说明
+
+### 🗑️ 清理
+- 删除 18 个失败的上传实现相关文件
+  - `app/backend/utils/ecdh_cipher.py`
+  - `app/backend/utils/upload115.py`
+  - `app/backend/services/fake115uploader_wrapper.py`
+  - 相关文档和测试脚本
+
+---
+
 ## [1.1.2] - 2025-10-08 🚀
 
 **登录系统全面优化**
