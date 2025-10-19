@@ -213,12 +213,18 @@ async def browse_directories(
     """浏览 CloudDrive2 目录，仅返回文件夹列表"""
     try:
         from services.clouddrive2_client import CloudDrive2Client, CloudDrive2Config
+        # 若未传入，使用环境变量中的当前配置
+        host = data.host or os.getenv('CLOUDDRIVE2_HOST', 'localhost')
+        port = data.port or int(os.getenv('CLOUDDRIVE2_PORT', '19798'))
+        username = data.username or os.getenv('CLOUDDRIVE2_USERNAME', '')
+        pwd_env = os.getenv('CLOUDDRIVE2_PASSWORD', '')
+        password = (data.password if data.password and data.password != '***' else pwd_env)
 
         config = CloudDrive2Config(
-            host=data.host,
-            port=data.port,
-            username=data.username,
-            password=data.password if data.password != '***' else os.getenv('CLOUDDRIVE2_PASSWORD', '')
+            host=host,
+            port=port,
+            username=username,
+            password=password
         )
 
         client = CloudDrive2Client(config)

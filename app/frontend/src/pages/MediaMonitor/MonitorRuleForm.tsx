@@ -476,8 +476,13 @@ const MonitorRuleForm: React.FC = () => {
                               <Form.Item shouldUpdate>
                                 {({ getFieldValue }) => {
                                   const rulePath = getFieldValue('pan115_remote_path') || '';
-                                  const globalRoot = '（将使用系统设置中的“默认根路径”）';
-                                  const finalPath = rulePath.startsWith('/') ? rulePath : `${globalRoot} + /${rulePath}`;
+                                  // 实时从设置页的全局根读取（通过 clouddrive2SettingsApi.getConfig）
+                                  // 这里使用 useQuery 的缓存：
+                                  // 为简洁起见，回退到占位文本，当设置页还未加载时
+                                  // @ts-ignore
+                                  const globalConfig = (window as any).__cd2_global_config__;
+                                  const globalRoot = (globalConfig?.mount_point) || '（将使用系统设置中的“默认根路径”）';
+                                  const finalPath = rulePath.startsWith('/') ? rulePath : `${globalRoot}${globalRoot.endsWith('/') ? '' : '/'}${rulePath}`;
                                   return (
                                     <div style={{ color: '#888', marginTop: -8, marginBottom: 8 }}>
                                       最终上传路径预览：{finalPath}

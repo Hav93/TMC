@@ -87,6 +87,9 @@ const CloudDrive2Settings: React.FC = () => {
   useEffect(() => {
     if (config) {
       form.setFieldsValue(config);
+      // 将配置缓存到全局，供规则页预览使用
+      // @ts-ignore
+      (window as any).__cd2_global_config__ = config;
     }
   }, [config, form]);
 
