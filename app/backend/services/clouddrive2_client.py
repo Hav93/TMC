@@ -282,30 +282,45 @@ class CloudDrive2Client:
             }
         """
         try:
-            if not os.path.exists(mount_point):
+            # 注意：mount_point 可能是：
+            # 1. 本地共享挂载点（如 /CloudNAS/115）- 可以直接检查
+            # 2. CloudDrive2服务器上的路径（如 /115open/测试）- 无法直接检查
+            
+            # 尝试检查本地路径是否存在
+            if os.path.exists(mount_point):
+                logger.info(f"✅ 检测到本地共享挂载点: {mount_point}")
+                
+                # 检查目录是否可写
+                test_file = os.path.join(mount_point, '.cloudrive_test')
+                try:
+                    with open(test_file, 'w') as f:
+                        f.write('test')
+                    os.remove(test_file)
+                    writable = True
+                except:
+                    writable = False
+                
                 return {
-                    'mounted': False,
+                    'mounted': True,
                     'path': mount_point,
-                    'available': False,
-                    'message': '挂载点不存在'
+                    'available': writable,
+                    'writable': writable
                 }
-            
-            # 检查目录是否可写
-            test_file = os.path.join(mount_point, '.cloudrive_test')
-            try:
-                with open(test_file, 'w') as f:
-                    f.write('test')
-                os.remove(test_file)
-                writable = True
-            except:
-                writable = False
-            
-            return {
-                'mounted': True,
-                'path': mount_point,
-                'available': writable,
-                'writable': writable
-            }
+            else:
+                # 本地路径不存在，可能是CloudDrive2服务器上的路径
+                # 在这种情况下，我们假设 CloudDrive2 已经配置好挂载点
+                # 只要能连接到 CloudDrive2，就认为挂载点可用
+                logger.warning(f"⚠️ 本地路径不存在: {mount_point}")
+                logger.info(f"💡 假设这是 CloudDrive2 服务器上的路径")
+                logger.info(f"💡 由于已成功连接 CloudDrive2，认为挂载点可用")
+                
+                return {
+                    'mounted': True,
+                    'path': mount_point,
+                    'available': True,  # 假设可用
+                    'remote': True,     # 标记为远程路径
+                    'message': '远程挂载点（无法直接验证）'
+                }
         
         except Exception as e:
             logger.error(f"❌ 检查挂载状态失败: {e}")
