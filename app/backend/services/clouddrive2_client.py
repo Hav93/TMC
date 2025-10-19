@@ -463,24 +463,27 @@ class CloudDrive2Client:
             
             # 步骤2: 创建上传会话
             logger.info("📋 创建上传会话...")
-            session_id = await self._create_upload_session(
+            session_result = await self._create_upload_session(
                 file_name=file_name,
                 file_size=file_size,
                 file_hash=file_hash,
                 target_path=remote_path  # remote_path 已经是完整路径
             )
             
-            if not session_id:
-                # 检查是否需要使用 WriteToFile API
-                if isinstance(session_id, dict) and session_id.get('use_write_file_api'):
-                    logger.info("🔄 切换到 WriteToFile API 上传")
-                    return await self._upload_via_write_file_api(
-                        local_path, actual_remote_path, file_size, progress_callback
-                    )
+            # 检查是否需要使用 WriteToFile API
+            if isinstance(session_result, dict) and session_result.get('use_write_file_api'):
+                logger.info("🔄 切换到 WriteToFile API 上传")
+                return await self._upload_via_write_file_api(
+                    local_path, actual_remote_path, file_size, progress_callback
+                )
+            
+            if not session_result:
                 return {
                     'success': False,
                     'message': '创建上传会话失败'
                 }
+            
+            session_id = session_result.get('session_id') if isinstance(session_result, dict) else session_result
             
             logger.info(f"✅ 会话ID: {session_id}")
             
