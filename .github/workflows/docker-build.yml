@@ -3,13 +3,13 @@ name: Build and Push Docker Image
 on:
   push:
     branches:
-      - master
+      - main
       - test
     tags:
       - 'v*'
   pull_request:
     branches:
-      - master
+      - main
       - test
 
 env:
@@ -51,7 +51,7 @@ jobs:
           # 确定分支标签
           if [[ "${{ github.ref }}" == "refs/heads/test" ]]; then
             echo "branch_tag=test" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.ref }}" == "refs/heads/master" ]]; then
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "branch_tag=latest" >> $GITHUB_OUTPUT
           else
             echo "branch_tag=dev" >> $GITHUB_OUTPUT
@@ -63,7 +63,7 @@ jobs:
         with:
           images: ${{ env.DOCKER_IMAGE }}
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/master' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
             type=raw,value=test,enable=${{ github.ref == 'refs/heads/test' }}
             type=raw,value=${{ steps.version.outputs.version }},enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
