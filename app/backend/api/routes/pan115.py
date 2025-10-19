@@ -96,6 +96,19 @@ class SaveShareRequest(BaseModel):
     file_ids: Optional[List[str]] = None
 
 
+# ==================== 扫码登录（常规二维码）请求体 ====================
+
+class RegularQRCodeRequest(BaseModel):
+    """获取常规二维码的请求体"""
+    app: str = "qandroid"
+
+
+class RegularQRCodeStatusRequest(BaseModel):
+    """检查常规二维码状态请求体"""
+    qrcode_token: dict
+    app: str = "qandroid"
+
+
 # ==================== 配置管理 ====================
 
 @router.get("/config")
@@ -276,6 +289,37 @@ async def generate_qrcode(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/regular-qrcode")
+async def generate_regular_qrcode(
+    payload: RegularQRCodeRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    获取常规115二维码（不使用开放平台），用于APP扫码登录。
+    对应前端 /api/pan115/regular-qrcode。
+    """
+    try:
+        logger.info(f"📱 生成常规115二维码: app={payload.app}")
+        # 常规二维码不需要读取数据库配置
+        temp_client = Pan115Client(app_id="", app_key="", user_id="", user_key="")
+        result = await temp_client.get_regular_qrcode(app=payload.app)
+        if result.get('success'):
+            return {
+                "success": True,
+                "qrcode_url": result.get('qrcode_url'),
+                "qrcode_token": result.get('qrcode_token'),
+                "app": result.get('app', payload.app),
+                "device_type": result.get('app', payload.app)
+            }
+        raise HTTPException(status_code=400, detail=result.get('message', '获取二维码失败'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 生成常规二维码异常: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/qrcode/status")
 async def check_qrcode_status(
     data: dict = Body(...),
@@ -364,6 +408,62 @@ async def check_qrcode_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/regular-qrcode/status")
+async def check_regular_qrcode_status(
+    payload: RegularQRCodeStatusRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    检查常规二维码扫码状态，并在确认后保存 cookies 到数据库。
+    对应前端 /api/pan115/regular-qrcode/status。
+    """
+    try:
+        app = payload.app or "qandroid"
+        token = payload.qrcode_token or {}
+        temp_client = Pan115Client(app_id="", app_key="", user_id="", user_key="")
+        status_result = await temp_client.check_regular_qrcode_status(token, app=app)
+
+        if status_result.get('success') and status_result.get('status') == 'confirmed':
+            # 保存到数据库
+            result = await db.execute(select(MediaSettings))
+            settings = result.scalars().first()
+            if not settings:
+                settings = MediaSettings()
+                db.add(settings)
+
+            user_id = status_result.get('user_id')
+            cookies_str = status_result.get('cookies') or status_result.get('user_key')
+            user_info = status_result.get('user_info', {})
+
+            if user_id and cookies_str:
+                setattr(settings, 'pan115_user_id', user_id)
+                setattr(settings, 'pan115_user_key', cookies_str)
+                # 缓存用户信息
+                if user_info:
+                    import json
+                    setattr(settings, 'pan115_user_info', json.dumps(user_info, ensure_ascii=False))
+                await db.commit()
+
+            return {
+                "success": True,
+                "status": "confirmed",
+                "message": "扫码登录成功",
+                "user_info": user_info
+            }
+
+        return {
+            "success": status_result.get('success', False),
+            "status": status_result.get('status', 'pending'),
+            "message": status_result.get('message', '等待扫码...')
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 检查常规二维码状态异常: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ==================== 测试连接 ====================
 
 @router.post("/test")
@@ -413,6 +513,82 @@ async def test_pan115_connection(
         logger.error(f"测试115连接异常: {e}")
         import traceback
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/test-cookies")
+async def test_cookies(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """测试已保存 cookies 是否有效（前端“检测可用性”按钮）。"""
+    try:
+        settings = await get_pan115_settings_for_webapi(db)
+        client = create_pan115_client_for_webapi(settings)
+        result = await client.get_user_info()
+        if result.get('success'):
+            return {"success": True, "message": "Cookies 可用", "user_info": result.get('user_info')}
+        raise HTTPException(status_code=400, detail=result.get('message', 'Cookies 无效'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 测试cookies异常: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/refresh-user-info")
+async def refresh_user_info(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """刷新用户信息（与前端路径保持一致）。"""
+    try:
+        settings = await get_pan115_settings_for_webapi(db)
+        client = create_pan115_client_for_webapi(settings)
+        user_info_result = await client.get_user_info()
+        if user_info_result.get('success'):
+            # 更新缓存
+            try:
+                import json
+                settings.pan115_user_info = json.dumps(user_info_result['user_info'], ensure_ascii=False)
+                await db.commit()
+            except Exception as cache_error:
+                logger.warning(f"⚠️ 更新用户信息缓存失败: {cache_error}")
+            return {"success": True, "message": "用户信息已刷新", "user_info": user_info_result['user_info']}
+        raise HTTPException(status_code=400, detail=user_info_result.get('message', '刷新失败'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 刷新用户信息异常: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/activate-open-api")
+async def activate_open_api(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    激活开放平台API（最小实现）：
+    目前基于已登录 cookies 调用用户信息接口确认可用性，并返回空间信息是否可用。
+    """
+    try:
+        settings = await get_pan115_settings_for_webapi(db)
+        client = create_pan115_client_for_webapi(settings)
+        user_info_result = await client.get_user_info()
+        if user_info_result.get('success'):
+            has_space_info = bool(user_info_result.get('user_info', {}).get('space', {}).get('total', 0))
+            return {
+                "success": True,
+                "message": "开放平台API已激活或可用",
+                "has_space_info": has_space_info,
+                "user_info": user_info_result.get('user_info')
+            }
+        raise HTTPException(status_code=400, detail=user_info_result.get('message', '激活失败'))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ 激活开放平台API异常: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
