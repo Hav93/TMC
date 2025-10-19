@@ -474,7 +474,7 @@ class CloudDrive2Client:
             if isinstance(session_result, dict) and session_result.get('use_write_file_api'):
                 logger.info("🔄 切换到 WriteToFile API 上传")
                 return await self._upload_via_write_file_api(
-                    local_path, actual_remote_path, file_size, progress_callback
+                    local_path, remote_path, file_size, progress_callback
                 )
             
             if not session_result:
