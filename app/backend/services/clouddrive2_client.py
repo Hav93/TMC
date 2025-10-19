@@ -1346,28 +1346,35 @@ class CloudDrive2Client:
             }]
         """
         try:
-            # TODO: 实现 gRPC API 调用
-            # request = ListFilesRequest(path=path)
-            # response = await self.stub.ListFiles(request)
-            
-            logger.warning(f"⚠️ ListFiles API 尚未实现: {path}")
-            
-            # 临时方案：如果是本地挂载，直接读取
-            if os.path.exists(path):
-                files = []
-                for item in os.listdir(path):
-                    item_path = os.path.join(path, item)
-                    stat = os.stat(item_path)
-                    files.append({
-                        'name': item,
-                        'path': item_path,
-                        'type': 'folder' if os.path.isdir(item_path) else 'file',
-                        'size': stat.st_size,
-                        'modified_time': stat.st_mtime
-                    })
-                return files
-            
-            return []
+            from protos import clouddrive_pb2
+
+            if not self._connected:
+                await self.connect()
+            if not self.stub or not getattr(self.stub, 'official_stub', None):
+                logger.error("❌ gRPC stub 未初始化")
+                return []
+
+            # 统一路径为在线根形式
+            mount_root, api_path = await self._map_user_path_to_actual_path(path, path)
+            del mount_root  # 未用，但保持同一映射逻辑
+
+            # 使用流式 RPC 获取子文件
+            req = clouddrive_pb2.ListSubFileRequest(path=api_path, forceRefresh=False)
+            results: List[Dict[str, Any]] = []
+            async for reply in self.stub.official_stub.GetSubFiles(
+                req, metadata=self.stub._get_metadata()
+            ):
+                for sf in reply.subFiles:
+                    # CloudDriveFile 字段参考 proto：name, fullPathName, size, isFolder等
+                    entry = {
+                        'name': getattr(sf, 'name', ''),
+                        'path': getattr(sf, 'fullPathName', ''),
+                        'type': 'folder' if getattr(sf, 'isFolder', False) else 'file',
+                        'size': getattr(sf, 'size', 0),
+                        'modified_time': getattr(sf, 'modifiedTime', '')
+                    }
+                    results.append(entry)
+            return results
         
         except Exception as e:
             logger.error(f"❌ 列出文件失败: {e}")
