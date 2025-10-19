@@ -9,6 +9,8 @@ import {
   message,
   Alert,
   Typography,
+  Modal,
+  Tree,
 } from 'antd';
 import { SaveOutlined, ExperimentOutlined } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -30,7 +32,10 @@ const CloudDrive2Settings: React.FC = () => {
   });
 
   const [dirLoading, setDirLoading] = useState(false);
-  const [dirOptions, setDirOptions] = useState<{ name: string; path: string }[]>([]);
+  // 目录选择弹窗
+  const [browseOpen, setBrowseOpen] = useState(false);
+  const [treeData, setTreeData] = useState<any[]>([]);
+  const [selectedPath, setSelectedPath] = useState<string>('');
 
   // 更新配置
   const updateMutation = useMutation({
@@ -127,13 +132,53 @@ const CloudDrive2Settings: React.FC = () => {
         password: values.password,
         path: browsePath,
       });
-      setDirOptions(res?.items || []);
-      if (!res?.success) message.warning('目录浏览失败');
+      if (!res?.success) {
+        message.warning('目录浏览失败');
+      }
+      // 初始化树：将当前路径的下一级目录作为 children，当前路径作为根
+      const items = (res?.items || []).map((d: any) => ({
+        title: d.name || d.path.split('/').pop() || d.path,
+        key: d.path,
+        isLeaf: false,
+      }));
+      const rootKey = browsePath || '/';
+      const rootNode = {
+        title: rootKey,
+        key: rootKey,
+        children: items,
+      };
+      setTreeData([rootNode]);
+      setSelectedPath(rootKey);
+      setBrowseOpen(true);
     } catch (e) {
       message.error('目录浏览失败');
     } finally {
       setDirLoading(false);
     }
+  };
+
+  const loadChildren = async (node: any) => {
+    const values = form.getFieldsValue();
+    const res = await clouddrive2SettingsApi.browse({
+      host: values.host,
+      port: values.port,
+      username: values.username,
+      password: values.password,
+      path: node.key,
+    });
+    const children = (res?.items || []).map((d: any) => ({
+      title: d.name || d.path.split('/').pop() || d.path,
+      key: d.path,
+      isLeaf: false,
+    }));
+    // 更新树节点
+    setTreeData((prev) =>
+      prev.map((n) =>
+        n.key === node.key
+          ? { ...n, children }
+          : n
+      )
+    );
   };
 
   if (isLoading) {
@@ -220,27 +265,28 @@ const CloudDrive2Settings: React.FC = () => {
           label="挂载点路径"
           name="mount_point"
           rules={[{ required: true, message: '请选择或输入挂载点路径' }]}
-          tooltip="从 CloudDrive2 返回的目录中选择，或手动输入"
+          tooltip="默认根路径（在线路径，如 /115open 或 /）。点击浏览选择。"
         >
           <Input placeholder="例如: /115open" addonAfter={<Button loading={dirLoading} onClick={handleBrowse}>浏览</Button>} />
         </Form.Item>
 
-        {/* 单独的浏览按钮，确保在某些主题/布局下也可见 */}
-        <Form.Item>
-          <Button onClick={handleBrowse} loading={dirLoading}>浏览目录</Button>
-        </Form.Item>
-
-        {dirOptions?.length > 0 && (
-          <Form.Item label="可选目录">
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {dirOptions.map((d) => (
-                <Button key={d.path} size="small" onClick={() => form.setFieldsValue({ mount_point: d.path })}>
-                  {d.path}
-                </Button>
-              ))}
-            </div>
-          </Form.Item>
-        )}
+        <Modal
+          title="选择目录"
+          open={browseOpen}
+          onOk={() => { form.setFieldsValue({ mount_point: selectedPath }); setBrowseOpen(false); }}
+          onCancel={() => setBrowseOpen(false)}
+          okText="使用此路径"
+          cancelText="取消"
+          destroyOnClose
+        >
+          <Tree
+            treeData={treeData}
+            loadData={async (node) => loadChildren(node)}
+            onSelect={(keys) => { if (keys && keys[0]) setSelectedPath(String(keys[0])); }}
+            defaultExpandAll
+          />
+          <div style={{ marginTop: 8, color: '#888' }}>当前选择: {selectedPath}</div>
+        </Modal>
 
         <Space>
           <Button
