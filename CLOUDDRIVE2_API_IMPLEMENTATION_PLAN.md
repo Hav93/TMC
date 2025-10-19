@@ -67,45 +67,97 @@
 
 ### 第一阶段：核心上传功能 ✅
 1. ✅ 基础连接（Connect/Disconnect）
-2. 🚧 远程上传协议框架
-3. ⏳ 挂载点列表查询
+2. ✅ 远程上传协议框架
+3. ✅ 挂载点列表查询
+4. ✅ 智能上传策略
 
-### 第二阶段：完善远程上传 ⭐
-1. 实现真实的 gRPC 调用（需要 .proto 文件）
-2. 完整的上传会话管理
-3. 分块上传和进度跟踪
-4. 哈希验证和秒传支持
+### 第二阶段：文件管理功能 ✅
+1. ✅ 创建目录 (create_folder)
+2. ✅ 列出文件 (list_files)
+3. ✅ 文件信息查询 (get_file_info)
+4. ✅ 文件移动 (move_file)
+5. ✅ 文件复制 (copy_file)
+6. ✅ 文件重命名 (rename_file)
+7. ✅ 文件删除 (delete_file)
+8. ✅ 批量删除 (batch_delete)
+9. ✅ 批量移动 (batch_move)
 
-### 第三阶段：文件管理功能
-1. 创建目录
-2. 文件信息查询
-3. 文件移动/重命名
+### 第三阶段：高级功能 ✅
+1. ✅ 传输任务管理 (get_transfer_tasks, get_task_progress)
+2. ✅ WebDAV 管理 (get_webdav_config, enable_webdav)
+3. ✅ 云盘 API 管理 (list_cloud_apis, get_cloud_api_config)
+4. ✅ 离线下载 (create_offline_download, get_offline_download_status)
+5. ✅ 文件下载 (download_file, get_file_url)
+6. ✅ 空间统计 (get_space_info)
+7. ✅ 服务器信息 (get_server_info)
 
-### 第四阶段：高级功能
-1. 传输任务管理
-2. WebDAV 支持
-3. 备份功能
+### 第四阶段：实现真实 gRPC 调用 ⏳
+1. 获取 .proto 文件
+2. 生成 Python gRPC 代码
+3. 替换所有 TODO 为真实实现
+4. 完整测试
 
 ---
 
 ## 📝 当前实现状态
 
-### ✅ 已实现
+### ✅ 已实现（共 30+ 个方法）
 ```python
 class CloudDrive2Client:
-    # 基础连接
+    # ========== 基础连接 ==========
     async def connect() -> bool
     async def disconnect()
     async def _authenticate()
     
-    # 上传功能（双模式）
+    # ========== 智能上传（双模式）==========
     async def upload_file() -> Dict
-        ├─ _upload_via_mount()      # 方案1：本地挂载
-        └─ _upload_via_remote_protocol()  # 方案2：远程协议
+        ├─ _upload_via_mount()              # 方案1：本地挂载（高速）
+        └─ _upload_via_remote_protocol()    # 方案2：远程协议（gRPC）
+            ├─ _calculate_file_hash()
+            ├─ _create_upload_session()
+            ├─ _upload_chunk()
+            └─ _complete_upload_session()
     
-    # 挂载点管理
+    # ========== 挂载点管理 ==========
+    async def get_mount_points() -> List
     async def check_mount_status() -> Dict
-    async def get_mount_points() -> List  # 待完善
+    
+    # ========== 文件操作 ==========
+    async def create_folder(path) -> Dict
+    async def list_files(path) -> List
+    async def get_file_info(path) -> Dict
+    async def delete_file(path) -> Dict
+    async def move_file(source, dest) -> Dict
+    async def copy_file(source, dest) -> Dict
+    async def rename_file(path, new_name) -> Dict
+    async def get_file_url(path, expires) -> str
+    async def download_file(remote_path, local_path) -> Dict
+    
+    # ========== 批量操作 ==========
+    async def batch_delete(paths) -> Dict
+    async def batch_move(file_pairs) -> Dict
+    
+    # ========== 传输任务管理 ==========
+    async def get_transfer_tasks() -> List
+    async def get_task_progress(task_id) -> Dict
+    
+    # ========== 云盘 API 管理 ==========
+    async def list_cloud_apis() -> List
+    async def get_cloud_api_config(cloud_type) -> Dict
+    
+    # ========== 离线下载 ==========
+    async def create_offline_download(url, target_path) -> str
+    async def get_offline_download_status(task_id) -> Dict
+    
+    # ========== WebDAV 管理 ==========
+    async def get_webdav_config() -> Dict
+    async def enable_webdav(port, username, password) -> Dict
+    
+    # ========== 空间统计 ==========
+    async def get_space_info(mount_point) -> Dict
+    
+    # ========== 服务器信息 ==========
+    async def get_server_info() -> Dict
 ```
 
 ### 🚧 框架已搭建，待实现 gRPC 调用

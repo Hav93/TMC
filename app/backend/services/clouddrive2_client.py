@@ -854,6 +854,393 @@ class CloudDrive2Client:
         except Exception as e:
             logger.error(f"❌ 获取服务器信息失败: {e}")
             return None
+    
+    # ==================== 云盘 API 管理 ====================
+    
+    async def list_cloud_apis(self) -> List[Dict[str, Any]]:
+        """
+        获取支持的云盘 API 列表
+        
+        Returns:
+            List[{
+                'name': str,        # 云盘名称（如 "115", "阿里云盘"）
+                'type': str,        # 云盘类型
+                'enabled': bool,    # 是否启用
+                'account': str,     # 账号信息
+            }]
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            # request = ListCloudAPIsRequest()
+            # response = await self.stub.ListCloudAPIs(request)
+            
+            logger.warning("⚠️ ListCloudAPIs API 尚未实现")
+            return []
+        
+        except Exception as e:
+            logger.error(f"❌ 获取云盘 API 列表失败: {e}")
+            return []
+    
+    async def get_cloud_api_config(self, cloud_type: str) -> Optional[Dict[str, Any]]:
+        """
+        获取指定云盘的配置
+        
+        Args:
+            cloud_type: 云盘类型（如 "115"）
+        
+        Returns:
+            {
+                'type': str,
+                'enabled': bool,
+                'config': dict  # 云盘特定配置
+            }
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning(f"⚠️ GetCloudAPIConfig API 尚未实现: {cloud_type}")
+            return None
+        
+        except Exception as e:
+            logger.error(f"❌ 获取云盘配置失败: {e}")
+            return None
+    
+    # ==================== 离线下载（如果支持）====================
+    
+    async def create_offline_download(
+        self,
+        url: str,
+        target_path: str,
+        cloud_type: str = "115"
+    ) -> Optional[str]:
+        """
+        创建离线下载任务
+        
+        Args:
+            url: 下载链接（磁力链、HTTP等）
+            target_path: 保存路径
+            cloud_type: 云盘类型
+        
+        Returns:
+            task_id: 任务ID
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            # request = CreateOfflineDownloadRequest(
+            #     url=url,
+            #     target_path=target_path,
+            #     cloud_type=cloud_type
+            # )
+            # response = await self.stub.CreateOfflineDownload(request)
+            
+            logger.warning(f"⚠️ CreateOfflineDownload API 尚未实现: {url}")
+            return None
+        
+        except Exception as e:
+            logger.error(f"❌ 创建离线下载失败: {e}")
+            return None
+    
+    async def get_offline_download_status(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取离线下载任务状态
+        
+        Args:
+            task_id: 任务ID
+        
+        Returns:
+            {
+                'status': str,      # 'pending' | 'downloading' | 'completed' | 'failed'
+                'progress': float,  # 0-100
+                'speed': int,       # bytes/s
+                'file_name': str
+            }
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning(f"⚠️ GetOfflineDownloadStatus API 尚未实现: {task_id}")
+            return None
+        
+        except Exception as e:
+            logger.error(f"❌ 获取离线下载状态失败: {e}")
+            return None
+    
+    # ==================== WebDAV 管理 ====================
+    
+    async def get_webdav_config(self) -> Optional[Dict[str, Any]]:
+        """
+        获取 WebDAV 配置
+        
+        Returns:
+            {
+                'enabled': bool,
+                'port': int,
+                'username': str,
+                'read_only': bool
+            }
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning("⚠️ GetWebDAVConfig API 尚未实现")
+            return None
+        
+        except Exception as e:
+            logger.error(f"❌ 获取 WebDAV 配置失败: {e}")
+            return None
+    
+    async def enable_webdav(
+        self,
+        port: int = 8080,
+        username: str = "admin",
+        password: str = "",
+        read_only: bool = False
+    ) -> Dict[str, Any]:
+        """
+        启用 WebDAV 服务
+        
+        Args:
+            port: WebDAV 端口
+            username: 用户名
+            password: 密码
+            read_only: 是否只读
+        
+        Returns:
+            {'success': bool, 'message': str}
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning("⚠️ EnableWebDAV API 尚未实现")
+            return {'success': False, 'message': 'gRPC API 尚未实现'}
+        
+        except Exception as e:
+            logger.error(f"❌ 启用 WebDAV 失败: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    # ==================== 高级文件操作 ====================
+    
+    async def move_file(self, source_path: str, dest_path: str) -> Dict[str, Any]:
+        """
+        移动文件或文件夹
+        
+        Args:
+            source_path: 源路径
+            dest_path: 目标路径
+        
+        Returns:
+            {'success': bool, 'message': str}
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning(f"⚠️ MoveFile API 尚未实现: {source_path} -> {dest_path}")
+            return {'success': False, 'message': 'gRPC API 尚未实现'}
+        
+        except Exception as e:
+            logger.error(f"❌ 移动文件失败: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    async def copy_file(self, source_path: str, dest_path: str) -> Dict[str, Any]:
+        """
+        复制文件或文件夹
+        
+        Args:
+            source_path: 源路径
+            dest_path: 目标路径
+        
+        Returns:
+            {'success': bool, 'message': str}
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning(f"⚠️ CopyFile API 尚未实现: {source_path} -> {dest_path}")
+            return {'success': False, 'message': 'gRPC API 尚未实现'}
+        
+        except Exception as e:
+            logger.error(f"❌ 复制文件失败: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    async def rename_file(self, path: str, new_name: str) -> Dict[str, Any]:
+        """
+        重命名文件或文件夹
+        
+        Args:
+            path: 文件路径
+            new_name: 新名称
+        
+        Returns:
+            {'success': bool, 'message': str}
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning(f"⚠️ RenameFile API 尚未实现: {path} -> {new_name}")
+            return {'success': False, 'message': 'gRPC API 尚未实现'}
+        
+        except Exception as e:
+            logger.error(f"❌ 重命名文件失败: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    async def get_file_url(self, path: str, expires: int = 3600) -> Optional[str]:
+        """
+        获取文件的临时访问 URL
+        
+        Args:
+            path: 文件路径
+            expires: 过期时间（秒）
+        
+        Returns:
+            文件访问 URL
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            # request = GetFileURLRequest(path=path, expires=expires)
+            # response = await self.stub.GetFileURL(request)
+            # return response.url
+            
+            logger.warning(f"⚠️ GetFileURL API 尚未实现: {path}")
+            return None
+        
+        except Exception as e:
+            logger.error(f"❌ 获取文件URL失败: {e}")
+            return None
+    
+    async def download_file(
+        self,
+        remote_path: str,
+        local_path: str,
+        progress_callback: Optional[Callable[[int, int], None]] = None
+    ) -> Dict[str, Any]:
+        """
+        从 CloudDrive2 下载文件
+        
+        Args:
+            remote_path: 远程文件路径
+            local_path: 本地保存路径
+            progress_callback: 进度回调
+        
+        Returns:
+            {'success': bool, 'message': str}
+        """
+        try:
+            logger.info(f"📥 下载文件: {remote_path}")
+            
+            # TODO: 实现 gRPC API 调用或使用 WebDAV
+            # 方案1: 使用 gRPC 流式下载
+            # 方案2: 获取临时 URL 后使用 httpx 下载
+            
+            logger.warning("⚠️ DownloadFile API 尚未实现")
+            return {'success': False, 'message': 'gRPC API 尚未实现'}
+        
+        except Exception as e:
+            logger.error(f"❌ 下载文件失败: {e}")
+            return {'success': False, 'message': str(e)}
+    
+    # ==================== 空间统计 ====================
+    
+    async def get_space_info(self, mount_point: str = None) -> Optional[Dict[str, Any]]:
+        """
+        获取空间使用信息
+        
+        Args:
+            mount_point: 挂载点路径（None 表示所有）
+        
+        Returns:
+            {
+                'total': int,       # 总空间（字节）
+                'used': int,        # 已用空间（字节）
+                'free': int,        # 可用空间（字节）
+                'percent': float    # 使用百分比
+            }
+        """
+        try:
+            # TODO: 实现 gRPC API 调用
+            logger.warning(f"⚠️ GetSpaceInfo API 尚未实现: {mount_point}")
+            
+            # 临时方案：如果是本地挂载，使用 os.statvfs
+            if mount_point and os.path.exists(mount_point):
+                import shutil
+                total, used, free = shutil.disk_usage(mount_point)
+                return {
+                    'total': total,
+                    'used': used,
+                    'free': free,
+                    'percent': (used / total * 100) if total > 0 else 0
+                }
+            
+            return None
+        
+        except Exception as e:
+            logger.error(f"❌ 获取空间信息失败: {e}")
+            return None
+    
+    # ==================== 批量操作 ====================
+    
+    async def batch_delete(self, paths: List[str]) -> Dict[str, Any]:
+        """
+        批量删除文件
+        
+        Args:
+            paths: 文件路径列表
+        
+        Returns:
+            {
+                'success': bool,
+                'deleted': int,
+                'failed': int,
+                'errors': List[str]
+            }
+        """
+        try:
+            # TODO: 实现 gRPC API 调用或循环调用单个删除
+            logger.warning(f"⚠️ BatchDelete API 尚未实现: {len(paths)} files")
+            return {
+                'success': False,
+                'deleted': 0,
+                'failed': len(paths),
+                'errors': ['gRPC API 尚未实现']
+            }
+        
+        except Exception as e:
+            logger.error(f"❌ 批量删除失败: {e}")
+            return {
+                'success': False,
+                'deleted': 0,
+                'failed': len(paths),
+                'errors': [str(e)]
+            }
+    
+    async def batch_move(
+        self,
+        file_pairs: List[tuple]  # [(source, dest), ...]
+    ) -> Dict[str, Any]:
+        """
+        批量移动文件
+        
+        Args:
+            file_pairs: 文件对列表 [(源路径, 目标路径), ...]
+        
+        Returns:
+            {
+                'success': bool,
+                'moved': int,
+                'failed': int,
+                'errors': List[str]
+            }
+        """
+        try:
+            # TODO: 实现批量操作
+            logger.warning(f"⚠️ BatchMove API 尚未实现: {len(file_pairs)} files")
+            return {
+                'success': False,
+                'moved': 0,
+                'failed': len(file_pairs),
+                'errors': ['gRPC API 尚未实现']
+            }
+        
+        except Exception as e:
+            logger.error(f"❌ 批量移动失败: {e}")
+            return {
+                'success': False,
+                'moved': 0,
+                'failed': len(file_pairs),
+                'errors': [str(e)]
+            }
 
 
 def create_clouddrive2_client(
