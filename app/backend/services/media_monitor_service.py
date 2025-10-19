@@ -1123,10 +1123,13 @@ class MediaMonitorService:
                             # 使用 Pan115Client 上传（使用Web API）
                             from services.pan115_client import Pan115Client
                             
+                            # 获取115网盘用户ID（从配置中读取）
+                            pan115_user_id = self._get_config_value('pan115_user_id', '')
+                            
                             client = Pan115Client(
                                 app_id="",  # 使用Web API
                                 app_key="",
-                                user_id=getattr(media_settings, 'pan115_user_id', '') or "",
+                                user_id=pan115_user_id,
                                 user_key=pan115_user_key
                             )
                             
