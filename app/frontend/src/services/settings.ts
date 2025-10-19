@@ -32,6 +32,9 @@ export interface ProxyTestRequest {
 export interface ProxyTestResponse {
   success: boolean;
   message: string;
+  latency_ms?: number;
+  tcp_latency_ms?: number;
+  tg_latency_ms?: number;
   details?: {
     latency?: number;
     external_ip?: string;

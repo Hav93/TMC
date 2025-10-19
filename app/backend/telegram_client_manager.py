@@ -20,6 +20,9 @@ from models import ForwardRule, MessageLog, get_local_now
 from filters import KeywordFilter, RegexReplacer
 from proxy_utils import get_proxy_manager
 from log_manager import get_logger
+from services.message_context import MessageContext
+from services.message_dispatcher import get_message_dispatcher
+from services.resource_monitor_service import ResourceMonitorProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -311,10 +314,19 @@ class TelegramClientManager:
         
         if self.loop and self.client:
             # 在客户端的事件循环中执行断开连接
-            asyncio.run_coroutine_threadsafe(
-                self.client.disconnect(), 
-                self.loop
-            )
+            try:
+                # 创建一个异步函数来断开连接
+                async def disconnect_client():
+                    if self.client.is_connected():
+                        await self.client.disconnect()
+                
+                future = asyncio.run_coroutine_threadsafe(
+                    disconnect_client(), 
+                    self.loop
+                )
+                future.result(timeout=5)  # 等待最多5秒
+            except Exception as e:
+                self.logger.warning(f"停止客户端时出错: {e}")
         
         if self.thread:
             self.thread.join(timeout=10)
@@ -377,15 +389,94 @@ class TelegramClientManager:
             except Exception as start_error:
                 error_msg = str(start_error)
                 if "database is locked" in error_msg:
-                    self.logger.error(f"❌ Session 文件被锁定，可能是以下原因:")
-                    self.logger.error("   1. 另一个进程正在使用此 session")
-                    self.logger.error("   2. Session 文件损坏或未正确关闭")
-                    self.logger.error("   3. 文件系统延迟（Docker 卷挂载）")
-                    self.logger.error("💡 建议解决方案:")
-                    self.logger.error("   1. 确保没有其他进程使用此客户端")
-                    self.logger.error("   2. 重启 Docker 容器")
-                    self.logger.error("   3. 如果问题持续，删除并重新登录此客户端")
-                    raise Exception(f"Session 文件被锁定，请重启容器或重新登录: {error_msg}")
+                    self.logger.warning(f"⚠️ Session 文件被锁定，尝试自动修复...")
+                    
+                    # 尝试自动修复：清理锁定的 session 文件
+                    try:
+                        import sqlite3
+                        import time
+                        import gc
+                        session_path = Path(Config.SESSIONS_DIR) / f"{self.client_type}_{self.client_id}.session"
+                        
+                        if session_path.exists():
+                            self.logger.info("   ├─ 📂 Session文件存在，开始清理锁定...")
+                            
+                            # 第1步：断开当前连接（如果有）
+                            if hasattr(self, 'client') and self.client:
+                                try:
+                                    await self.client.disconnect()
+                                    self.client = None
+                                    self.logger.info("   ├─ 🔌 已断开旧连接")
+                                except Exception as e:
+                                    self.logger.debug(f"   ├─ 断开连接异常: {e}")
+                            
+                            # 等待连接完全释放
+                            await asyncio.sleep(0.5)
+                            gc.collect()  # 强制垃圾回收
+                            
+                            # 第2步：强制删除 WAL 和 SHM 文件
+                            wal_file = session_path.with_suffix('.session-wal')
+                            shm_file = session_path.with_suffix('.session-shm')
+                            
+                            for file, name in [(wal_file, 'WAL'), (shm_file, 'SHM')]:
+                                if file.exists():
+                                    try:
+                                        file.unlink()
+                                        self.logger.info(f"   ├─ 🗑️ 删除 {name} 文件")
+                                    except Exception as e:
+                                        self.logger.warning(f"   ├─ ⚠️ 删除{name}失败: {e}")
+                            
+                            # 第3步：尝试打开数据库并清除WAL模式
+                            try:
+                                conn = sqlite3.connect(str(session_path), timeout=10.0, check_same_thread=False)
+                                conn.execute("PRAGMA journal_mode=DELETE")
+                                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+                                conn.commit()
+                                conn.close()
+                                self.logger.info("   ├─ ✅ Session 文件锁定已清除")
+                            except Exception as db_error:
+                                self.logger.warning(f"   ├─ ⚠️ 无法清除数据库锁: {db_error}")
+                                # 如果还是锁定，尝试最后一招：复制session文件
+                                try:
+                                    import shutil
+                                    backup_path = session_path.with_suffix('.session.backup')
+                                    temp_path = session_path.with_suffix('.session.tmp')
+                                    
+                                    # 复制到临时文件
+                                    shutil.copy2(session_path, temp_path)
+                                    # 删除原文件
+                                    session_path.unlink()
+                                    # 重命名回来
+                                    temp_path.rename(session_path)
+                                    self.logger.info("   ├─ ✅ 使用复制方式清除锁定")
+                                except Exception as copy_error:
+                                    self.logger.error(f"   ├─ ❌ 复制方式也失败: {copy_error}")
+                            
+                            # 等待文件系统同步
+                            await asyncio.sleep(1.0)
+                            
+                            # 第4步：重新创建客户端
+                            self.logger.info("   ├─ 🔄 重新创建客户端...")
+                            await self._create_client()
+                            
+                            # 第5步：重试启动
+                            self.logger.info("   └─ 🔄 重试启动客户端...")
+                            await self.client.start()
+                            self.logger.info("   └─ ✅ 客户端启动成功（锁定已修复）")
+                    except Exception as fix_error:
+                        fix_error_msg = str(fix_error)
+                        self.logger.error(f"❌ 自动修复失败: {fix_error}")
+                        
+                        # 如果还是锁定错误，说明无法自动修复
+                        if "database is locked" in fix_error_msg:
+                            self.logger.error("💡 Session 文件持续被锁定，建议手动解决:")
+                            self.logger.error("   1. 停止所有使用此 session 的进程")
+                            self.logger.error("   2. 重启 Docker 容器")
+                            self.logger.error("   3. 如果问题持续，删除 session 文件并重新登录")
+                            # 不抛出异常，让客户端保持"已停止"状态，用户可以手动重试
+                            return
+                        else:
+                            raise Exception(f"Session 文件被锁定且无法自动修复: {error_msg}")
                 elif "Server closed the connection" in error_msg or "0 bytes read" in error_msg:
                     self.logger.error(f"❌ Telegram 服务器连接失败: {error_msg}")
                     self.logger.error("💡 可能的解决方案:")
@@ -417,6 +508,9 @@ class TelegramClientManager:
             
             # 注册事件处理器（使用装饰器方式）
             self._register_event_handlers()
+            
+            # 注册消息处理器（资源监控等）
+            await self._register_message_processors()
             
             # 更新监听聊天列表
             await self._update_monitored_chats()
@@ -528,6 +622,25 @@ class TelegramClientManager:
             import os
             session_exists = os.path.exists(session_file)
             
+            # 预防性清理：删除可能存在的 WAL 和 SHM 锁定文件
+            if session_exists:
+                wal_file = f"{session_file}-wal"
+                shm_file = f"{session_file}-shm"
+                
+                if os.path.exists(wal_file):
+                    try:
+                        os.remove(wal_file)
+                        self.logger.debug(f"🗑️ 清理旧 WAL 文件")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ 无法删除 WAL 文件: {e}")
+                
+                if os.path.exists(shm_file):
+                    try:
+                        os.remove(shm_file)
+                        self.logger.debug(f"🗑️ 清理旧 SHM 文件")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ 无法删除 SHM 文件: {e}")
+            
             self.logger.info(f"🔍 客户端 {self.client_id} 配置检查:")
             self.logger.info(f"   - Session路径: {session_file}")
             self.logger.info(f"   - Session存在: {session_exists}")
@@ -637,6 +750,51 @@ class TelegramClientManager:
         
         self.logger.info("✅ 事件处理器已注册（装饰器方式）")
     
+    async def _register_message_processors(self):
+        """注册消息处理器（资源监控等）"""
+        try:
+            # 获取消息分发器
+            dispatcher = get_message_dispatcher()
+            
+            # 注册资源监控处理器（不需要传入数据库会话）
+            resource_processor = ResourceMonitorProcessor()
+            dispatcher.register(resource_processor)
+            self.logger.info("✅ 资源监控处理器已注册")
+        except Exception as e:
+            self.logger.error(f"注册消息处理器失败: {e}", exc_info=True)
+    
+    async def _safe_send_message(self, chat_id: int, text: str, **kwargs):
+        """
+        安全地发送消息（跨事件循环调用）
+        
+        用于 MessageContext 调用，自动处理事件循环切换
+        """
+        if not self.client or not self.loop:
+            raise Exception("客户端未连接")
+        
+        async def _send():
+            return await self.client.send_message(chat_id, text, **kwargs)
+        
+        # 使用 run_coroutine_threadsafe 在客户端事件循环中执行
+        future = asyncio.run_coroutine_threadsafe(_send(), self.loop)
+        return future.result(timeout=30)  # 30秒超时
+    
+    async def _safe_download_media(self, message, file_path: str):
+        """
+        安全地下载媒体（跨事件循环调用）
+        
+        用于 MessageContext 调用，自动处理事件循环切换
+        """
+        if not self.client or not self.loop:
+            raise Exception("客户端未连接")
+        
+        async def _download():
+            return await self.client.download_media(message, file=file_path)
+        
+        # 使用 run_coroutine_threadsafe 在客户端事件循环中执行
+        future = asyncio.run_coroutine_threadsafe(_download(), self.loop)
+        return future.result(timeout=300)  # 5分钟超时
+    
     async def _process_message(self, event, is_edited: bool = False):
         """处理消息（在独立任务中运行）- 优化版"""
         start_time = time.time()
@@ -679,23 +837,25 @@ class TelegramClientManager:
             self.logger.info(f"📨 收到监控消息: 聊天ID={chat_id}, 消息ID={message.id}")
             self.logger.debug(f"处理监听消息: 聊天ID={chat_id}, 消息ID={message.id}")
             
-            # 获取适用的转发规则
+            # 1. 处理转发规则
             rules = await self._get_applicable_rules(chat_id)
             
-            if not rules:
-                self.logger.info(f"⚠️ 聊天ID {chat_id} 没有适用的激活转发规则")
-                return
-            
-            # 并发处理多个规则（如果有多个）
-            if len(rules) > 1:
-                tasks = []
-                for rule in rules:
-                    task = asyncio.create_task(self._process_rule_safe(rule, message, event))
-                    tasks.append(task)
-                await asyncio.gather(*tasks, return_exceptions=True)
+            if rules:
+                # 并发处理多个规则（如果有多个）
+                if len(rules) > 1:
+                    tasks = []
+                    for rule in rules:
+                        task = asyncio.create_task(self._process_rule_safe(rule, message, event))
+                        tasks.append(task)
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                else:
+                    # 单个规则直接处理
+                    await self._process_rule_safe(rules[0], message, event)
             else:
-                # 单个规则直接处理
-                await self._process_rule_safe(rules[0], message, event)
+                self.logger.debug(f"聊天ID {chat_id} 没有适用的转发规则")
+            
+            # 2. 统一处理资源监控和媒体监控（带优先级）
+            await self._process_monitors_with_priority(chat_id, message, is_edited)
                 
             # 性能监控
             processing_time = (time.time() - start_time) * 1000
@@ -704,6 +864,159 @@ class TelegramClientManager:
                     
         except Exception as e:
             self.logger.error(f"消息处理失败: {e}")
+    
+    async def _process_monitors_with_priority(self, chat_id: int, message, is_edited: bool = False):
+        """
+        统一处理资源监控和媒体监控，按优先级执行
+        
+        优先级逻辑：
+        1. 先检查是否有资源监控规则，如果有且消息包含链接 → 只处理资源监控
+        2. 如果没有链接或没有资源监控规则 → 检查媒体监控规则
+        """
+        try:
+            from models import ResourceMonitorRule, MediaMonitorRule
+            from sqlalchemy import select
+            from services.message_dispatcher import get_message_dispatcher
+            from services.message_context import MessageContext
+            import re
+            
+            # 1. 先检查是否有资源监控规则监听此频道
+            has_resource_monitor = False
+            has_links = False
+            
+            async for db in get_db():
+                # 检查资源监控规则
+                resource_rules_result = await db.execute(
+                    select(ResourceMonitorRule).where(
+                        ResourceMonitorRule.is_active == True
+                    )
+                )
+                resource_rules = resource_rules_result.scalars().all()
+                
+                # 检查是否有规则监听此频道
+                import json
+                for rule in resource_rules:
+                    source_chats = json.loads(rule.source_chats) if rule.source_chats else []
+                    if str(chat_id) in source_chats:
+                        has_resource_monitor = True
+                        
+                        # 检查消息是否包含链接
+                        if hasattr(message, 'text') and message.text:
+                            # 检测各类资源链接
+                            magnet_pattern = r'magnet:\?xt=urn:btih:[a-zA-Z0-9]+'
+                            pan115_pattern = r'https?://(?:115\.com|115cdn\.com)/s/[a-zA-Z0-9]+(?:\?password=[a-zA-Z0-9]+)?'
+                            ed2k_pattern = r'ed2k://\|file\|[^|]+\|[0-9]+\|[a-fA-F0-9]+\|'
+                            
+                            if (re.search(magnet_pattern, message.text) or 
+                                re.search(pan115_pattern, message.text) or 
+                                re.search(ed2k_pattern, message.text)):
+                                has_links = True
+                                break
+                        break
+                
+                # 2. 根据优先级决定处理方式
+                if has_resource_monitor and has_links:
+                    # 优先级1: 有资源监控规则且消息包含链接 → 只处理资源监控
+                    self.logger.info(f"📋 检测到资源链接，分发给资源监控处理")
+                    context = MessageContext(
+                        message=message,
+                        client_manager=self,
+                        chat_id=chat_id,
+                        is_edited=is_edited
+                    )
+                    dispatcher = get_message_dispatcher()
+                    await dispatcher.dispatch(context)
+                    # 不再处理媒体监控
+                    return
+                
+                # 优先级2: 没有链接或没有资源监控 → 检查媒体监控
+                self.logger.debug(f"📋 未检测到资源链接，检查媒体监控")
+                
+                # 查找适用的媒体监控规则
+                media_rules_result = await db.execute(
+                    select(MediaMonitorRule).where(
+                        MediaMonitorRule.is_active == True,
+                        MediaMonitorRule.client_id == self.client_id
+                    )
+                )
+                media_rules = media_rules_result.scalars().all()
+                
+                for rule in media_rules:
+                    source_chats = json.loads(rule.source_chats) if rule.source_chats else []
+                    
+                    if str(chat_id) in source_chats:
+                        # 检查消息是否包含媒体
+                        has_media = (
+                            hasattr(message, 'media') and message.media is not None and
+                            not (hasattr(message.media, '__class__') and 
+                                 message.media.__class__.__name__ == 'MessageMediaWebPage')
+                        )
+                        
+                        if not has_media:
+                            self.logger.debug(f"⏭️ 跳过媒体监控规则 {rule.name}：消息不包含媒体")
+                            continue
+                        
+                        self.logger.info(f"📹 触发媒体监控规则: {rule.name} (ID: {rule.id})")
+                        
+                        # 处理媒体消息
+                        from services.media_monitor_service import get_media_monitor_service
+                        media_monitor = get_media_monitor_service()
+                        await media_monitor.process_message(self.client, message, rule.id, client_wrapper=self)
+                
+                break
+                
+        except Exception as e:
+            self.logger.error(f"监控处理失败: {e}", exc_info=True)
+    
+    async def _process_media_monitor(self, chat_id: int, message):
+        """处理媒体监控（已弃用，保留用于兼容）"""
+        try:
+            # 获取媒体监控服务
+            from services.media_monitor_service import get_media_monitor_service
+            media_monitor = get_media_monitor_service()
+            
+            # 检查是否有适用的媒体监控规则
+            from models import MediaMonitorRule
+            from sqlalchemy import select
+            
+            async for db in get_db():
+                # 查找适用的媒体监控规则
+                result = await db.execute(
+                    select(MediaMonitorRule).where(
+                        MediaMonitorRule.is_active == True,
+                        MediaMonitorRule.client_id == self.client_id
+                    )
+                )
+                rules = result.scalars().all()
+                
+                for rule in rules:
+                    # 解析 source_chats（JSON 字符串）
+                    import json
+                    source_chats = json.loads(rule.source_chats) if rule.source_chats else []
+                    
+                    # 检查消息是否来自监控的聊天
+                    if str(chat_id) in source_chats:
+                        # 提前检查消息是否包含媒体，避免不必要的处理
+                        has_media = (
+                            hasattr(message, 'media') and message.media is not None and
+                            not (hasattr(message.media, '__class__') and 
+                                 message.media.__class__.__name__ == 'MessageMediaWebPage')
+                        )
+                        
+                        if not has_media:
+                            self.logger.debug(f"⏭️ 跳过媒体监控规则 {rule.name}：消息不包含媒体")
+                            continue
+                        
+                        self.logger.info(f"📹 触发媒体监控规则: {rule.name} (ID: {rule.id})")
+                        # 处理媒体消息（传递客户端包装器self，以便访问事件循环）
+                        await media_monitor.process_message(self.client, message, rule.id, client_wrapper=self)
+                
+                break
+                
+        except Exception as e:
+            self.logger.error(f"媒体监控处理失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def _get_applicable_rules(self, chat_id: int) -> List[ForwardRule]:
         """获取适用的转发规则"""
@@ -1185,23 +1498,61 @@ class TelegramClientManager:
         self.logger.info("🛑 日志队列处理任务已停止")
     
     async def _update_monitored_chats(self):
-        """更新监听的聊天列表"""
+        """更新监听的聊天列表（包含转发规则和媒体监控规则）"""
         try:
             async for db in get_db():
                 from sqlalchemy import select, distinct
+                import json
                 
-                # 获取所有活跃规则的源聊天ID
+                monitored_set = set()
+                
+                # 1. 获取所有活跃转发规则的源聊天ID
                 stmt = select(distinct(ForwardRule.source_chat_id)).where(
                     ForwardRule.is_active == True
                 )
                 result = await db.execute(stmt)
-                chat_ids = result.scalars().all()
+                forward_chat_ids = result.scalars().all()
+                monitored_set.update(int(chat_id) for chat_id in forward_chat_ids)
                 
-                self.monitored_chats = set(int(chat_id) for chat_id in chat_ids)
-                self.logger.info(f"🎯 更新监听聊天列表: {list(self.monitored_chats)}")
+                # 2. 获取所有活跃媒体监控规则的源聊天ID
+                from models import MediaMonitorRule
+                stmt = select(MediaMonitorRule).where(
+                    MediaMonitorRule.is_active == True,
+                    MediaMonitorRule.client_id == self.client_id
+                )
+                result = await db.execute(stmt)
+                media_rules = result.scalars().all()
+                
+                for rule in media_rules:
+                    # 解析 source_chats（可能是JSON字符串或已解析的列表）
+                    if rule.source_chats:
+                        self.logger.info(f"🔍 规则 {rule.id} 的 source_chats 类型: {type(rule.source_chats)}, 值: {repr(rule.source_chats)}")
+                        # 如果是字符串，解析为JSON
+                        if isinstance(rule.source_chats, str):
+                            try:
+                                source_chats = json.loads(rule.source_chats)
+                                self.logger.info(f"✅ JSON第一次解析: {repr(source_chats)}, 类型: {type(source_chats)}")
+                                
+                                # 如果解析结果仍是字符串（双重编码），再解析一次
+                                if isinstance(source_chats, str):
+                                    source_chats = json.loads(source_chats)
+                                    self.logger.info(f"✅ JSON第二次解析: {source_chats}")
+                            except json.JSONDecodeError as e:
+                                self.logger.error(f"❌ JSON解析失败: {e}")
+                                continue
+                        else:
+                            source_chats = rule.source_chats
+                        # 将字符串格式的聊天ID转换为整数
+                        monitored_set.update(int(chat_id) for chat_id in source_chats)
+                
+                self.monitored_chats = monitored_set
+                self.logger.info(f"🎯 更新监听聊天列表 (转发: {len(forward_chat_ids)}, 媒体监控: {len(media_rules)}): {list(self.monitored_chats)}")
+                break
                 
         except Exception as e:
             self.logger.error(f"更新监听聊天列表失败: {e}")
+            import traceback
+            traceback.print_exc()
     
     async def send_verification_code(self) -> Dict[str, Any]:
         """发送验证码"""
@@ -1250,17 +1601,56 @@ class TelegramClientManager:
                     # 保存客户端配置到数据库
                     await self._save_client_config()
                     
-                    return {
-                        "success": True,
-                        "message": "用户已登录，无需重复操作",
-                        "step": "completed",
-                        "user_info": {
-                            "id": me.id,
-                            "username": getattr(me, 'username', ''),
-                            "first_name": getattr(me, 'first_name', ''),
-                            "phone": getattr(me, 'phone', '')
+                    # 【新方案】保持连接并自动启动客户端运行
+                    # 不断开连接，而是直接启动运行线程，这样用户点击启动时可以直接继承这个连接
+                    self.logger.info("🚀 检测到已登录，保持连接并准备启动...")
+                    
+                    # 启动客户端运行线程（类似 start() 方法的逻辑）
+                    try:
+                        # 设置运行状态
+                        self.running = True
+                        self.status = "running"
+                        
+                        # 启动运行线程
+                        self.thread = threading.Thread(
+                            target=self._run_client_thread,
+                            daemon=True,
+                            name=f"telegram_client_{self.client_id}"
+                        )
+                        self.thread.start()
+                        
+                        self.logger.info(f"✅ 客户端 {self.client_id} 已自动启动（使用已验证的连接）")
+                        
+                        return {
+                            "success": True,
+                            "message": f"用户已登录，客户端已自动启动",
+                            "step": "completed",
+                            "auto_started": True,  # 标记为自动启动
+                            "user_info": {
+                                "id": me.id,
+                                "username": getattr(me, 'username', ''),
+                                "first_name": getattr(me, 'first_name', ''),
+                                "phone": getattr(me, 'phone', '')
+                            }
                         }
-                    }
+                    except Exception as start_error:
+                        self.logger.error(f"自动启动失败: {start_error}")
+                        # 启动失败，断开连接
+                        if self.client and self.client.is_connected():
+                            await self.client.disconnect()
+                            self.connected = False
+                        
+                        return {
+                            "success": True,
+                            "message": "用户已登录，但自动启动失败，请手动启动",
+                            "step": "completed",
+                            "user_info": {
+                                "id": me.id,
+                                "username": getattr(me, 'username', ''),
+                                "first_name": getattr(me, 'first_name', ''),
+                                "phone": getattr(me, 'phone', '')
+                            }
+                        }
             except Exception as auth_check_error:
                 # 检查失败不影响后续流程，继续发送验证码
                 self.logger.warning(f"检查登录状态失败: {auth_check_error}")
@@ -1570,13 +1960,19 @@ class TelegramClientManager:
                 if self.client_type == "bot":
                     client_display_name = f"机器人: {getattr(self.user_info, 'first_name', self.client_id)}"
                 else:
-                    first_name = getattr(self.user_info, 'first_name', '')
-                    last_name = getattr(self.user_info, 'last_name', '')
-                    username = getattr(self.user_info, 'username', '')
+                    first_name = getattr(self.user_info, 'first_name', '') or ''
+                    last_name = getattr(self.user_info, 'last_name', '') or ''
+                    username = getattr(self.user_info, 'username', '') or ''
+                    
+                    # 构建全名（只包含非空部分）
+                    name_parts = [first_name, last_name]
+                    full_name = ' '.join(part for part in name_parts if part).strip()
+                    
                     if username:
-                        client_display_name = f"用户: {first_name} {last_name} (@{username})".strip()
+                        client_display_name = f"用户: {full_name} (@{username})".strip()
                     else:
-                        client_display_name = f"用户: {first_name} {last_name}".strip()
+                        client_display_name = f"用户: {full_name}".strip()
+                    
                     if not client_display_name.replace("用户: ", "").strip():
                         client_display_name = f"用户: {self.client_id}"
             
@@ -1799,7 +2195,7 @@ class MultiClientManager:
     def process_history_messages(self, rule) -> Dict[str, Any]:
         """处理历史消息 - 在客户端的事件循环中执行"""
         try:
-            from services import HistoryMessageService
+            from services.business_services import HistoryMessageService
             import asyncio
             import threading
             
@@ -2065,13 +2461,14 @@ class MultiClientManager:
                 limit=max_messages,
                 offset_date=time_filter.get('end_time')
             ):
-                # 应用时间过滤
-                message_time = message.date.replace(tzinfo=message.date.tzinfo or timezone.utc)
+                # 应用时间过滤 - 将Telegram消息时间转换为用户时区
+                from timezone_utils import telegram_time_to_user_time
+                message_time = telegram_time_to_user_time(message.date)
                 
                 if 'start_time' in time_filter and 'end_time' in time_filter and time_filter['start_time'] is not None:
                     # 如果消息时间早于开始时间，说明已经超出范围，直接停止
                     if message_time < time_filter['start_time']:
-                        self.logger.info(f"⏹️ 消息时间 {message_time} 早于开始时间 {time_filter['start_time']}，停止获取")
+                        self.logger.info(f"⏹️ 消息时间 {message_time.strftime('%Y-%m-%d %H:%M:%S')} 早于开始时间 {time_filter['start_time'].strftime('%Y-%m-%d %H:%M:%S')}，停止获取")
                         break
                     
                     # 检查是否在时间范围内

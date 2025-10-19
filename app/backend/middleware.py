@@ -34,6 +34,10 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         
+        # OPTIONS请求（CORS预检）直接放行
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        
         # 静态文件和前端路由不需要认证
         if (not path.startswith("/api") or 
             path in WHITELIST_PATHS or

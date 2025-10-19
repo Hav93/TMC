@@ -32,6 +32,10 @@ def get_user_now():
     user_tz = get_user_timezone()
     return datetime.now(user_tz)
 
+def get_user_timestamp():
+    """获取用户时区当前时间的Unix时间戳（秒）"""
+    return get_user_now().timestamp()
+
 def telegram_time_to_user_time(telegram_dt):
     """
     将Telegram消息时间（UTC）转换为用户时区时间

@@ -1,4 +1,5 @@
 import { api } from './api';
+import { API_ROUTES } from './api-config';
 import type { Chat, ChatsResponse } from '../types/api';
 
 export interface ChatGroups {
@@ -26,8 +27,26 @@ export const chatsApi = {
 
   // 导出聊天列表
   export: async (): Promise<Blob> => {
-    const response = await api.post(API_ROUTES.chats.export, {});
-    return response as unknown as Blob;
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await fetch(API_ROUTES.chats.export, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({}),
+      });
+      
+      if (!response.ok) {
+        throw new Error(`导出失败: ${response.status}`);
+      }
+      
+      return await response.blob();
+    } catch (error) {
+      console.error('导出聊天列表失败:', error);
+      throw error;
+    }
   },
 
   // 导入聊天列表

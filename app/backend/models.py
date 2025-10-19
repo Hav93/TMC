@@ -4,7 +4,7 @@
 from datetime import datetime, timezone
 import os
 from typing import List, Optional
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, Float
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 import bcrypt
@@ -304,7 +304,10 @@ class DatabaseHelper:
             'user_sessions',
             'telegram_clients',
             'bot_settings',
-            'users'
+            'users',
+            'media_monitor_rules',
+            'download_tasks',
+            'media_files'
         ]
 
 class User(Base):
@@ -339,3 +342,384 @@ class User(Base):
     
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}')>"
+
+
+# ==================== 媒体文件管理模型 ====================
+
+class MediaMonitorRule(Base):
+    """媒体监控规则模型"""
+    __tablename__ = 'media_monitor_rules'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, comment='规则名称')
+    description = Column(Text, comment='规则描述')
+    is_active = Column(Boolean, default=True, comment='是否启用')
+    client_id = Column(String(50), nullable=False, comment='使用的客户端ID')
+    
+    # 监听源（JSON数组格式）
+    source_chats = Column(Text, comment='监听的频道/群组列表，JSON格式：["channel_123", "group_456"]')
+    
+    # 媒体过滤
+    media_types = Column(Text, comment='文件类型过滤，JSON格式：["photo", "video", "audio", "document"]')
+    min_size_mb = Column(Integer, default=0, comment='最小文件大小(MB)')
+    max_size_mb = Column(Integer, default=2000, comment='最大文件大小(MB)')
+    filename_include = Column(Text, comment='文件名包含关键词（逗号分隔）')
+    filename_exclude = Column(Text, comment='文件名排除关键词（逗号分隔）')
+    file_extensions = Column(Text, comment='允许的文件扩展名，JSON格式：[".mp4", ".mkv"]')
+    
+    # 发送者过滤
+    enable_sender_filter = Column(Boolean, default=False, comment='是否启用发送者过滤')
+    sender_filter_mode = Column(String(20), default='whitelist', comment='过滤模式：whitelist/blacklist')
+    sender_whitelist = Column(Text, comment='发送者白名单（简单文本格式：@user1, @user2, 123456）')
+    sender_blacklist = Column(Text, comment='发送者黑名单（简单文本格式）')
+    
+    # 下载设置
+    temp_folder = Column(String(255), default='/app/media/downloads', comment='临时下载文件夹')
+    concurrent_downloads = Column(Integer, default=3, comment='并发下载数量')
+    retry_on_failure = Column(Boolean, default=True, comment='失败时是否重试')
+    max_retries = Column(Integer, default=3, comment='最大重试次数')
+    
+    # 元数据提取
+    extract_metadata = Column(Boolean, default=True, comment='是否提取元数据')
+    metadata_mode = Column(String(20), default='lightweight', comment='元数据提取模式：disabled/lightweight/full')
+    metadata_timeout = Column(Integer, default=10, comment='元数据提取超时（秒）')
+    async_metadata_extraction = Column(Boolean, default=True, comment='是否异步提取元数据')
+    
+    # 归档配置
+    organize_enabled = Column(Boolean, default=False, comment='是否启用文件归档')
+    organize_target_type = Column(String(20), default='local', comment='归档目标：local')
+    organize_local_path = Column(String(255), comment='本地归档路径')
+    organize_mode = Column(String(20), default='copy', comment='归档方式：copy/move')
+    keep_temp_file = Column(Boolean, default=False, comment='归档后是否保留临时文件')
+    
+    # 115网盘配置
+    pan115_remote_path = Column(String(255), comment='115网盘远程路径（如 /Telegram媒体）')
+    
+    # 文件夹结构
+    folder_structure = Column(String(50), default='date', comment='文件夹组织方式：flat/date/type/source/sender/custom')
+    custom_folder_template = Column(String(255), comment='自定义文件夹模板：{year}/{month}/{type}')
+    rename_files = Column(Boolean, default=False, comment='是否重命名文件')
+    filename_template = Column(String(255), comment='文件名模板：{date}_{sender}_{original_name}')
+    
+    # 清理设置
+    auto_cleanup_enabled = Column(Boolean, default=True, comment='是否启用自动清理')
+    auto_cleanup_days = Column(Integer, default=7, comment='自动清理天数')
+    cleanup_only_organized = Column(Boolean, default=True, comment='是否只清理已归档文件')
+    
+    # 存储容量限制
+    max_storage_gb = Column(Integer, default=100, comment='最大存储容量(GB)')
+    
+    # 统计数据
+    total_downloaded = Column(Integer, default=0, comment='累计下载数量')
+    total_size_mb = Column(Integer, default=0, comment='累计下载大小(MB)')
+    last_download_at = Column(DateTime, comment='最后下载时间')
+    failed_downloads = Column(Integer, default=0, comment='失败下载数量')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
+    
+    # 关系
+    download_tasks = relationship("DownloadTask", back_populates="monitor_rule", cascade="all, delete-orphan")
+    media_files = relationship("MediaFile", back_populates="monitor_rule", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<MediaMonitorRule(id={self.id}, name='{self.name}', active={self.is_active})>"
+
+
+class DownloadTask(Base):
+    """下载任务模型"""
+    __tablename__ = 'download_tasks'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    monitor_rule_id = Column(Integer, ForeignKey('media_monitor_rules.id'), nullable=False, comment='关联的监控规则ID')
+    message_id = Column(Integer, comment='消息ID')
+    chat_id = Column(String(50), comment='聊天ID')
+    
+    # 文件信息
+    file_name = Column(String(255), comment='文件名')
+    file_type = Column(String(50), comment='文件类型：photo/video/audio/document')
+    file_size_mb = Column(Integer, comment='文件大小(MB)')
+    file_unique_id = Column(String(255), comment='文件唯一ID（用于重新下载）')
+    file_access_hash = Column(String(255), comment='文件访问哈希')
+    media_json = Column(Text, comment='媒体信息JSON（用于恢复下载）')
+    
+    # 任务状态
+    status = Column(String(20), default='pending', comment='任务状态：pending/downloading/success/failed/retrying/paused')
+    priority = Column(Integer, default=0, comment='优先级：-10到10')
+    
+    # 下载进度
+    downloaded_bytes = Column(Integer, default=0, comment='已下载字节数')
+    total_bytes = Column(Integer, comment='总字节数')
+    progress_percent = Column(Integer, default=0, comment='进度百分比')
+    download_speed_mbps = Column(Integer, comment='下载速度(MB/s)')
+    
+    # 重试信息
+    retry_count = Column(Integer, default=0, comment='重试次数')
+    max_retries = Column(Integer, default=3, comment='最大重试次数')
+    last_error = Column(Text, comment='最后一次错误信息')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    started_at = Column(DateTime, comment='开始下载时间')
+    completed_at = Column(DateTime, comment='完成时间')
+    failed_at = Column(DateTime, comment='失败时间')
+    
+    # 关系
+    monitor_rule = relationship("MediaMonitorRule", back_populates="download_tasks")
+    media_file = relationship("MediaFile", back_populates="download_task", uselist=False)
+    
+    def __repr__(self):
+        return f"<DownloadTask(id={self.id}, file='{self.file_name}', status='{self.status}')>"
+
+
+class MediaSettings(Base):
+    """媒体管理全局配置模型"""
+    __tablename__ = 'media_settings'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    
+    # 115网盘配置
+    pan115_app_id = Column(String(50), comment='115开放平台AppID')
+    pan115_app_secret = Column(String(100), comment='115开放平台AppSecret')
+    pan115_user_id = Column(String(100), comment='115用户ID')
+    pan115_user_key = Column(String(200), comment='115用户密钥')
+    pan115_request_interval = Column(Float, default=1.0, comment='API请求间隔(秒)')
+    pan115_device_type = Column(String(20), default='qandroid', comment='115登录设备类型')
+    pan115_user_info = Column(Text, comment='115用户信息(JSON格式，包含用户名、VIP等级、空间信息等)')
+    pan115_access_token = Column(Text, comment='115开放平台access_token(扫码登录时获取)')
+    pan115_token_expires_at = Column(DateTime, comment='access_token过期时间')
+    pan115_last_refresh_at = Column(DateTime, comment='最后刷新用户信息时间')
+    pan115_use_proxy = Column(Boolean, default=False, comment='115网盘API是否使用代理')
+    
+    # 下载设置
+    temp_folder = Column(String(500), default='/app/media/downloads', comment='临时下载文件夹')
+    concurrent_downloads = Column(Integer, default=3, comment='并发下载数')
+    retry_on_failure = Column(Boolean, default=True, comment='失败时重试')
+    max_retries = Column(Integer, default=3, comment='最大重试次数')
+    
+    # 元数据提取
+    extract_metadata = Column(Boolean, default=True, comment='提取元数据')
+    metadata_mode = Column(String(20), default='lightweight', comment='提取模式：disabled/lightweight/full')
+    metadata_timeout = Column(Integer, default=10, comment='超时时间(秒)')
+    async_metadata_extraction = Column(Boolean, default=True, comment='异步提取元数据')
+    
+    # 存储清理
+    auto_cleanup_enabled = Column(Boolean, default=True, comment='启用自动清理')
+    auto_cleanup_days = Column(Integer, default=7, comment='临时文件保留天数')
+    cleanup_only_organized = Column(Boolean, default=True, comment='只清理已归档文件')
+    max_storage_gb = Column(Integer, default=100, comment='最大存储容量(GB)')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
+    
+    def __repr__(self):
+        return f"<MediaSettings(id={self.id})>"
+
+
+class MediaFile(Base):
+    """媒体文件模型"""
+    __tablename__ = 'media_files'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    monitor_rule_id = Column(Integer, ForeignKey('media_monitor_rules.id'), nullable=False, comment='关联的监控规则ID')
+    download_task_id = Column(Integer, ForeignKey('download_tasks.id', ondelete='SET NULL'), comment='关联的下载任务ID')
+    message_id = Column(Integer, comment='消息ID')
+    
+    # 文件路径
+    temp_path = Column(String(500), comment='临时文件路径')
+    final_path = Column(String(500), comment='最终归档路径')
+    pan115_path = Column(String(500), comment='115网盘远程路径')
+    file_hash = Column(String(64), unique=True, comment='文件哈希(SHA-256)，用于去重')
+    
+    # 基础信息
+    file_name = Column(String(255), comment='文件名')
+    file_type = Column(String(50), comment='文件类型：image/video/audio/document')
+    file_size_mb = Column(Integer, comment='文件大小(MB)')
+    extension = Column(String(10), comment='文件扩展名')
+    original_name = Column(String(255), comment='原始文件名')
+    
+    # 元数据（JSON存储）
+    file_metadata = Column(Text, comment='完整元数据JSON')
+    
+    # 快捷字段（从metadata提取，方便查询）
+    width = Column(Integer, comment='宽度（图片/视频）')
+    height = Column(Integer, comment='高度（图片/视频）')
+    duration_seconds = Column(Integer, comment='时长（视频/音频）')
+    resolution = Column(String(20), comment='分辨率')
+    codec = Column(String(50), comment='编码格式')
+    bitrate_kbps = Column(Integer, comment='比特率(kbps)')
+    
+    # 来源信息
+    source_chat = Column(String(100), comment='来源频道/群组')
+    sender_id = Column(String(50), comment='发送者ID')
+    sender_username = Column(String(100), comment='发送者用户名')
+    
+    # 状态
+    is_organized = Column(Boolean, default=False, comment='是否已归档')
+    is_uploaded_to_cloud = Column(Boolean, default=False, comment='是否已上传到云端')
+    is_starred = Column(Boolean, default=False, comment='是否收藏')
+    organize_failed = Column(Boolean, default=False, comment='归档是否失败')
+    organize_error = Column(Text, comment='归档失败原因')
+    
+    # 时间戳
+    downloaded_at = Column(DateTime, default=get_local_now, comment='下载时间')
+    organized_at = Column(DateTime, comment='归档时间')
+    uploaded_at = Column(DateTime, comment='上传时间')
+    
+    # 关系
+    monitor_rule = relationship("MediaMonitorRule", back_populates="media_files")
+    download_task = relationship("DownloadTask", back_populates="media_file")
+    
+    def __repr__(self):
+        return f"<MediaFile(id={self.id}, name='{self.file_name}', type='{self.file_type}')>"
+
+
+# ==================== 资源监控模型 ====================
+
+class ResourceMonitorRule(Base):
+    """资源监控规则模型"""
+    __tablename__ = 'resource_monitor_rules'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, comment='规则名称')
+    source_chats = Column(Text, nullable=False, comment='源聊天列表(JSON)')
+    is_active = Column(Boolean, default=True, comment='是否启用')
+    
+    # 链接过滤
+    link_types = Column(Text, comment='链接类型(JSON): ["pan115", "magnet", "ed2k"]')
+    keywords = Column(Text, comment='关键词(JSON)')
+    
+    # 115配置
+    auto_save_to_115 = Column(Boolean, default=False, comment='是否自动转存到115')
+    target_path = Column(String(500), comment='目标路径')
+    pan115_user_key = Column(String(100), comment='115用户密钥（可选）')
+    
+    # 标签
+    default_tags = Column(Text, comment='默认标签(JSON)')
+    
+    # 去重
+    enable_deduplication = Column(Boolean, default=True, comment='是否启用去重')
+    dedup_time_window = Column(Integer, default=3600, comment='去重时间窗口(秒)')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
+    
+    # 关系
+    records = relationship("ResourceRecord", back_populates="rule", cascade="all, delete-orphan")
+    
+    def __repr__(self):
+        return f"<ResourceMonitorRule(id={self.id}, name='{self.name}')>"
+
+
+class ResourceRecord(Base):
+    """资源记录模型"""
+    __tablename__ = 'resource_records'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rule_id = Column(Integer, ForeignKey('resource_monitor_rules.id'), nullable=False)
+    rule_name = Column(String(100), comment='规则名称（冗余）')
+    
+    # 消息信息
+    source_chat_id = Column(String(50), comment='源聊天ID')
+    source_chat_name = Column(String(200), comment='源聊天名称')
+    message_id = Column(Integer, comment='消息ID')
+    message_text = Column(Text, comment='消息文本')
+    message_date = Column(DateTime, comment='消息时间')
+    
+    # 链接信息
+    link_type = Column(String(20), comment='链接类型')
+    link_url = Column(Text, nullable=False, comment='链接URL')
+    link_hash = Column(String(64), index=True, comment='链接哈希（用于去重）')
+    
+    # 115转存信息
+    save_status = Column(String(20), default='pending', comment='转存状态')
+    save_path = Column(String(500), comment='转存路径')
+    save_error = Column(Text, comment='转存错误信息')
+    save_time = Column(DateTime, comment='转存时间')
+    retry_count = Column(Integer, default=0, comment='重试次数')
+    
+    # 标签
+    tags = Column(Text, comment='标签(JSON)')
+    
+    # 消息快照
+    message_snapshot = Column(Text, comment='消息快照(JSON)')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
+    
+    # 关系
+    rule = relationship("ResourceMonitorRule", back_populates="records")
+    
+    def __repr__(self):
+        return f"<ResourceRecord(id={self.id}, link_type='{self.link_type}', status='{self.save_status}')>"
+
+
+class NotificationRule(Base):
+    """通知规则模型"""
+    __tablename__ = 'notification_rules'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, comment='用户ID（NULL表示全局规则）')
+    notification_type = Column(String(50), nullable=False, index=True, comment='通知类型')
+    is_active = Column(Boolean, default=True, comment='是否启用')
+    
+    # 通知渠道配置
+    telegram_chat_id = Column(String(50), comment='Telegram聊天ID')
+    telegram_enabled = Column(Boolean, default=True, comment='是否启用Telegram通知')
+    webhook_url = Column(String(500), comment='Webhook URL')
+    webhook_enabled = Column(Boolean, default=False, comment='是否启用Webhook')
+    email_address = Column(String(200), comment='邮箱地址')
+    email_enabled = Column(Boolean, default=False, comment='是否启用邮件通知')
+    
+    # 通知频率控制
+    min_interval = Column(Integer, default=0, comment='最小间隔（秒），0表示不限制')
+    max_per_hour = Column(Integer, default=0, comment='每小时最大数量，0表示不限制')
+    last_sent_at = Column(DateTime, comment='最后发送时间')
+    sent_count_hour = Column(Integer, default=0, comment='当前小时已发送数量')
+    hour_reset_at = Column(DateTime, comment='小时计数器重置时间')
+    
+    # 通知内容配置
+    custom_template = Column(Text, comment='自定义模板')
+    include_details = Column(Boolean, default=True, comment='是否包含详细信息')
+    
+    # 时间戳
+    created_at = Column(DateTime, default=get_local_now, comment='创建时间')
+    updated_at = Column(DateTime, default=get_local_now, onupdate=get_local_now, comment='更新时间')
+    
+    # 关系
+    user = relationship("User", backref="notification_rules")
+    
+    def __repr__(self):
+        return f"<NotificationRule(id={self.id}, type='{self.notification_type}', active={self.is_active})>"
+
+
+class NotificationLog(Base):
+    """通知历史模型"""
+    __tablename__ = 'notification_logs'
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    notification_type = Column(String(50), nullable=False, index=True, comment='通知类型')
+    message = Column(Text, nullable=False, comment='通知消息')
+    channels = Column(String(200), comment='通知渠道（逗号分隔）')
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, comment='用户ID')
+    
+    # 发送状态
+    status = Column(String(20), default='pending', comment='发送状态：pending/sent/failed')
+    error_message = Column(Text, comment='错误信息')
+    
+    # 关联信息
+    related_type = Column(String(50), comment='关联类型：resource/media/forward')
+    related_id = Column(Integer, comment='关联ID')
+    
+    # 时间戳
+    sent_at = Column(DateTime, default=get_local_now, index=True, comment='发送时间')
+    
+    # 关系
+    user = relationship("User", backref="notification_logs")
+    
+    def __repr__(self):
+        return f"<NotificationLog(id={self.id}, type='{self.notification_type}', status='{self.status}')>"

@@ -21,16 +21,17 @@ def _get_jwt_secret():
     获取 JWT 密钥
     
     优先级：
-    1. 环境变量 JWT_SECRET
-    2. 自动生成随机密钥（每次启动不同，会导致用户需要重新登录）
+    1. 环境变量 JWT_SECRET_KEY（推荐）
+    2. 环境变量 JWT_SECRET（向后兼容）
+    3. 自动生成随机密钥（每次启动不同，会导致用户需要重新登录）
     
-    注意：生产环境建议设置固定的 JWT_SECRET 环境变量
+    注意：生产环境建议设置固定的 JWT_SECRET_KEY 环境变量
     """
-    secret = os.getenv('JWT_SECRET', '')
+    secret = os.getenv('JWT_SECRET_KEY') or os.getenv('JWT_SECRET', '')
     if not secret:
         # 自动生成一个随机密钥（32字节）
         secret = secrets.token_urlsafe(32)
-        print(f"⚠️  未设置 JWT_SECRET，使用随机生成的密钥（重启后用户需要重新登录）")
+        print(f"⚠️  未设置 JWT_SECRET_KEY，使用随机生成的密钥（重启后用户需要重新登录）")
     return secret
 
 SECRET_KEY = _get_jwt_secret()

@@ -6,12 +6,17 @@
 管理消息转发日志
 """
 
-from fastapi import APIRouter, Query, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Query, Request, Body, Depends
+from fastapi.responses import JSONResponse, StreamingResponse
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any, List
 from log_manager import get_logger
 from sqlalchemy import select, desc, and_, func
+from auth import get_current_user
+from models import User
+from timezone_utils import get_user_now
+import json
+import io
 
 logger = get_logger('api.logs', 'api.log')
 
@@ -289,10 +294,190 @@ async def batch_delete_logs(request: Request):
         )
 
 
+@router.post("/export")
+async def export_logs(
+    filters: Optional[Dict[str, Any]] = Body(default={}),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    导出日志为JSON文件
+    
+    支持与list_logs相同的筛选参数
+    需要登录认证
+    """
+    try:
+        from models import MessageLog
+        from database import get_db
+        
+        async for db in get_db():
+            # 构建查询（与list_logs类似，但不分页）
+            query = select(MessageLog).order_by(desc(MessageLog.created_at))
+            
+            # 应用筛选
+            conditions = []
+            
+            if filters.get('status'):
+                conditions.append(MessageLog.status == filters['status'])
+            
+            if filters.get('rule_id'):
+                conditions.append(MessageLog.rule_id == filters['rule_id'])
+            
+            if filters.get('start_date'):
+                try:
+                    start_dt = datetime.strptime(filters['start_date'], '%Y-%m-%d')
+                    conditions.append(MessageLog.created_at >= start_dt)
+                except ValueError:
+                    pass
+            
+            if filters.get('end_date'):
+                try:
+                    # 结束日期包含当天全天
+                    end_dt = datetime.strptime(filters['end_date'], '%Y-%m-%d')
+                    end_dt = end_dt.replace(hour=23, minute=59, second=59)
+                    conditions.append(MessageLog.created_at <= end_dt)
+                except ValueError:
+                    pass
+            
+            if conditions:
+                query = query.where(and_(*conditions))
+            
+            # 执行查询
+            result = await db.execute(query)
+            logs = result.scalars().all()
+            
+            # 转换为JSON格式
+            logs_data = []
+            for log in logs:
+                logs_data.append({
+                    'id': log.id,
+                    'rule_id': log.rule_id,
+                    'rule_name': log.rule_name,
+                    'source_chat_id': log.source_chat_id,
+                    'source_chat_name': log.source_chat_name,
+                    'source_message_id': log.source_message_id,
+                    'target_chat_id': log.target_chat_id,
+                    'target_chat_name': log.target_chat_name,
+                    'target_message_id': log.target_message_id,
+                    'original_text': log.original_text,
+                    'processed_text': log.processed_text,
+                    'media_type': log.media_type,
+                    'status': log.status,
+                    'error_message': log.error_message,
+                    'processing_time': log.processing_time,
+                    'content_hash': log.content_hash,
+                    'media_hash': log.media_hash,
+                    'sender_id': log.sender_id,
+                    'sender_username': log.sender_username,
+                    'created_at': log.created_at.isoformat() if log.created_at else None,
+                })
+            
+            # 生成JSON文件
+            json_str = json.dumps(logs_data, ensure_ascii=False, indent=2)
+            json_bytes = json_str.encode('utf-8')
+            
+            logger.info(f"导出日志成功: {len(logs_data)} 条记录")
+            
+            # 返回文件流
+            return StreamingResponse(
+                io.BytesIO(json_bytes),
+                media_type='application/json',
+                headers={
+                    'Content-Disposition': f'attachment; filename="logs_{get_user_now().strftime("%Y%m%d_%H%M%S")}.json"'
+                }
+            )
+    except Exception as e:
+        logger.error(f"导出日志失败: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"导出日志失败: {str(e)}"}
+        )
+
+
+@router.post("/import")
+async def import_logs(
+    data: List[Dict[str, Any]] = Body(..., embed=True),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    导入日志记录
+    
+    从JSON格式导入日志，支持批量导入
+    需要登录认证
+    """
+    try:
+        from models import MessageLog
+        from database import get_db
+        
+        if not data:
+            return JSONResponse({
+                "success": False,
+                "message": "导入数据为空"
+            })
+        
+        async for db in get_db():
+            imported_count = 0
+            
+            for log_data in data:
+                try:
+                    # 创建日志记录（使用正确的字段名）
+                    new_log = MessageLog(
+                        rule_id=log_data.get("rule_id"),
+                        rule_name=log_data.get("rule_name"),
+                        source_chat_id=log_data.get("source_chat_id", ""),
+                        source_chat_name=log_data.get("source_chat_name"),
+                        source_message_id=log_data.get("source_message_id", 0),
+                        target_chat_id=log_data.get("target_chat_id", ""),
+                        target_chat_name=log_data.get("target_chat_name"),
+                        target_message_id=log_data.get("target_message_id"),
+                        original_text=log_data.get("original_text"),
+                        processed_text=log_data.get("processed_text"),
+                        media_type=log_data.get("media_type"),
+                        status=log_data.get("status", "success"),
+                        error_message=log_data.get("error_message"),
+                        processing_time=log_data.get("processing_time"),
+                        content_hash=log_data.get("content_hash"),
+                        media_hash=log_data.get("media_hash"),
+                        sender_id=log_data.get("sender_id"),
+                        sender_username=log_data.get("sender_username"),
+                    )
+                    
+                    # 处理时间字段
+                    if log_data.get("created_at"):
+                        from datetime import datetime
+                        new_log.created_at = datetime.fromisoformat(log_data["created_at"])
+                    
+                    db.add(new_log)
+                    imported_count += 1
+                    
+                except Exception as e:
+                    logger.warning(f"导入日志失败 (跳过): {log_data.get('id', 'Unknown')} - {e}")
+                    continue
+            
+            await db.commit()
+            
+            logger.info(f"导入日志成功: {imported_count}/{len(data)} 条")
+            
+            return JSONResponse({
+                "success": True,
+                "imported_count": imported_count,
+                "message": f"成功导入 {imported_count} 条日志（总共 {len(data)} 条）"
+            })
+            
+    except Exception as e:
+        logger.error(f"导入日志失败: {e}")
+        return JSONResponse(
+            status_code=500,
+            content={"success": False, "message": f"导入日志失败: {str(e)}"}
+        )
+
+
 """
-✅ 所有3个端点已完成!
+✅ 所有日志端点已完成!
 
 - GET /api/logs - 获取日志列表 (支持分页、筛选、日期范围)
 - GET /api/logs/stats - 获取日志统计
 - DELETE /api/logs/{log_id} - 删除单条日志
+- POST /api/logs/batch-delete - 批量删除日志
+- POST /api/logs/export - 导出日志为JSON文件
+- POST /api/logs/import - 导入日志记录
 """

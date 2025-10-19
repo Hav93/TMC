@@ -20,9 +20,11 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { settingsApi } from '../../services/settings';
 import { useThemeContext } from '../../theme';
+import Pan115Settings from './Pan115Settings';
+import MediaSettingsPage from './MediaSettings';
+import CloudDrive2Settings from './CloudDrive2Settings';
 
 const { Title, Text } = Typography;
-const { TabPane } = Tabs;
 const { Option } = Select;
 
 const SettingsPage: React.FC = () => {
@@ -63,33 +65,45 @@ const SettingsPage: React.FC = () => {
     }
   }, [currentConfig, proxyForm, systemForm]);
 
-  // 模拟代理测试功能
+  // 测试代理连接
   const testProxyMutation = useMutation({
-    mutationFn: async (values: any) => {
-      const response = await fetch(`http://${values.proxy_host}:${values.proxy_port}`, {
-        method: 'GET',
-        mode: 'no-cors',
-      }).catch(() => null);
-      
-      return {
-        success: !!response,
-        message: response ? '代理连接测试完成' : '代理连接失败'
-      };
-    },
+    mutationFn: settingsApi.testProxy,
     onSuccess: (result) => {
       if (result.success) {
-        message.success('✅ 代理连接测试完成！');
+        message.success({
+          content: result.message || '✅ 代理连接测试成功！',
+          duration: 3,  // 3秒后自动关闭
+          style: { whiteSpace: 'pre-line', fontSize: '14px' }
+        });
       } else {
-        message.error(`❌ 代理测试失败: ${result.message}`);
+        message.error({
+          content: result.message || '❌ 代理测试失败',
+          duration: 5,  // 失败消息显示5秒，方便查看详情
+          style: { whiteSpace: 'pre-line' }
+        });
       }
+    },
+    onError: (error: any) => {
+      message.error({
+        content: error.message || '❌ 测试失败: 未知错误',
+        duration: 5,
+        style: { whiteSpace: 'pre-line' }
+      });
     },
   });
 
   // 保存代理配置
   const saveProxyMutation = useMutation({
     mutationFn: settingsApi.save,
-    onSuccess: () => {
-      message.success('✅ 代理配置保存成功');
+    onSuccess: (data: any) => {
+      if (data.requires_client_restart) {
+        message.warning({
+          content: '✅ 代理配置保存成功！请重启已运行的客户端以使新配置生效。',
+          duration: 5,
+        });
+      } else {
+        message.success('✅ 代理配置保存成功');
+      }
       refetch();
     },
     onError: (error: any) => {
@@ -152,9 +166,15 @@ const SettingsPage: React.FC = () => {
           style={{ marginBottom: '24px' }}
         />
         
-        <Tabs activeKey={activeTab} onChange={setActiveTab}>
-          {/* 代理设置 */}
-          <TabPane tab="代理设置" key="proxy">
+        <Tabs 
+          activeKey={activeTab} 
+          onChange={setActiveTab}
+          items={[
+            {
+              key: 'proxy',
+              label: '代理设置',
+              children: (
+                    <div>
             <Form
               form={proxyForm}
               layout="vertical"
@@ -247,10 +267,14 @@ const SettingsPage: React.FC = () => {
                 </Button>
               </Space>
             </Form>
-          </TabPane>
-
-          {/* 系统设置 */}
-          <TabPane tab="系统设置" key="system">
+                </div>
+              ),
+            },
+            {
+              key: 'system',
+              label: '系统设置',
+              children: (
+                <div>
             <Form
               form={systemForm}
               layout="vertical"
@@ -293,17 +317,35 @@ const SettingsPage: React.FC = () => {
                 <InputNumber min={1} max={1000} style={{ width: '100%' }} />
               </Form.Item>
 
-              <Button
-                type="primary"
-                icon={<SaveOutlined />}
+                <Button
+                  type="primary"
+                  icon={<SaveOutlined />}
                 onClick={handleSaveSystem}
                 loading={saveSystemMutation.isPending}
-              >
+                >
                 保存配置
-              </Button>
+                </Button>
             </Form>
-          </TabPane>
-        </Tabs>
+                </div>
+              ),
+            },
+            {
+              key: 'media',
+              label: '媒体配置',
+              children: <MediaSettingsPage />,
+            },
+            {
+              key: 'pan115',
+              label: '115网盘',
+              children: <Pan115Settings />,
+            },
+            {
+              key: 'clouddrive2',
+              label: 'CloudDrive2',
+              children: <CloudDrive2Settings />,
+            },
+          ]}
+        />
       </Card>
     </div>
   );

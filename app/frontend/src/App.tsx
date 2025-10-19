@@ -17,7 +17,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import PrivateRoute from './components/common/PrivateRoute';
 
 // Pages
-import Dashboard from './pages/Dashboard/index';
+import Dashboard from './pages/Dashboard/IntegratedDashboard';
 import RulesPage from './pages/Rules/index';
 import LogsPage from './pages/SystemLogs/index';
 import SettingsPage from './pages/Settings/index';
@@ -27,6 +27,12 @@ import UserManagement from './pages/UserManagement/index';
 import LoginPage from './pages/Login/index';
 import ContainerLogs from './pages/ContainerLogs/index';
 import ProfilePage from './pages/Profile/index';
+import MediaMonitorPage from './pages/MediaMonitor/index';
+import DownloadTasksPage from './pages/DownloadTasks/index';
+import MediaLibraryPage from './pages/MediaLibrary/index';
+import ResourceMonitorPage from './pages/ResourceMonitor/index';
+import Stage6ToolsPage from './pages/Stage6Tools/index';
+import NotificationsPage from './pages/Notifications/index';
 
 // Styles
 import './styles/index.css';
@@ -90,6 +96,14 @@ const AppContent: React.FC = () => {
                 <Route index element={<Navigate to="/dashboard" replace />} />
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="rules/*" element={<RulesPage />} />
+                <Route path="media-monitor/*" element={<MediaMonitorPage />} />
+                <Route path="download-tasks" element={<DownloadTasksPage />} />
+                <Route path="media-library" element={<MediaLibraryPage />} />
+                <Route path="resource-monitor" element={<ResourceMonitorPage />} />
+                {/* 性能监控已整合到仪表盘，保留路由以兼容旧链接 */}
+                <Route path="performance-monitor" element={<Navigate to="/dashboard" replace />} />
+                <Route path="notifications" element={<NotificationsPage />} />
+                <Route path="stage6-tools" element={<Stage6ToolsPage />} />
                 <Route path="system-logs" element={<LogsPage />} />
                 <Route path="chats" element={<ChatsPage />} />
                 <Route path="clients" element={<ClientManagement />} />

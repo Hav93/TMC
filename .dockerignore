@@ -28,9 +28,12 @@ app/frontend/node_modules
 app/frontend/dist
 app/frontend/.vite
 
-# Python
-__pycache__
-*.py[cod]
+# Python 编译文件（仅忽略编译产物，不忽略源码）
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
 *$py.class
 *.so
 .Python
@@ -47,6 +50,7 @@ __pycache__
 *.log
 *.tmp
 *.bak
+*.backup
 .DS_Store
 Thumbs.db
 
@@ -56,3 +60,10 @@ cleanup.ps1
 GITHUB_SETUP.md
 RELEASE_NOTES.md
 
+# 媒体文件目录（v1.3.0 新增 - 避免包含大文件）
+media/
+data/
+logs/
+sessions/
+temp/
+config/

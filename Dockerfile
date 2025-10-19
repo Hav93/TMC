@@ -1,5 +1,5 @@
 # 多阶段构建 - 后端
-FROM python:3.11-slim AS backend-builder
+FROM python:3.12-slim AS backend-builder
 
 # 设置构建时代理参数
 ARG HTTP_PROXY
@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/* /etc/apt/apt.conf.d/proxy.conf
 
 # 配置pip代理（如果提供）
@@ -60,7 +61,7 @@ ENV NODE_ENV=production
 RUN npm run build
 
 # 最终镜像
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # 设置工作目录
 WORKDIR /app
@@ -76,7 +77,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/* || true
 
 # 从builder复制Python依赖
-COPY --from=backend-builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=backend-builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=backend-builder /usr/local/bin /usr/local/bin
 
 # 复制后端代码

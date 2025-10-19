@@ -543,9 +543,25 @@ body.theme-light,
   border-bottom: 1px solid var(--color-border-light);
 }
 
+.theme-light .ant-modal-title {
+  color: var(--color-text-primary);
+}
+
+.theme-light .ant-modal-body {
+  color: var(--color-text-primary);
+}
+
 .theme-light .ant-modal-footer {
   background: var(--color-bg-container);
   border-top: 1px solid var(--color-border-light);
+}
+
+.theme-light .ant-modal-confirm-body .ant-modal-confirm-title {
+  color: var(--color-text-primary);
+}
+
+.theme-light .ant-modal-confirm-body .ant-modal-confirm-content {
+  color: var(--color-text-primary);
 }
 
 /* 统计卡片样式 */
@@ -1044,6 +1060,10 @@ body.theme-dark,
   font-weight: 600;
 }
 
+.theme-dark .ant-modal-body {
+  color: var(--color-text-primary);
+}
+
 .theme-dark .ant-modal-footer {
   background: var(--color-bg-secondary);
   border-top: 1px solid var(--color-border-light);
@@ -1054,6 +1074,14 @@ body.theme-dark,
 }
 
 .theme-dark .ant-modal-close-x:hover {
+  color: var(--color-text-primary);
+}
+
+.theme-dark .ant-modal-confirm-body .ant-modal-confirm-title {
+  color: var(--color-text-primary);
+}
+
+.theme-dark .ant-modal-confirm-body .ant-modal-confirm-content {
   color: var(--color-text-primary);
 }
 

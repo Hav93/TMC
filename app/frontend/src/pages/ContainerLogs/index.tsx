@@ -1,19 +1,17 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Card, Button, Space, Switch, Typography, Tag, Select, Input, Tabs, message, Modal } from 'antd';
+import React, { useState, useEffect, useRef } from 'react';
+import { Button, Space, Typography, Tag, Tabs, message, Input, Grid } from 'antd';
 import { 
   ReloadOutlined, 
   PauseCircleOutlined, 
   PlayCircleOutlined,
   ClearOutlined,
-  DownloadOutlined 
+  DownloadOutlined,
+  SearchOutlined
 } from '@ant-design/icons';
-import { List, useDynamicRowHeight } from 'react-window';
 import { useThemeContext } from '../../theme';
-import SmartLogItem from './SmartLogItem';
-import './styles.css';
 
-const { Title, Text } = Typography;
-const { Option } = Select;
+const { Text } = Typography;
+const { useBreakpoint } = Grid;
 
 interface LogEntry {
   type: 'log' | 'connected' | 'error';
@@ -34,6 +32,43 @@ interface LogEntry {
 
 const ContainerLogs: React.FC = () => {
   const { colors } = useThemeContext();
+  const screens = useBreakpoint();
+  const isMobile = Boolean(screens.xs && !screens.md);
+  
+  // 添加自定义滚动条样式
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      .terminal-logs-container::-webkit-scrollbar {
+        width: 12px;
+        height: 12px;
+      }
+      
+      .terminal-logs-container::-webkit-scrollbar-track {
+        background: #161b22;
+        border-radius: 0 0 8px 0;
+      }
+      
+      .terminal-logs-container::-webkit-scrollbar-thumb {
+        background: #30363d;
+        border-radius: 6px;
+        border: 2px solid #161b22;
+      }
+      
+      .terminal-logs-container::-webkit-scrollbar-thumb:hover {
+        background: #484f58;
+      }
+      
+      .terminal-logs-container::-webkit-scrollbar-corner {
+        background: #161b22;
+      }
+    `;
+    document.head.appendChild(style);
+    
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
   
   // 从 sessionStorage 恢复日志和历史加载状态
   const loadLogsFromStorage = (): LogEntry[] => {
@@ -63,25 +98,13 @@ const ContainerLogs: React.FC = () => {
   const [isConnected, setIsConnected] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [availableSources, setAvailableSources] = useState<string[]>([]);
-  const [selectedSources, setSelectedSources] = useState<string[]>([]); // 空数组表示显示所有源
-  const [selectedLevels, setSelectedLevels] = useState<string[]>([]);
-  const [keyword, setKeyword] = useState<string>('');
-  const [showStructured, setShowStructured] = useState<boolean>(true); // 是否显示结构化信息
-  const [contextModalVisible, setContextModalVisible] = useState(false);
-  const [contextLogs, setContextLogs] = useState<LogEntry[]>([]);
-  const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
+  const [searchKeyword, setSearchKeyword] = useState<string>('');
   const eventSourceRef = useRef<EventSource | null>(null);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const hasLoadedHistoryRef = useRef(getHasLoadedHistory()); // 从sessionStorage恢复状态
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null); // sessionStorage 保存防抖定时器
-  
-  // 使用动态行高管理
-  const dynamicRowHeight = useDynamicRowHeight({ defaultRowHeight: 100 });
-  
   const MAX_LOGS_PER_SOURCE = 500; // 每个来源最多保留500条日志
-  const MAX_LOGS_TOTAL = 500; // 不分组时总共最多保留500条日志
   const [activeTab, setActiveTab] = useState<string>('all'); // 当前激活的Tab（all/enhanced_bot/api/web_api）
 
   // 自动保存日志到 sessionStorage（防抖优化，500ms后保存）
@@ -136,10 +159,22 @@ const ContainerLogs: React.FC = () => {
     return groups;
   }, [logs]);
 
-  // 根据当前Tab显示的日志
+  // 根据当前Tab和搜索关键字显示的日志
   const displayLogs = React.useMemo(() => {
-    return groupedLogs[activeTab] || [];
-  }, [groupedLogs, activeTab]);
+    let logs = groupedLogs[activeTab] || [];
+    
+    // 如果有搜索关键字，进行过滤
+    if (searchKeyword.trim()) {
+      const keyword = searchKeyword.toLowerCase();
+      logs = logs.filter(log => 
+        log.message?.toLowerCase().includes(keyword) ||
+        log.level?.toLowerCase().includes(keyword) ||
+        log.source?.toLowerCase().includes(keyword)
+      );
+    }
+    
+    return logs;
+  }, [groupedLogs, activeTab, searchKeyword]);
 
   // 自动滚动到顶部（因为新日志在顶部）
   useEffect(() => {
@@ -165,9 +200,6 @@ const ContainerLogs: React.FC = () => {
       console.error('[ContainerLogs] 警告：未找到认证token，连接可能失败');
     }
     
-    if (selectedSources.length > 0) params.set('sources', selectedSources.join(','));
-    if (selectedLevels.length > 0) params.set('levels', selectedLevels.join(','));
-    if (keyword.trim()) params.set('keyword', keyword.trim());
     // 只有显式请求时才加载历史日志（每个文件加载500条）
     if (loadHistory) {
       params.set('tail', '500');
@@ -196,15 +228,7 @@ const ContainerLogs: React.FC = () => {
         }
         
         if (data.type === 'connected') {
-          // 初始或新增源通知
-          const msg: any = data as any;
-          if (Array.isArray(msg.sources)) {
-            setAvailableSources(prev => Array.from(new Set([...(prev || []), ...msg.sources])));
-          }
-          if (msg.source) {
-            setAvailableSources(prev => Array.from(new Set([...(prev || []), msg.source])));
-          }
-          // 不将连接消息添加到日志列表
+          // 初始或新增源通知（不需要处理）
           return;
         }
         // 只添加实际的日志条目（添加到顶部，因为最新日志显示在最上面）
@@ -288,16 +312,6 @@ const ContainerLogs: React.FC = () => {
     };
   }, []);
 
-  // 当搜索关键词变化时重新连接（注意：级别过滤和Tab切换不需要重连，因为是前端过滤）
-  useEffect(() => {
-    // 避免首次还未建立连接时立即重连
-    if (eventSourceRef.current && keyword.trim()) {
-      disconnect();
-      // 不清空日志，保留已有日志
-      connect(false); // 过滤条件变化时不加载历史日志
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyword]); // 只有搜索关键词变化时才重连，级别过滤在前端完成
 
   // 暂停/恢复
   const togglePause = () => {
@@ -330,146 +344,83 @@ const ContainerLogs: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  // 获取日志行的级别样式和高亮
-  const getLogClass = (level?: string, type?: string, message?: string) => {
-    if (type === 'error') return 'log-error';
-    if (!level) return 'log-default';
-    
-    const upperLevel = level.toUpperCase();
-    if (upperLevel === 'ERROR' || upperLevel === 'CRITICAL') return 'log-error';
-    if (upperLevel === 'WARNING' || upperLevel === 'WARN') return 'log-warning';
-    if (upperLevel === 'INFO') return 'log-info';
-    if (upperLevel === 'DEBUG') return 'log-debug';
-    return 'log-default';
-  };
-
-  // 检查是否是关键操作（需要高亮）
-  const isHighlightLog = (message?: string) => {
-    if (!message) return false;
-    const msg = message.toLowerCase();
-    return msg.includes('删除') || 
-           msg.includes('delete') || 
-           msg.includes('❌') || 
-           msg.includes('✅') || 
-           msg.includes('🗑️') ||
-           msg.includes('错误') ||
-           msg.includes('失败') ||
-           msg.includes('成功') ||
-           msg.includes('error') ||
-           msg.includes('failed') ||
-           msg.includes('success');
-  };
-
-  // 根据消息内容获取图标
-  const getLogIcon = (message?: string) => {
-    if (!message) return null;
-    const msg = message.toLowerCase();
-    if (msg.includes('删除') || msg.includes('delete') || msg.includes('🗑️')) return '🗑️';
-    if (msg.includes('成功') || msg.includes('success') || msg.includes('✅')) return '✅';
-    if (msg.includes('失败') || msg.includes('failed') || msg.includes('❌')) return '❌';
-    if (msg.includes('警告') || msg.includes('warning') || msg.includes('⚠️')) return '⚠️';
-    if (msg.includes('错误') || msg.includes('error')) return '❌';
-    if (msg.includes('启动') || msg.includes('start')) return '🚀';
-    if (msg.includes('停止') || msg.includes('stop')) return '🛑';
-    return null;
-  };
-
-  // 查看日志上下文
-  const handleShowContext = (log: LogEntry) => {
-    setSelectedLog(log);
-    
-    // 查找相关日志（前后5条）
-    const logIndex = displayLogs.findIndex(l => l.timestamp === log.timestamp && l.message === log.message);
-    if (logIndex !== -1) {
-      const start = Math.max(0, logIndex - 5);
-      const end = Math.min(displayLogs.length, logIndex + 6);
-      setContextLogs(displayLogs.slice(start, end));
-      setContextModalVisible(true);
-    }
-  };
-
-  // 复制日志
-  const handleCopyLog = useCallback(() => {
-    message.success('日志已复制到剪贴板');
-  }, []);
-
-  // 渲染单个日志项（用于虚拟滚动）
-  const LogRow = useCallback(({ index, style }: any) => {
-    const log = displayLogs[index];
-    if (!log) return null;
-
-    return (
-      <div style={style}>
-        <SmartLogItem
-          log={log}
-          index={index}
-          showSource={activeTab === 'all'}
-          isStructured={showStructured}
-          onCopyLog={handleCopyLog}
-          onShowContext={handleShowContext}
-        />
-      </div>
-    );
-  }, [displayLogs, activeTab, showStructured, handleCopyLog]);
 
   return (
-    <div className="container-logs-page">
-      <Card
-        title={
-          <Title level={4} style={{ margin: 0, color: colors.textPrimary }}>
-            容器日志
-          </Title>
-        }
-        extra={
-          <Space size="middle" wrap>
-            <div>
-              <Text type="secondary" style={{ marginRight: 8 }}>级别</Text>
-              <Select
-                mode="multiple"
-                allowClear
-                placeholder="选择级别"
-                style={{ minWidth: 200 }}
-                value={selectedLevels}
-                onChange={setSelectedLevels}
-              >
-                {['DEBUG','INFO','WARNING','ERROR','CRITICAL'].map(lv => (
-                  <Option key={lv} value={lv}>{lv}</Option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <Input.Search
-                allowClear
-                placeholder="关键字过滤"
-                style={{ width: 200 }}
-                value={keyword}
-                onChange={(e) => setKeyword(e.target.value)}
-                onSearch={() => {
-                  disconnect();
-                  setLogs([]);
-                  connect(false); // 搜索过滤不加载历史日志
-                }}
+    <div className="container-logs-page" style={{ 
+      height: 'calc(100vh - 112px)', // 固定高度：视口高度 - Header(64px) - padding(48px)
+      display: 'flex',
+      flexDirection: 'column',
+      overflow: 'hidden' // 防止页面级别滚动，使用内部滚动
+    }}>
+        {/* 顶部工具栏区域（根据主题切换） */}
+        <div style={{
+          background: colors.bgContainer,
+          borderRadius: '8px 8px 0 0',
+          border: `1px solid ${colors.border}`,
+          borderBottom: 'none',
+          padding: '12px 16px',
+          flexShrink: 0
+        }}>
+        {/* 第一行：标题 + 状态 + 工具按钮 */}
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: isMobile ? 'column' : 'row',
+          alignItems: isMobile ? 'stretch' : 'center', 
+          justifyContent: 'space-between',
+          marginBottom: 12,
+          gap: isMobile ? 12 : 0
+        }}>
+          {/* 左侧：标题 + 状态 */}
+          <Space size={isMobile ? 8 : 16} wrap>
+            <Text strong style={{ fontSize: isMobile ? 14 : 16, color: colors.textPrimary }}>🐳 容器日志</Text>
+            <Space size={12} style={{ fontSize: isMobile ? 11 : 12, color: colors.textSecondary }} wrap>
+              <span style={{ 
+                display: 'inline-flex', 
+                alignItems: 'center',
+                gap: 4
+              }}>
+                <span style={{ 
+                  display: 'inline-block',
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: isConnected ? colors.success : colors.error
+                }} />
+                {isConnected ? '已连接' : '已断开'}
+              </span>
+              <span>{displayLogs.length} 条日志</span>
+              {isPaused && <Tag color="orange" style={{ fontSize: isMobile ? 10 : 11 }}>已暂停</Tag>}
+            </Space>
+          </Space>
+
+          {/* 右侧：工具按钮 */}
+          <Space size={8} wrap style={{ justifyContent: isMobile ? 'flex-start' : 'flex-end' }}>
+            <label style={{ 
+              fontSize: 12, 
+              color: colors.textSecondary, 
+              cursor: 'pointer', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: 6 
+            }}>
+              <input
+                type="checkbox"
+                checked={autoScroll}
+                onChange={(e) => setAutoScroll(e.target.checked)}
               />
-            </div>
-            <Switch
-              checkedChildren="结构化"
-              unCheckedChildren="原始"
-              checked={showStructured}
-              onChange={setShowStructured}
-            />
-            <Switch
-              checkedChildren="自动滚动"
-              unCheckedChildren="自动滚动"
-              checked={autoScroll}
-              onChange={setAutoScroll}
-            />
+              自动滚动
+            </label>
             <Button
+              type="text"
+              size="small"
               icon={isPaused ? <PlayCircleOutlined /> : <PauseCircleOutlined />}
               onClick={togglePause}
-            >
-              {isPaused ? '继续' : '暂停'}
-            </Button>
+              style={{ color: isPaused ? colors.success : undefined }}
+              title={isPaused ? '继续' : '暂停'}
+            />
             <Button
+              type="text"
+              size="small"
               icon={<ReloadOutlined />}
               onClick={() => {
                 console.log('[重新连接] 清空日志、缓存，并重新加载历史');
@@ -477,164 +428,219 @@ const ContainerLogs: React.FC = () => {
                 setLogs([]);
                 sessionStorage.removeItem('containerLogs');
                 sessionStorage.removeItem('containerLogsHistoryLoaded');
-                hasLoadedHistoryRef.current = false; // 允许重新加载历史
-                connect(true); // 重新连接时加载历史日志
+                hasLoadedHistoryRef.current = false;
+                connect(true);
               }}
-            >
-              重新连接
-            </Button>
+              title="重新连接"
+            />
             <Button
+              type="text"
+              size="small"
               icon={<ClearOutlined />}
               onClick={clearLogs}
-            >
-              清空
-            </Button>
+              title="清空日志"
+            />
             <Button
+              type="text"
+              size="small"
               icon={<DownloadOutlined />}
               onClick={exportLogs}
               disabled={logs.length === 0}
-            >
-              导出
-            </Button>
+              title="导出日志"
+            />
           </Space>
-        }
+        </div>
+
+        {/* Tab区域和搜索框 */}
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: isMobile ? 'column' : 'row',
+          alignItems: isMobile ? 'stretch' : 'center', 
+          gap: isMobile ? 8 : 12,
+          marginTop: 8,
+          marginBottom: -12
+        }}>
+          <Tabs
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            size="small"
+            items={[
+              { 
+                key: 'all', 
+                label: (
+                  <span style={{ fontSize: isMobile ? 11 : 13 }}>
+                    全部 <Tag color="blue" style={{ marginLeft: 4, fontSize: isMobile ? 10 : 11 }}>{groupedLogs.all?.length || 0}</Tag>
+                  </span>
+                )
+              },
+              { 
+                key: 'enhanced_bot.log', 
+                label: (
+                  <span style={{ fontSize: isMobile ? 11 : 13 }}>
+                    消息 <Tag color="green" style={{ marginLeft: 4, fontSize: isMobile ? 10 : 11 }}>{groupedLogs['enhanced_bot.log']?.length || 0}</Tag>
+                  </span>
+                )
+              },
+              { 
+                key: 'api.log', 
+                label: (
+                  <span style={{ fontSize: isMobile ? 11 : 13 }}>
+                    API <Tag color="orange" style={{ marginLeft: 4, fontSize: isMobile ? 10 : 11 }}>{groupedLogs['api.log']?.length || 0}</Tag>
+                  </span>
+                )
+              },
+              { 
+                key: 'web_api.log', 
+                label: (
+                  <span style={{ fontSize: isMobile ? 11 : 13 }}>
+                    Web <Tag color="purple" style={{ marginLeft: 4, fontSize: isMobile ? 10 : 11 }}>{groupedLogs['web_api.log']?.length || 0}</Tag>
+                  </span>
+                )
+              },
+            ]}
+            style={{ flex: 1, marginBottom: 0 }}
+          />
+          
+          {/* 搜索框和结果 */}
+          <div style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: 8,
+            width: isMobile ? '100%' : 'auto'
+          }}>
+            <Input
+              placeholder="搜索日志..."
+              prefix={<SearchOutlined style={{ color: colors.textSecondary }} />}
+              value={searchKeyword}
+              onChange={(e) => setSearchKeyword(e.target.value)}
+              allowClear
+              size="small"
+              style={{ 
+                width: isMobile ? '100%' : 200,
+                fontSize: isMobile ? 11 : 12
+              }}
+            />
+            
+            {/* 搜索结果提示 */}
+            {searchKeyword && (
+              <Text type="secondary" style={{ fontSize: 11, whiteSpace: 'nowrap' }}>
+                {displayLogs.length} 条
+              </Text>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* 日志显示区域（黑色终端 - 始终保持深色） */}
+      <div 
+        ref={logsContainerRef}
+        className="terminal-logs-container"
         style={{
-          background: colors.bgContainer,
-          border: `1px solid ${colors.borderLight}`,
+          background: '#0d1117',
+          border: `1px solid ${colors.border}`,
+          borderTop: 'none',
+          borderRadius: '0 0 8px 8px',
+          flex: 1, // 自动填充剩余空间
+          minHeight: 0, // 允许flex子元素缩小
+          overflowY: 'scroll', // 强制显示垂直滚动条
+          overflowX: 'auto', // 水平滚动按需显示
+          fontFamily: 'Monaco, Consolas, "Courier New", monospace',
+          fontSize: isMobile ? '10px' : '12px',
+          lineHeight: isMobile ? '18px' : '20px',
+          position: 'relative' // 确保边框可见
         }}
       >
-        <Tabs
-          activeKey={activeTab}
-          onChange={setActiveTab}
-          items={[
-            {
-              key: 'all',
-              label: (
-                <span>
-                  全部日志 <Tag color="blue">{groupedLogs.all?.length || 0}</Tag>
-                </span>
-              ),
-            },
-            {
-              key: 'enhanced_bot.log',
-              label: (
-                <span>
-                  消息转发 <Tag color="green">{groupedLogs['enhanced_bot.log']?.length || 0}</Tag>
-                </span>
-              ),
-            },
-            {
-              key: 'api.log',
-              label: (
-                <span>
-                  API日志 <Tag color="orange">{groupedLogs['api.log']?.length || 0}</Tag>
-                </span>
-              ),
-            },
-            {
-              key: 'web_api.log',
-              label: (
-                <span>
-                  Web日志 <Tag color="purple">{groupedLogs['web_api.log']?.length || 0}</Tag>
-                </span>
-              ),
-            },
-          ]}
-          style={{ marginBottom: '16px' }}
-        />
+        {displayLogs.length === 0 ? (
+          <div style={{ 
+            textAlign: 'center', 
+            padding: '80px 20px',
+            color: '#6e7681'
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.3 }}>📋</div>
+            <div style={{ fontSize: 14 }}>暂无日志数据</div>
+            <div style={{ fontSize: 11, marginTop: '8px', opacity: 0.7 }}>
+              {isConnected ? '等待容器输出日志...' : '点击"重新连接"按钮连接到容器'}
+            </div>
+          </div>
+        ) : (
+          displayLogs.map((log, index) => {
+            const time = log.timestamp ? new Date(log.timestamp).toLocaleTimeString('zh-CN', { hour12: false }) : '--:--:--';
+            const level = log.emoji || log.level || 'INFO';
+            
+            // 获取级别颜色
+            const getLevelColor = () => {
+              if (log.emoji) return '#c9d1d9';
+              const upperLevel = (log.level || '').toUpperCase();
+              if (upperLevel === 'ERROR' || upperLevel === 'CRITICAL') return '#f85149';
+              if (upperLevel === 'WARNING' || upperLevel === 'WARN') return '#d29922';
+              if (upperLevel === 'INFO') return '#58a6ff';
+              if (upperLevel === 'DEBUG') return '#8b949e';
+              return '#c9d1d9';
+            };
 
-        <div className="logs-stats" style={{ marginBottom: '16px' }}>
-          <Space size="large">
-            <Tag color="blue">
-              当前显示: {displayLogs.length} / {activeTab === 'all' ? MAX_LOGS_PER_SOURCE * 3 : MAX_LOGS_PER_SOURCE}
-            </Tag>
-            <Tag color="green">状态: {isConnected ? '实时推送' : '已断开'}</Tag>
-            {isPaused && <Tag color="orange">已暂停</Tag>}
-          </Space>
-        </div>
-
-        <div 
-          ref={logsContainerRef}
-          className="logs-container"
-          style={{
-            background: colors.bgLayout,
-            border: `1px solid ${colors.borderLight}`,
-            borderRadius: '8px',
-            height: 'calc(100vh - 320px)',
-            minHeight: '400px',
-            fontFamily: 'Monaco, Consolas, "Courier New", monospace',
-            fontSize: '13px',
-            lineHeight: '1.5',
-          }}
-        >
-          {displayLogs.length === 0 ? (
-            <div style={{ 
-              textAlign: 'center', 
-              padding: '40px',
-              color: colors.textSecondary 
-            }}>
-              <div style={{ fontSize: '48px', marginBottom: '16px', opacity: 0.3 }}>📋</div>
-              <div>暂无日志数据</div>
-              <div style={{ fontSize: '12px', marginTop: '8px' }}>
-                {isConnected ? '等待容器输出日志...' : '点击"重新连接"按钮连接到容器'}
+            return (
+              <div
+                key={`${log.timestamp}-${index}`}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '50px 80px 60px 1fr',
+                  gap: '12px',
+                  padding: '4px 16px',
+                  borderBottom: '1px solid #21262d',
+                  cursor: 'pointer',
+                  transition: 'background 0.15s',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = '#161b22';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent';
+                }}
+                onClick={() => {
+                  // 复制整行日志
+                  const logText = `[${time}] [${level}] ${log.message}`;
+                  navigator.clipboard.writeText(logText);
+                  message.success('日志已复制');
+                }}
+                title="点击复制"
+              >
+                {/* 行号 */}
+                <div style={{ 
+                  color: '#6e7681', 
+                  textAlign: 'right',
+                  fontSize: 11,
+                  userSelect: 'none'
+                }}>
+                  {index + 1}
+                </div>
+                
+                {/* 时间戳 */}
+                <div style={{ color: '#8b949e' }}>
+                  {time}
+                </div>
+                
+                {/* 级别/Emoji */}
+                <div style={{ 
+                  color: getLevelColor(),
+                  fontWeight: log.emoji ? 'normal' : '500'
+                }}>
+                  {level}
+                </div>
+                
+                {/* 消息内容 */}
+                <div style={{ 
+                  color: '#c9d1d9',
+                  wordBreak: 'break-word',
+                  whiteSpace: 'pre-wrap'
+                }}>
+                  {log.message}
+                </div>
               </div>
-            </div>
-          ) : (
-            <List
-              rowCount={displayLogs.length}
-              rowHeight={dynamicRowHeight}
-              rowComponent={LogRow}
-              rowProps={{}}
-              overscanCount={5}
-              style={{ padding: '16px' }}
-            />
-          )}
-          <div ref={logsEndRef} />
-        </div>
-      </Card>
-
-      {/* 日志上下文模态框 */}
-      <Modal
-        title={
-          <Space>
-            <span>日志上下文</span>
-            {selectedLog && (
-              <Tag color="blue">{selectedLog.timestamp}</Tag>
-            )}
-          </Space>
-        }
-        open={contextModalVisible}
-        onCancel={() => setContextModalVisible(false)}
-        footer={null}
-        width={1000}
-        bodyStyle={{ maxHeight: '600px', overflow: 'auto' }}
-      >
-        {contextLogs.map((log, index) => {
-          const isSelected = selectedLog && 
-            log.timestamp === selectedLog.timestamp && 
-            log.message === selectedLog.message;
-          
-          return (
-            <div 
-              key={index}
-              style={{
-                background: isSelected ? colors.info + '20' : 'transparent',
-                border: isSelected ? `2px solid ${colors.info}` : '1px solid transparent',
-                borderRadius: '6px',
-                marginBottom: '8px'
-              }}
-            >
-              <SmartLogItem
-                log={log}
-                index={index}
-                showSource={true}
-                isStructured={showStructured}
-                onCopyLog={handleCopyLog}
-              />
-            </div>
-          );
-        })}
-      </Modal>
+            );
+          })
+        )}
+        <div ref={logsEndRef} />
+      </div>
     </div>
   );
 };

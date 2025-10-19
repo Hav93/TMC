@@ -123,7 +123,7 @@ export const API_ROUTES = {
     base: `${API_BASE}/settings`,
     get: `${API_BASE}/settings`,
     save: `${API_BASE}/settings`,
-    testProxy: `${API_BASE}/test-proxy`,
+    testProxy: `${API_BASE}/settings/test-proxy`,
     telegram: {
       login: `${API_BASE}/telegram/login`,
       logout: `${API_BASE}/telegram/logout`,
@@ -148,6 +148,67 @@ export const API_ROUTES = {
     stats: `${API_BASE}/dashboard/stats`,
     recentLogs: `${API_BASE}/dashboard/recent-logs`,
     messageStats: `${API_BASE}/dashboard/message-stats`,
+  },
+
+  // ==================== 资源监控 (Resources) ====================
+  // 后端: app/backend/api/routes/resource_monitor.py
+  resources: {
+    base: `${API_BASE}/resources`,
+    rules: {
+      list: `${API_BASE}/resources/rules`,
+      create: `${API_BASE}/resources/rules`,
+      detail: (id: number) => `${API_BASE}/resources/rules/${id}`,
+      update: (id: number) => `${API_BASE}/resources/rules/${id}`,
+      delete: (id: number) => `${API_BASE}/resources/rules/${id}`,
+    },
+    records: {
+      list: `${API_BASE}/resources/records`,
+      detail: (id: number) => `${API_BASE}/resources/records/${id}`,
+    },
+    stats: `${API_BASE}/resources/stats`,
+  },
+
+  // ==================== 性能监控 (Performance) ====================
+  // 后端: app/backend/api/routes/performance.py
+  performance: {
+    base: `${API_BASE}/performance`,
+    stats: `${API_BASE}/performance/stats`,
+    cache: {
+      stats: `${API_BASE}/performance/cache/stats`,
+      clear: `${API_BASE}/performance/cache/clear`,
+    },
+    retryQueue: {
+      stats: `${API_BASE}/performance/retry-queue/stats`,
+    },
+    batchWriter: {
+      stats: `${API_BASE}/performance/batch-writer/stats`,
+      flush: `${API_BASE}/performance/batch-writer/flush`,
+    },
+    filterEngine: {
+      stats: `${API_BASE}/performance/filter-engine/stats`,
+      clearCache: `${API_BASE}/performance/filter-engine/clear-cache`,
+    },
+  },
+
+  // ==================== 推送通知 (Notifications) ====================
+  // 后端: app/backend/api/routes/notifications.py
+  notifications: {
+    base: `${API_BASE}/notifications`,
+    rules: {
+      list: `${API_BASE}/notifications/rules`,
+      create: `${API_BASE}/notifications/rules`,
+      detail: (id: number) => `${API_BASE}/notifications/rules/${id}`,
+      update: (id: number) => `${API_BASE}/notifications/rules/${id}`,
+      delete: (id: number) => `${API_BASE}/notifications/rules/${id}`,
+      toggle: (id: number) => `${API_BASE}/notifications/rules/${id}/toggle`,
+    },
+    logs: {
+      list: `${API_BASE}/notifications/logs`,
+      detail: (id: number) => `${API_BASE}/notifications/logs/${id}`,
+    },
+    test: `${API_BASE}/notifications/test`,
+    stats: `${API_BASE}/notifications/stats`,
+    types: `${API_BASE}/notifications/types`,
   },
 
   // ==================== 健康检查 ====================
