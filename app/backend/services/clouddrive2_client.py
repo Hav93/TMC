@@ -249,48 +249,65 @@ class CloudDrive2Client:
         参考: CloudDrive2 gRPC API - 文件操作 [CreateFolder]
         文档: https://www.clouddrive2.com/api/CloudDrive2_gRPC_API_Guide.html
         """
-        # 某些版本不支持 CreateFolder（UNIMPLEMENTED）。
-        # 按官方错误语义，若不支持就不尝试创建，只验证父级是否存在，缺失则直接抛错由上层处理。
+        # 某些版本不支持 CreateFolder（UNIMPLEMENTED）
+        # 我们尝试逐级创建；若确实不支持，则抛出明确错误供上层提示人工创建。
         try:
             from protos import clouddrive_pb2
+            import grpc
         except Exception:
             return
 
         if not self.stub or not getattr(self.stub, 'official_stub', None):
             return
 
-        path = remote_full_path.replace('\\', '/').strip()
-        if not path.startswith('/'):
+        normalized = remote_full_path.replace('\\', '/').strip()
+        if not normalized.startswith('/'):
             return
 
-        parent_path = os.path.dirname(path)
-        if parent_path in ('', '/'):
+        parent_path_full = os.path.dirname(normalized)
+        if parent_path_full in ('', '/'):
             return
 
-        # 一些版本的 FindFileByPath 使用 {parentPath, path}
-        # 先按绝对路径尝试；失败则按“根 + 相对路径”重试
-        last_exc = None
-        try:
-            req = clouddrive_pb2.FindFileByPathRequest(parentPath='/', path=parent_path)
-            await self.stub.official_stub.FindFileByPath(
-                req, metadata=self.stub._get_metadata()
-            )
-            return
-        except Exception as e:
-            last_exc = e
-        try:
-            # 将根段提取为 parentPath，其余为相对 path
-            parts = parent_path.replace('\\', '/').lstrip('/').split('/')
-            root = '/' + parts[0] if parts and parts[0] else '/'
-            rel = '/'.join(parts[1:])
-            req2 = clouddrive_pb2.FindFileByPathRequest(parentPath=root, path=rel)
-            await self.stub.official_stub.FindFileByPath(
-                req2, metadata=self.stub._get_metadata()
-            )
-            return
-        except Exception as e2:
-            logger.warning(f"⚠️ 远程父目录不存在: {parent_path} -> {e2}")
-            raise e2
+        # 根段（例如 /115open）与其后的相对路径段
+        parts = parent_path_full.lstrip('/').split('/')
+        api_root = '/' + parts[0]
+        rel_parts = parts[1:]
+
+        # 逐级检查/创建
+        current_parent = api_root
+        for idx, seg in enumerate(rel_parts):
+            # 目标目录的相对路径（相对 api_root）
+            current_rel = '/'.join(rel_parts[: idx + 1])
+            try:
+                # 存在性检查
+                find_req = clouddrive_pb2.FindFileByPathRequest(parentPath=api_root, path=current_rel)
+                await self.stub.official_stub.FindFileByPath(
+                    find_req, metadata=self.stub._get_metadata()
+                )
+                continue  # 已存在
+            except Exception as find_err:
+                # 不存在则尝试创建
+                try:
+                    create_parent = current_parent
+                    folder_name = seg
+                    create_req = clouddrive_pb2.CreateFolderRequest(parentPath=create_parent, folderName=folder_name)
+                    await self.stub.official_stub.CreateFolder(
+                        create_req, metadata=self.stub._get_metadata()
+                    )
+                    logger.info(f"📁 已创建远程目录: {create_parent}/{folder_name}")
+                except Exception as create_err:
+                    # 处理 UNIMPLEMENTED 或权限等错误
+                    if hasattr(create_err, 'code') and callable(create_err.code):
+                        code = create_err.code()
+                        if code == grpc.StatusCode.UNIMPLEMENTED:
+                            raise RuntimeError(
+                                f"服务器不支持创建目录(CreateFolder)。请先手动创建: {parent_path_full}"
+                            ) from create_err
+                    # 其他错误直接抛出
+                    raise
+            finally:
+                # 更新父路径为刚刚验证/创建成功的目录
+                current_parent = f"{api_root}/{current_rel}".replace('//', '/')
 
     async def disconnect(self):
         """断开连接"""
