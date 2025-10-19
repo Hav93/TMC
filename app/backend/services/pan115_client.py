@@ -3304,7 +3304,15 @@ class Pan115Client:
             original_app = app
             app_alias_map = {
                 'ipad': 'ios',
+                '115ipad': 'ios',
+                '115ios': 'ios',
+                '115android': 'android',
                 'harmony': 'android',
+                'apple_tv': 'tv',
+                'qandriod': 'qandroid',  # 兼容常见拼写
+                'windows': 'web',
+                'mac': 'web',
+                'linux': 'web',
             }
             allowed_apps = {
                 'web', 'android', 'ios', 'tv', 'alipaymini', 'wechatmini', 'qandroid', 'qios'
@@ -3397,7 +3405,15 @@ class Pan115Client:
             original_app = app
             app_alias_map = {
                 'ipad': 'ios',
+                '115ipad': 'ios',
+                '115ios': 'ios',
+                '115android': 'android',
                 'harmony': 'android',
+                'apple_tv': 'tv',
+                'qandriod': 'qandroid',
+                'windows': 'web',
+                'mac': 'web',
+                'linux': 'web',
             }
             allowed_apps = {
                 'web', 'android', 'ios', 'tv', 'alipaymini', 'wechatmini', 'qandroid', 'qios'
