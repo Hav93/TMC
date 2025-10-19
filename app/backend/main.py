@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 # 导入API路由
-from api.routes import system, rules, logs, chats, clients, settings, dashboard, auth, users, media_monitor, media_files, media_settings, pan115, resource_monitor, performance, notifications, upload_progress, upload_websocket
+from api.routes import system, rules, logs, chats, clients, settings, dashboard, auth, users, media_monitor, media_files, media_settings, pan115, clouddrive2_settings, resource_monitor, performance, notifications, upload_progress, upload_websocket
 
 # 导入核心业务逻辑
 from enhanced_bot import EnhancedTelegramBot
@@ -255,6 +255,7 @@ app.include_router(media_monitor.router, prefix="/api/media/monitor", tags=["媒
 app.include_router(media_files.router, prefix="/api/media", tags=["媒体文件"])
 app.include_router(media_settings.router, prefix="/api/settings/media", tags=["媒体配置"])
 app.include_router(pan115.router, prefix="/api/pan115", tags=["115网盘"])
+app.include_router(clouddrive2_settings.router, prefix="/api/settings/clouddrive2", tags=["CloudDrive2配置"])
 app.include_router(resource_monitor.router, prefix="/api/resources", tags=["资源监控"])
 app.include_router(performance.router, prefix="/api/performance", tags=["性能监控"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["通知系统"])
