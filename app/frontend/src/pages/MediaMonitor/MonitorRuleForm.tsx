@@ -436,6 +436,7 @@ const MonitorRuleForm: React.FC = () => {
                             );
                           } else if (targetType === 'pan115') {
                             return (
+                              <>
                               <Form.Item
                                 label="CloudDrive2 远程路径"
                                 name="pan115_remote_path"
@@ -473,7 +474,7 @@ const MonitorRuleForm: React.FC = () => {
                                   }}>浏览</Button>}
                                 />
                               </Form.Item>
-                              <Form.Item shouldUpdate>
+                              <Form.Item shouldUpdate={true}>
                                 {({ getFieldValue }) => {
                                   const rulePath = getFieldValue('pan115_remote_path') || '';
                                   // 实时从设置页的全局根读取（通过 clouddrive2SettingsApi.getConfig）
@@ -484,14 +485,13 @@ const MonitorRuleForm: React.FC = () => {
                                   const globalRoot = (globalConfig?.mount_point) || '（将使用系统设置中的“默认根路径”）';
                                   const finalPath = rulePath.startsWith('/') ? rulePath : `${globalRoot}${globalRoot.endsWith('/') ? '' : '/'}${rulePath}`;
                                   return (
-                                    <>
                                       <div style={{ color: '#888', marginTop: -8, marginBottom: 8 }}>
                                         最终上传路径预览：{finalPath}
                                       </div>
-                                    </>
                                   );
                                 }}
                               </Form.Item>
+                              </>
                             );
                           }
                           return null;
