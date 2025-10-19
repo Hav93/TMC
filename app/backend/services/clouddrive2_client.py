@@ -239,6 +239,81 @@ class CloudDrive2Client:
             logger.error(f"❌ 路径映射失败: {e}")
             return user_mount_point, user_remote_path
     
+    async def _ensure_remote_parent_dirs(self, remote_full_path: str) -> None:
+        """
+        确保远程父目录存在（按段创建）。
+
+        使用 CreateFolder(parentPath, folderName) 逐级创建，已存在则跳过。
+        参考: CloudDrive2 gRPC API - 文件操作 [CreateFolder]
+        文档: https://www.clouddrive2.com/api/CloudDrive2_gRPC_API_Guide.html
+        """
+        try:
+            from protos import clouddrive_pb2
+        except Exception:
+            # proto 不可用则直接返回，由服务端决定
+            return
+
+        if not self.stub or not getattr(self.stub, 'official_stub', None):
+            return
+
+        # 仅处理以 "/" 开头的绝对路径
+        path = remote_full_path.replace('\\', '/').strip()
+        if not path.startswith('/'):
+            return
+
+        parent_path = os.path.dirname(path)
+        if parent_path in ('', '/'):
+            return
+
+        # 逐级创建：/CloudNAS/115/a/b/c -> 检查/创建 /CloudNAS/115, /CloudNAS/115/a, ...
+        segments = [seg for seg in parent_path.split('/') if seg]
+        if not segments:
+            return
+
+        # 根起点，如 /CloudNAS/115
+        current = ''
+        for idx, seg in enumerate(segments):
+            current = f"{current}/{seg}" if current else f"/{seg}"
+
+            # 顶层根无需创建（例如 /CloudNAS 或 /CloudNAS/115 可能由挂载管理）
+            if idx < 2:  # 避免对类似 /CloudNAS/115 直接 CreateFolder
+                continue
+
+            # 检查是否存在
+            exists = False
+            try:
+                req = clouddrive_pb2.FindFileByPathRequest(theFilePath=current)
+                _ = await self.stub.official_stub.FindFileByPath(
+                    req, metadata=self.stub._get_metadata()
+                )
+                exists = True
+            except Exception:
+                exists = False
+
+            if exists:
+                continue
+
+            # 创建当前目录：parent = dirname(current), name = basename(current)
+            parent_dir = os.path.dirname(current) or '/'
+            folder_name = os.path.basename(current)
+            try:
+                create_req = clouddrive_pb2.CreateFolderRequest(
+                    parentPath=parent_dir,
+                    folderName=folder_name,
+                )
+                create_res = await self.stub.official_stub.CreateFolder(
+                    create_req, metadata=self.stub._get_metadata()
+                )
+                # 校验结果（FileOperationResult）
+                if hasattr(create_res, 'result') and hasattr(create_res.result, 'success'):
+                    if not create_res.result.success:
+                        err = getattr(create_res.result, 'errorMessage', '') or 'unknown error'
+                        logger.warning(f"⚠️ 创建目录失败(忽略): {current} -> {err}")
+                logger.info(f"📁 已创建目录: {current}")
+            except Exception as e:
+                # 目录可能已被其他并发创建，或无权限，忽略继续
+                logger.warning(f"⚠️ 创建目录异常(忽略): {current} -> {e}")
+
     async def disconnect(self):
         """断开连接"""
         if self.channel:
@@ -449,6 +524,12 @@ class CloudDrive2Client:
             logger.info(f"   文件名: {file_name}")
             logger.info(f"   大小: {file_size} bytes")
             
+            # 步骤0: 确保父目录存在（按官方 API 逐级创建）
+            try:
+                await self._ensure_remote_parent_dirs(remote_path)
+            except Exception as e:
+                logger.warning(f"⚠️ 确保父目录存在时出错(忽略继续): {e}")
+
             # 步骤1: 创建文件
             logger.info("📄 步骤1: 创建文件...")
             create_request = clouddrive_pb2.CreateFileRequest(
@@ -505,10 +586,14 @@ class CloudDrive2Client:
             close_request = clouddrive_pb2.CloseFileRequest(
                 fileHandle=file_handle
             )
-            await self.stub.official_stub.CloseFile(
+            close_res = await self.stub.official_stub.CloseFile(
                 close_request,
                 metadata=self.stub._get_metadata()
             )
+            # CloseFile 返回 FileOperationResult，需检查 success
+            if hasattr(close_res, 'success') and not close_res.success:
+                err = getattr(close_res, 'errorMessage', '') or 'unknown error'
+                raise RuntimeError(f"关闭文件失败: {err}")
             
             logger.info(f"✅ 上传完成: {file_name} ({uploaded_bytes} bytes)")
             
