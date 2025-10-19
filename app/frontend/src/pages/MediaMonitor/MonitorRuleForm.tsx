@@ -399,7 +399,7 @@ const MonitorRuleForm: React.FC = () => {
                       >
                         <Select>
                           <Option value="local">📂 本地路径</Option>
-                          <Option value="pan115">☁️ 115网盘</Option>
+                          <Option value="pan115">☁️ CloudDrive2</Option>
                         </Select>
                       </Form.Item>
 
@@ -432,9 +432,9 @@ const MonitorRuleForm: React.FC = () => {
                           } else if (targetType === 'pan115') {
                             return (
                               <Form.Item
-                                label="115网盘远程路径"
+                                label="CloudDrive2 远程路径"
                                 name="pan115_remote_path"
-                                tooltip="文件将上传到115网盘的此路径下（如 /Telegram媒体）。注意：请先在【系统设置 → 115网盘配置】中扫码登录115网盘。"
+                                tooltip="文件将通过 CloudDrive2 上传到 115 网盘的此路径下（如 /Telegram媒体）。注意：请先在【系统设置 → CloudDrive2 配置】中配置 CloudDrive2 服务。"
                               >
                                 <Input placeholder="/Telegram媒体" />
                               </Form.Item>
