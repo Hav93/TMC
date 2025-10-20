@@ -83,6 +83,10 @@ class CloudDrive2Client:
         self.stub: Optional[CloudDrive2Stub] = None
         self.token: Optional[str] = None
         self._connected = False
+        # Remote upload capability and device id persistence
+        self._remote_capability_checked: bool = False
+        self._remote_capable: bool = False
+        self._device_id_file: str = os.getenv('CD2_DEVICE_ID_FILE', 'data/cd2_device_id.txt')
     
     async def connect(self) -> bool:
         """
@@ -240,6 +244,38 @@ class CloudDrive2Client:
         except Exception as e:
             logger.error(f"❌ 路径映射失败: {e}")
             return user_mount_point, user_remote_path
+
+    # =============== Remote Upload helpers ===============
+    def _get_or_create_device_id(self) -> str:
+        try:
+            os.makedirs(os.path.dirname(self._device_id_file), exist_ok=True)
+            if os.path.exists(self._device_id_file):
+                with open(self._device_id_file, 'r', encoding='utf-8') as f:
+                    val = f.read().strip()
+                    if val:
+                        return val
+            import uuid
+            did = str(uuid.uuid4())
+            with open(self._device_id_file, 'w', encoding='utf-8') as f:
+                f.write(did)
+            return did
+        except Exception:
+            # 失败时退化为一次性id
+            import uuid
+            return str(uuid.uuid4())
+
+    async def _move_commit(self, temp_path: str, final_path: str) -> None:
+        """将临时文件移动/提交为最终路径。"""
+        from protos import clouddrive_pb2
+        move_req = clouddrive_pb2.MoveFileRequest(
+            theFilePaths=[temp_path], destPath=final_path
+        )
+        try:
+            await self.stub.official_stub.MoveFile(
+                move_req, metadata=self.stub._get_metadata()
+            )
+        except Exception as e:
+            logger.warning(f"⚠️ 提交重命名失败: {e}")
     
     async def _ensure_remote_parent_dirs(self, remote_full_path: str) -> None:
         """
@@ -383,11 +419,61 @@ class CloudDrive2Client:
                     file_size, progress_callback
                 )
             else:
-                logger.info("🔧 使用方案2: gRPC API 上传（CreateFile + WriteToFile + CloseFile）")
-                result = await self._upload_via_grpc(
-                    local_path, actual_remote_path,
-                    file_size, progress_callback
-                )
+                # 优先尝试 Remote Upload 能力（可通过 env 关闭）
+                remote_enabled = os.getenv('CLOUDDRIVE2_REMOTE_ENABLED', 'true').lower() not in ('0','false','no')
+                if remote_enabled:
+                    if not self._remote_capability_checked:
+                        self._remote_capable = False
+                        self._remote_capability_checked = True
+                        try:
+                            # 仅做一次能力探测：直接尝试真实文件的 RemoteUpload，若 UNIMPLEMENTED 再回落
+                            logger.info("🔧 尝试方案R: Remote Upload 协议")
+                            r = await self._upload_via_remote_protocol(
+                                local_path=local_path,
+                                remote_path=actual_remote_path,
+                                file_size=file_size,
+                                progress_callback=progress_callback
+                            )
+                            # 如果走到这里且非 UNIMPLEMENTED，则标记可用
+                            self._remote_capable = True
+                            result = r
+                        except Exception as e:
+                            # 若为 UNIMPLEMENTED/NOT_FOUND 等，回退到 gRPC 文件写入
+                            from grpc import StatusCode
+                            code = getattr(e, 'code', lambda: None)()
+                            if code in (StatusCode.UNIMPLEMENTED, StatusCode.NOT_FOUND, None):
+                                logger.info(f"ℹ️ Remote Upload 不可用，回退 gRPC 文件写入: {e}")
+                                result = await self._upload_via_grpc(
+                                    local_path, actual_remote_path,
+                                    file_size, progress_callback
+                                )
+                            else:
+                                logger.error(f"❌ Remote Upload 错误，回退 gRPC 文件写入: {e}")
+                                result = await self._upload_via_grpc(
+                                    local_path, actual_remote_path,
+                                    file_size, progress_callback
+                                )
+                    else:
+                        if self._remote_capable:
+                            logger.info("🔧 使用方案R: Remote Upload 协议")
+                            result = await self._upload_via_remote_protocol(
+                                local_path=local_path,
+                                remote_path=actual_remote_path,
+                                file_size=file_size,
+                                progress_callback=progress_callback
+                            )
+                        else:
+                            logger.info("🔧 使用方案2: gRPC API 上传（CreateFile + WriteToFile + CloseFile）")
+                            result = await self._upload_via_grpc(
+                                local_path, actual_remote_path,
+                                file_size, progress_callback
+                            )
+                else:
+                    logger.info("🔧 使用方案2: gRPC API 上传（CreateFile + WriteToFile + CloseFile）")
+                    result = await self._upload_via_grpc(
+                        local_path, actual_remote_path,
+                        file_size, progress_callback
+                    )
             
             upload_time = time.time() - start_time
             
@@ -764,71 +850,108 @@ class CloudDrive2Client:
             上传结果字典
         """
         try:
-            file_name = os.path.basename(local_path)
-            logger.info(f"🌐 远程上传协议开始")
-            logger.info(f"   文件: {file_name}")
-            logger.info(f"   大小: {file_size} bytes")
-            logger.info(f"   目标: {remote_path}")  # remote_path 已经是完整路径
-            
-            # TODO: 实现完整的远程上传协议
-            # 由于当前没有 protobuf 定义文件，这里提供框架实现
-            
-            # 步骤1: 计算文件哈希（用于快速上传检测）
-            logger.info("🔐 计算文件哈希...")
-            file_hash = await self._calculate_file_hash(local_path)
-            logger.info(f"✅ SHA256: {file_hash[:16]}...")
-            
-            # 步骤2: 创建上传会话
-            logger.info("📋 创建上传会话...")
-            session_result = await self._create_upload_session(
-                file_name=file_name,
-                file_size=file_size,
-                file_hash=file_hash,
-                target_path=remote_path  # remote_path 已经是完整路径
+            logger.info("🌐 Remote Upload: Start")
+            from protos import clouddrive_pb2
+            import uuid, hashlib
+
+            parent = os.path.dirname(remote_path)
+            base = os.path.basename(remote_path)
+            temp_name = f"{base}.uploading-{uuid.uuid4().hex[:8]}"
+            temp_remote = f"{parent}/{temp_name}".replace('//','/')
+
+            # 1) StartRemoteUpload
+            start = await self.stub.official_stub.StartRemoteUpload(
+                clouddrive_pb2.StartRemoteUploadRequest(
+                    file_path=temp_remote,
+                    file_size=file_size,
+                ),
+                metadata=self.stub._get_metadata(),
             )
-            
-            # 检查是否需要使用 WriteToFile API
-            if isinstance(session_result, dict) and session_result.get('use_write_file_api'):
-                logger.info("🔄 切换到 WriteToFile API 上传")
-                return await self._upload_via_write_file_api(
-                    local_path, remote_path, file_size, progress_callback
-                )
-            
-            if not session_result:
-                return {
-                    'success': False,
-                    'message': '创建上传会话失败'
-                }
-            
-            session_id = session_result.get('session_id') if isinstance(session_result, dict) else session_result
-            
-            logger.info(f"✅ 会话ID: {session_id}")
-            
-            # 步骤3: 处理远程上传通道（服务器驱动）
-            logger.info("📡 监听远程上传通道（双向流式）...")
-            result = await self._handle_remote_upload_channel(
-                session_id=session_id,
-                local_path=local_path,
-                file_size=file_size,
-                progress_callback=progress_callback
-            )
-            
-            if result.get('success'):
-                logger.info(f"✅ 远程上传成功: {file_name}")
-                result['file_path'] = remote_path
-                result['local_path'] = local_path
-                result['method'] = 'remote_protocol'
-            
-            return result
-        
+            upload_id = getattr(start, 'upload_id', '') or getattr(start, 'uploadId', '')
+            if not upload_id:
+                raise RuntimeError('StartRemoteUpload 未返回 upload_id')
+
+            device_id = self._get_or_create_device_id()
+
+            f = open(local_path, 'rb')
+            uploaded = 0
+
+            async def run_channel():
+                nonlocal uploaded
+                req = clouddrive_pb2.RemoteUploadChannelRequest(device_id=device_id)
+                async for rep in self.stub.official_stub.RemoteUploadChannel(req, metadata=self.stub._get_metadata()):
+                    if rep.HasField('read_data'):
+                        r = rep.read_data
+                        f.seek(r.offset)
+                        data = f.read(r.length)
+                        uploaded = max(uploaded, r.offset + len(data))
+                        await self.stub.official_stub.RemoteReadData(
+                            clouddrive_pb2.RemoteReadDataUpload(
+                                upload_id=upload_id, offset=r.offset, length=len(data), lazy_read=r.lazy_read, data=data,
+                                is_last_chunk=(uploaded >= file_size)
+                            ),
+                            metadata=self.stub._get_metadata(),
+                        )
+                        if progress_callback:
+                            await progress_callback(min(uploaded, file_size), file_size)
+                    elif rep.HasField('hash_data'):
+                        h = rep.hash_data
+                        algo = int(getattr(h, 'hash_type', 1))
+                        if algo == 2:
+                            hasher = hashlib.sha1()
+                        else:
+                            hasher = hashlib.md5()
+                        f.seek(0)
+                        block = 1024 * 1024
+                        bytes_hashed = 0
+                        while True:
+                            chunk = f.read(block)
+                            if not chunk:
+                                break
+                            hasher.update(chunk)
+                            bytes_hashed += len(chunk)
+                            await self.stub.official_stub.RemoteHashProgress(
+                                clouddrive_pb2.RemoteHashProgressUpload(
+                                    upload_id=upload_id, bytes_hashed=bytes_hashed, total_bytes=file_size, hash_type=algo
+                                ),
+                                metadata=self.stub._get_metadata(),
+                            )
+                        await self.stub.official_stub.RemoteHashProgress(
+                            clouddrive_pb2.RemoteHashProgressUpload(
+                                upload_id=upload_id, bytes_hashed=file_size, total_bytes=file_size, hash_type=algo,
+                                hash_value=hasher.hexdigest(),
+                            ),
+                            metadata=self.stub._get_metadata(),
+                        )
+                    elif rep.HasField('status_changed'):
+                        st = str(getattr(rep.status_changed, 'status', '')).lower()
+                        if 'finish' in st or 'skipped' in st:
+                            break
+                        if 'error' in st or 'fatal' in st or 'cancel' in st:
+                            msg = getattr(rep.status_changed, 'error_message', 'remote upload error')
+                            raise RuntimeError(msg)
+
+            try:
+                await run_channel()
+            finally:
+                try:
+                    f.close()
+                except Exception:
+                    pass
+
+            # 2) 提交重命名
+            await self._move_commit(temp_remote, remote_path)
+            return {
+                'success': True,
+                'message': 'remote upload ok',
+                'file_path': remote_path,
+                'uploaded_bytes': uploaded,
+            }
         except Exception as e:
             logger.error(f"❌ 远程上传失败: {e}")
             import traceback
             traceback.print_exc()
-            return {
-                'success': False,
-                'message': f'远程上传失败: {e}'
-            }
+            raise
     
     async def _upload_via_write_file_api(
         self,
