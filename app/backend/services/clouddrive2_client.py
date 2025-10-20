@@ -578,13 +578,28 @@ class CloudDrive2Client:
                 fileName=file_name
             )
             
-            create_response = await self.stub.official_stub.CreateFile(
-                create_request,
-                metadata=self.stub._get_metadata()
-            )
-            
-            file_handle = create_response.fileHandle
-            logger.info(f"✅ 文件已创建，fileHandle={file_handle}")
+            try:
+                create_response = await self.stub.official_stub.CreateFile(
+                    create_request,
+                    metadata=self.stub._get_metadata()
+                )
+                file_handle = create_response.fileHandle
+                logger.info(f"✅ 文件已创建，fileHandle={file_handle}")
+            except Exception as create_err:
+                try:
+                    import grpc  # 延迟导入避免环境无grpc时报错
+                    if hasattr(create_err, 'code') and callable(create_err.code):
+                        if create_err.code() == grpc.StatusCode.ALREADY_EXISTS:
+                            logger.info("ℹ️ 目标文件已存在，视为上传成功（跳过写入）")
+                            return {
+                                'success': True,
+                                'message': 'File already exists',
+                                'file_path': remote_path,
+                                'duplicate': True
+                            }
+                except Exception:
+                    pass
+                raise
             
             # 步骤2: 写入文件（优先使用客户端流 WriteToFileStream，若不支持再回退）
             logger.info(f"📤 步骤2: 写入文件数据...")
