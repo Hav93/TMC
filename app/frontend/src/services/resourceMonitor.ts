@@ -33,6 +33,9 @@ export interface ResourceMonitorRule {
   keywords?: KeywordConfig[];
   auto_save_to_115: boolean;
   target_path?: string;
+  target_path_pan115?: string;
+  target_path_magnet?: string;
+  target_path_ed2k?: string;
   pan115_user_key?: string;
   default_tags?: string[];
   enable_deduplication: boolean;
@@ -89,6 +92,9 @@ export interface RuleFormData {
   keywords?: KeywordConfig[];
   auto_save_to_115?: boolean;
   target_path?: string;
+  target_path_pan115?: string;
+  target_path_magnet?: string;
+  target_path_ed2k?: string;
   pan115_user_key?: string;
   default_tags?: string[];
   enable_deduplication?: boolean;

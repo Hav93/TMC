@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Form,
   Input,
@@ -25,6 +25,7 @@ import {
   QuestionCircleOutlined
 } from '@ant-design/icons';
 import { resourceMonitorService } from '../../services/resourceMonitor';
+import api from '../../services/api';
 import type { ResourceMonitorRule, KeywordConfig } from '../../services/resourceMonitor';
 import { chatsApi } from '../../services/chats';
 
@@ -41,6 +42,8 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
   const [form] = Form.useForm();
   const queryClient = useQueryClient();
   const isEdit = !!rule?.id;
+  const [showTypeOverrides, setShowTypeOverrides] = useState(false);
+  const [cd2Root, setCd2Root] = useState<string>('/115open');
 
   // 获取聊天列表
   const { data: chatsData } = useQuery({
@@ -49,6 +52,26 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
   });
 
   const chats = chatsData?.chats || [];
+
+  // 读取CD2在线根（从设置接口推导）
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data } = await api.get('/api/settings/clouddrive2');
+        const mount: string = data?.mount_point || '/CloudNAS/115';
+        let onlineRoot = '/115open';
+        if (typeof mount === 'string' && mount.startsWith('/CloudNAS/')) {
+          const seg = mount.split('/').filter(Boolean).pop();
+          onlineRoot = seg ? `/${seg}` : '/115open';
+        } else if (typeof mount === 'string' && mount.startsWith('/')) {
+          onlineRoot = mount;
+        }
+        setCd2Root(onlineRoot);
+      } catch {
+        setCd2Root('/115open');
+      }
+    })();
+  }, []);
 
   // 初始化表单
   useEffect(() => {
@@ -61,6 +84,9 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
         default_tags: rule.default_tags || [],
         auto_save_to_115: rule.auto_save_to_115 || false,
         target_path: rule.target_path || '',
+        target_path_pan115: (rule as any).target_path_pan115 || '',
+        target_path_magnet: (rule as any).target_path_magnet || '',
+        target_path_ed2k: (rule as any).target_path_ed2k || '',
       });
     }
   }, [rule, form]);
@@ -102,6 +128,20 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
     default_tags: [],
     enable_deduplication: true,
     dedup_time_window: 24,
+  };
+
+  // 路径预览计算
+  const renderPreview = (val?: string) => {
+    const p = (val || '').trim();
+    const rel = p.startsWith('/') ? p.replace(/^\/CloudNAS\/[^/]+\//, '/').replace(/^\//, '') : p;
+    const pan = rel ? `/${rel}` : '/';
+    const cd2 = rel ? `${cd2Root}/${rel}`.replace(/\/+/g, '/') : cd2Root;
+    return (
+      <div style={{ fontSize: 12, color: '#888' }}>
+        <div>pan115 预览: {pan}</div>
+        <div>CloudDrive2 预览: {cd2}</div>
+      </div>
+    );
   };
 
   return (
@@ -281,13 +321,36 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
                 />
 
                 <Form.Item
-                  label="目标路径"
+                  label="目标路径（相对在线路径）"
                   name="target_path"
                   rules={[{ required: true, message: '请输入目标路径' }]}
-                  tooltip="文件将保存到115网盘的此路径下"
+                  tooltip="不写根名，如 分类/电影/{YYYY}/{MM}；绝对路径也兼容"
                 >
-                  <Input placeholder="/资源监控" />
+                  <Input placeholder="分类/资源/{YYYY}/{MM}" />
                 </Form.Item>
+                {renderPreview(Form.useWatch('target_path', form))}
+
+                <Divider style={{ margin: '12px 0' }} />
+                <Space align="center" style={{ marginBottom: 8 }}>
+                  <Switch checked={showTypeOverrides} onChange={setShowTypeOverrides} />
+                  <span>按类型使用不同目录（可选）</span>
+                </Space>
+                {showTypeOverrides && (
+                  <>
+                    <Form.Item label="115分享覆盖路径" name="target_path_pan115">
+                      <Input placeholder="分享/{YYYY}/{MM}" />
+                    </Form.Item>
+                    {renderPreview(Form.useWatch('target_path_pan115', form))}
+                    <Form.Item label="磁力覆盖路径" name="target_path_magnet">
+                      <Input placeholder="离线/磁力/{YYYY}/{MM}" />
+                    </Form.Item>
+                    {renderPreview(Form.useWatch('target_path_magnet', form))}
+                    <Form.Item label="ed2k覆盖路径" name="target_path_ed2k">
+                      <Input placeholder="离线/ed2k/{YYYY}/{MM}" />
+                    </Form.Item>
+                    {renderPreview(Form.useWatch('target_path_ed2k', form))}
+                  </>
+                )}
 
                 <Form.Item
                   label="默认标签"

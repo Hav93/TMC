@@ -594,6 +594,10 @@ class ResourceMonitorRule(Base):
     # 115配置
     auto_save_to_115 = Column(Boolean, default=False, comment='是否自动转存到115')
     target_path = Column(String(500), comment='目标路径')
+    # 类型专属覆盖（可选）
+    target_path_pan115 = Column(String(500), comment='115分享覆盖路径（可选）')
+    target_path_magnet = Column(String(500), comment='磁力覆盖路径（可选）')
+    target_path_ed2k = Column(String(500), comment='ed2k覆盖路径（可选）')
     pan115_user_key = Column(String(100), comment='115用户密钥（可选）')
     
     # 标签

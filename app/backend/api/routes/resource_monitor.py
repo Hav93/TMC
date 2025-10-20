@@ -47,6 +47,9 @@ async def get_rules(
                     "keywords": json.loads(rule.keywords) if rule.keywords else [],
                     "auto_save_to_115": rule.auto_save_to_115,
                     "target_path": rule.target_path,
+                    "target_path_pan115": getattr(rule, 'target_path_pan115', None),
+                    "target_path_magnet": getattr(rule, 'target_path_magnet', None),
+                    "target_path_ed2k": getattr(rule, 'target_path_ed2k', None),
                     "default_tags": json.loads(rule.default_tags) if rule.default_tags else [],
                     "enable_deduplication": rule.enable_deduplication,
                     "dedup_time_window": rule.dedup_time_window,
@@ -76,6 +79,9 @@ async def create_rule(
             keywords=json.dumps(rule_data.get("keywords", []), ensure_ascii=False),
             auto_save_to_115=rule_data.get("auto_save_to_115", False),
             target_path=rule_data.get("target_path"),
+            target_path_pan115=rule_data.get("target_path_pan115"),
+            target_path_magnet=rule_data.get("target_path_magnet"),
+            target_path_ed2k=rule_data.get("target_path_ed2k"),
             pan115_user_key=None,  # 不再保存user_key，使用系统设置中的115账号
             default_tags=json.dumps(rule_data.get("default_tags", []), ensure_ascii=False),
             enable_deduplication=rule_data.get("enable_deduplication", True),
@@ -130,6 +136,12 @@ async def update_rule(
             rule.auto_save_to_115 = rule_data["auto_save_to_115"]
         if "target_path" in rule_data:
             rule.target_path = rule_data["target_path"]
+        if "target_path_pan115" in rule_data:
+            rule.target_path_pan115 = rule_data["target_path_pan115"]
+        if "target_path_magnet" in rule_data:
+            rule.target_path_magnet = rule_data["target_path_magnet"]
+        if "target_path_ed2k" in rule_data:
+            rule.target_path_ed2k = rule_data["target_path_ed2k"]
         if "default_tags" in rule_data:
             rule.default_tags = json.dumps(rule_data["default_tags"], ensure_ascii=False)
         if "enable_deduplication" in rule_data:
