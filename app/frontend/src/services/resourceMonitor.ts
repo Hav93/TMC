@@ -59,7 +59,7 @@ export interface ResourceRecord {
   link_type: string;
   link_url: string;
   link_hash?: string;
-  save_status: 'pending' | 'saving' | 'success' | 'failed';
+  save_status: 'pending' | 'saving' | 'queued' | 'success' | 'failed' | 'duplicate';
   save_path?: string;
   save_error?: string;
   save_time?: string;

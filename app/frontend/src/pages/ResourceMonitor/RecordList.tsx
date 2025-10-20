@@ -155,6 +155,7 @@ const RecordList: React.FC<RecordListProps> = ({ ruleId }) => {
     const configs: Record<string, { color: string; icon: React.ReactNode; text: string }> = {
       pending: { color: 'default', icon: <ClockCircleOutlined />, text: '待处理' },
       saving: { color: 'processing', icon: <SyncOutlined spin />, text: '转存中' },
+      queued: { color: 'processing', icon: <SyncOutlined />, text: '已提交' },
       success: { color: 'success', icon: <CheckCircleOutlined />, text: '成功' },
       failed: { color: 'error', icon: <CloseCircleOutlined />, text: '失败' },
       duplicate: { color: 'warning', icon: <ExclamationCircleOutlined />, text: '重复' },
@@ -430,6 +431,7 @@ const RecordList: React.FC<RecordListProps> = ({ ruleId }) => {
           >
             <Option value="pending">待处理</Option>
             <Option value="saving">转存中</Option>
+            <Option value="queued">已提交</Option>
             <Option value="success">成功</Option>
             <Option value="failed">失败</Option>
             <Option value="duplicate">重复</Option>
