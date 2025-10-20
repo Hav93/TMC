@@ -210,15 +210,13 @@ const CloudDrive2Settings: React.FC = () => {
               },
             },
           ]}
-          tooltip="作为默认根，仅用于相对路径拼接；示例：/115open 或 /。禁止填写 /CloudNAS/..."
+          tooltip="填写 cd2 挂载的 115 盘根路径（在线路径），例如 /115open、/115open（旧）；不要填写 /CloudNAS/..."
         >
           <Input placeholder="例如: /115open" />
         </Form.Item>
         {/* 提示文案：不再提供目录浏览，避免误导。*/}
         <div style={{ color: '#888', marginTop: -8, marginBottom: 16 }}>
-          说明：
-          1) 这里仅填写“在线根路径”，例如 <code>/115open</code> 或 <code>/</code>；不要填写 <code>/CloudNAS/...</code>。
-          2) 最终保存路径由“规则里的路径”决定：规则路径以 “/” 开头时视为绝对路径原样使用；否则按相对路径拼接到此在线根后。
+          说明：填写 cd2 挂载的 115 盘根路径（在线路径），例如 <code>/115open</code>、<code>/115open（旧）</code>。最终保存路径由“规则路径”决定：规则路径以 “/” 开头时使用绝对路径，否则会拼接到此在线根之后。禁止填写 <code>/CloudNAS/...</code>。
         </div>
 
         <Space>
