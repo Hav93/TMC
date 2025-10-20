@@ -626,9 +626,12 @@ class CloudDrive2Client:
                             except Exception as del_err:
                                 logger.error(f"❌ 删除或重新创建失败: {del_err}")
                                 raise
+                        else:
+                            # 其他错误码，向上抛出
+                            raise
                 except Exception:
-                    pass
-                raise
+                    # 无法判断错误码，按未处理错误抛出
+                    raise
             
             # 步骤2: 写入文件（优先使用客户端流 WriteToFileStream，若不支持再回退）
             logger.info(f"📤 步骤2: 写入文件数据...")
