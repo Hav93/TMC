@@ -1,5 +1,8 @@
 # 多阶段构建 - 后端
-FROM python:3.12-slim AS backend-builder
+# 可覆盖基础镜像以规避 Docker Hub 500：
+#   docker build --build-arg PY_IMAGE=python:3.12.6-slim-bookworm .
+ARG PY_IMAGE=python:3.12.6-slim-bookworm
+FROM ${PY_IMAGE} AS backend-builder
 
 # 设置构建时代理参数
 ARG HTTP_PROXY
@@ -60,8 +63,8 @@ COPY app/frontend/ ./
 ENV NODE_ENV=production
 RUN npm run build
 
-# 最终镜像
-FROM python:3.12-slim
+# 最终镜像（与上面保持一致，使用同一基础镜像以减少拉取失败）
+FROM ${PY_IMAGE}
 
 # 设置工作目录
 WORKDIR /app
