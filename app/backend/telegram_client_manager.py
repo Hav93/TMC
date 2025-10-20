@@ -1293,6 +1293,18 @@ class TelegramClientManager:
             # 记录消息类型信息
             self.logger.info(f"🔍 准备转发消息 - 消息ID: {original_message.id}, 有媒体: {bool(original_message.media)}, 媒体类型: {type(original_message.media).__name__ if original_message.media else 'None'}")
             
+            # 如果是用户客户端且消息带有 inline keyboard，优先使用原生转发以尽量保留按钮
+            if self.client_type == 'user' and getattr(original_message, 'reply_markup', None):
+                try:
+                    await self.client.forward_messages(
+                        target_chat_id,
+                        original_message
+                    )
+                    self.logger.info("✅ 原生转发（user，含按钮）成功")
+                    return
+                except Exception as e:
+                    self.logger.warning(f"⚠️ 原生转发失败，回退重发策略: {e}")
+
             # 发送消息 - 根据消息是否有媒体决定如何转发
             if original_message.media:
                 # 转发媒体消息（包括图片、视频、文档等）；网页预览单独按文本路径处理
@@ -1329,6 +1341,7 @@ class TelegramClientManager:
                         target_chat_id,
                         original_message.media,
                         caption=text_to_forward or "",
+                        caption_entities=getattr(original_message, 'entities', None),
                         buttons=getattr(original_message, 'reply_markup', None),
                     )
                 self.logger.info("✅ 媒体消息已转发成功")
