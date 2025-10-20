@@ -129,7 +129,8 @@ class ResourceMonitorService {
    */
   async getRules(): Promise<ResourceMonitorRule[]> {
     const response = await api.get<{ success: boolean; data: ResourceMonitorRule[] }>(`${this.baseUrl}/rules`);
-    return response.data.data;
+    // api.get 已返回后端JSON对象，直接取其中的 data 字段
+    return response.data;
   }
 
   /**
@@ -137,7 +138,7 @@ class ResourceMonitorService {
    */
   async getRule(ruleId: number): Promise<ResourceMonitorRule> {
     const response = await api.get<{ success: boolean; data: ResourceMonitorRule }>(`${this.baseUrl}/rules/${ruleId}`);
-    return response.data.data;
+    return response.data;
   }
 
   /**
@@ -229,9 +230,9 @@ class ResourceMonitorService {
    * 清空记录（支持过滤）
    */
   async clearRecords(params?: { rule_id?: number; save_status?: string }): Promise<{ deleted_count: number }> {
+    const qs = params ? `?${new URLSearchParams(params as any).toString()}` : '';
     const response = await api.delete<{ success: boolean; deleted_count: number }>(
-      `${this.baseUrl}/records/clear`,
-      { params }
+      `${this.baseUrl}/records/clear${qs}`
     );
     return { deleted_count: response.deleted_count };
   }
