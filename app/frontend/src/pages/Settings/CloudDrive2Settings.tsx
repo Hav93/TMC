@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import {
   Form,
   Input,
@@ -216,8 +216,9 @@ const CloudDrive2Settings: React.FC = () => {
         </Form.Item>
         {/* 提示文案：不再提供目录浏览，避免误导。*/}
         <div style={{ color: '#888', marginTop: -8, marginBottom: 16 }}>
-          说明：此处仅填写在线根路径（如 /115open 或 /）。最终上传路径由规则路径决定；
-          当规则路径以“/”开头时使用绝对路径，否则会拼接到这里的默认根之后。
+          说明：
+          1) 这里仅填写“在线根路径”，例如 <code>/115open</code> 或 <code>/</code>；不要填写 <code>/CloudNAS/...</code>。
+          2) 最终保存路径由“规则里的路径”决定：规则路径以 “/” 开头时视为绝对路径原样使用；否则按相对路径拼接到此在线根后。
         </div>
 
         <Space>

@@ -44,6 +44,11 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
   const isEdit = !!rule?.id;
   const [showTypeOverrides, setShowTypeOverrides] = useState(false);
   const [cd2Root, setCd2Root] = useState<string>('/115open');
+  // 顶层 watch（避免在条件分支中调用 hooks 导致白屏）
+  const watchTargetPath = Form.useWatch('target_path', form);
+  const watchPan115 = Form.useWatch('target_path_pan115', form);
+  const watchMagnet = Form.useWatch('target_path_magnet', form);
+  const watchEd2k = Form.useWatch('target_path_ed2k', form);
 
   // 获取聊天列表
   const { data: chatsData } = useQuery({
@@ -328,7 +333,7 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
                 >
                   <Input placeholder="分类/资源/{YYYY}/{MM}" />
                 </Form.Item>
-                {renderPreview(Form.useWatch('target_path', form))}
+                {renderPreview(watchTargetPath)}
 
                 <Divider style={{ margin: '12px 0' }} />
                 <Space align="center" style={{ marginBottom: 8 }}>
@@ -340,15 +345,15 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
                     <Form.Item label="115分享覆盖路径" name="target_path_pan115">
                       <Input placeholder="分享/{YYYY}/{MM}" />
                     </Form.Item>
-                    {renderPreview(Form.useWatch('target_path_pan115', form))}
+                    {renderPreview(watchPan115)}
                     <Form.Item label="磁力覆盖路径" name="target_path_magnet">
                       <Input placeholder="离线/磁力/{YYYY}/{MM}" />
                     </Form.Item>
-                    {renderPreview(Form.useWatch('target_path_magnet', form))}
+                    {renderPreview(watchMagnet)}
                     <Form.Item label="ed2k覆盖路径" name="target_path_ed2k">
                       <Input placeholder="离线/ed2k/{YYYY}/{MM}" />
                     </Form.Item>
-                    {renderPreview(Form.useWatch('target_path_ed2k', form))}
+                    {renderPreview(watchEd2k)}
                   </>
                 )}
 
