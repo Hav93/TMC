@@ -1295,15 +1295,43 @@ class TelegramClientManager:
             
             # 发送消息 - 根据消息是否有媒体决定如何转发
             if original_message.media:
-                # 转发媒体消息（包括图片、视频、文档等）
-                self.logger.info(f"📤 转发媒体消息: 类型={type(original_message.media).__name__}, 文本长度={len(text_to_forward)}")
-                await self.client.send_message(
-                    target_chat_id,
-                    text_to_forward if text_to_forward else "",
-                    file=original_message.media,
-                    link_preview=getattr(rule, 'enable_link_preview', True)
-                )
-                self.logger.info(f"✅ 媒体消息已转发成功")
+                # 转发媒体消息（包括图片、视频、文档等）；网页预览单独按文本路径处理
+                media_type_name = type(original_message.media).__name__
+                self.logger.info(f"📤 转发媒体消息: 类型={media_type_name}, 文本长度={len(text_to_forward)}")
+                try:
+                    from telethon.tl.types import MessageMediaWebPage
+                except Exception:
+                    MessageMediaWebPage = type('MessageMediaWebPage', (), {})  # 占位，避免导入失败
+
+                if isinstance(original_message.media, MessageMediaWebPage):
+                    # 网页预览：按文本重发 + link preview + 复原按钮
+                    text = text_to_forward or (original_message.text or original_message.message or "")
+                    # 若正文没有 URL，而按钮里有 URL，则注入第一个 URL，保证生成预览
+                    if (not text) and getattr(original_message, 'reply_markup', None):
+                        try:
+                            for row in getattr(original_message.reply_markup, 'rows', []) or []:
+                                for btn in getattr(row, 'buttons', []) or []:
+                                    if hasattr(btn, 'url') and btn.url:
+                                        text = btn.url
+                                        raise StopIteration
+                        except StopIteration:
+                            pass
+                    await self.client.send_message(
+                        target_chat_id,
+                        text or "",
+                        link_preview=getattr(rule, 'enable_link_preview', True),
+                        buttons=getattr(original_message, 'reply_markup', None),
+                        entities=getattr(original_message, 'entities', None),
+                    )
+                else:
+                    # 其他媒体：作为文件发送，caption 放入文本，保留按钮
+                    await self.client.send_file(
+                        target_chat_id,
+                        original_message.media,
+                        caption=text_to_forward or "",
+                        buttons=getattr(original_message, 'reply_markup', None),
+                    )
+                self.logger.info("✅ 媒体消息已转发成功")
             else:
                 # 转发纯文本消息
                 self.logger.info(f"📤 转发文本消息: 长度={len(text_to_forward)}")
