@@ -1498,7 +1498,7 @@ class TelegramClientManager:
         self.logger.info("🛑 日志队列处理任务已停止")
     
     async def _update_monitored_chats(self):
-        """更新监听的聊天列表（包含转发规则和媒体监控规则）"""
+        """更新监听的聊天列表（包含转发规则、媒体监控规则、资源监控规则）"""
         try:
             async for db in get_db():
                 from sqlalchemy import select, distinct
@@ -1544,9 +1544,24 @@ class TelegramClientManager:
                             source_chats = rule.source_chats
                         # 将字符串格式的聊天ID转换为整数
                         monitored_set.update(int(chat_id) for chat_id in source_chats)
+
+                # 3. 获取所有活跃资源监控规则的源聊天ID
+                from models import ResourceMonitorRule as _RMRule
+                rm_stmt = select(_RMRule).where(_RMRule.is_active == True)
+                rm_result = await db.execute(rm_stmt)
+                rm_rules = rm_result.scalars().all()
+                for rm in rm_rules:
+                    if rm.source_chats:
+                        try:
+                            rm_chats = json.loads(rm.source_chats) if isinstance(rm.source_chats, str) else rm.source_chats
+                            if isinstance(rm_chats, str):
+                                rm_chats = json.loads(rm_chats)
+                        except Exception:
+                            continue
+                        monitored_set.update(int(chat_id) for chat_id in rm_chats)
                 
                 self.monitored_chats = monitored_set
-                self.logger.info(f"🎯 更新监听聊天列表 (转发: {len(forward_chat_ids)}, 媒体监控: {len(media_rules)}): {list(self.monitored_chats)}")
+                self.logger.info(f"🎯 更新监听聊天列表 (转发: {len(forward_chat_ids)}, 媒体监控: {len(media_rules)}, 资源监控: {len(rm_rules)}): {list(self.monitored_chats)}")
                 break
                 
         except Exception as e:
