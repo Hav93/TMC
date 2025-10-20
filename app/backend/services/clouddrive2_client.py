@@ -721,27 +721,31 @@ class CloudDrive2Client:
             
             # 步骤2: 写入文件（优先使用客户端流 WriteToFileStream，若不支持再回退）
             logger.info(f"📤 步骤2: 写入文件数据...")
-            chunk_size = 4 * 1024 * 1024  # 4MB 块
+            # 默认最大消息大小 4MB，需预留字段开销，保守减去 16KB（可通过环境变量调整）
+            try:
+                env_chunk = int(os.getenv('CD2_GRPC_CHUNK_BYTES', '0'))
+            except Exception:
+                env_chunk = 0
+            chunk_size = env_chunk if env_chunk > 0 else (4 * 1024 * 1024 - 16 * 1024)
             uploaded_bytes = 0
 
             async def request_iterator():
                 nonlocal uploaded_bytes
                 with open(local_path, 'rb') as f:
                     pos = 0
-                    while True:
-                        chunk = f.read(chunk_size)
-                        if not chunk:
-                            break
-                        # 仅在最后一块设置 closeFile=True（由生成器无法预知末块大小，改为延迟一块发送）
-                        # 方案：缓存上一块，直到读取到下一块才发送上一块；最后再发送缓存的末块并置 closeFile=True
+                    prev = f.read(chunk_size)
+                    while prev:
+                        nxt = f.read(chunk_size)
+                        is_last = not nxt
                         yield clouddrive_pb2.WriteFileRequest(
                             fileHandle=file_handle,
                             startPos=pos,
-                            length=len(chunk),
-                            buffer=chunk,
-                            closeFile=False
+                            length=len(prev),
+                            buffer=prev,
+                            closeFile=is_last
                         )
-                        pos += len(chunk)
+                        pos += len(prev)
+                        prev = nxt
 
             # 先尝试客户端流
             use_stream = True
@@ -760,16 +764,16 @@ class CloudDrive2Client:
             if not use_stream:
                 with open(local_path, 'rb') as f:
                     chunk_index = 0
-                    while True:
-                        chunk = f.read(chunk_size)
-                        if not chunk:
-                            break
+                    prev = f.read(chunk_size)
+                    while prev:
+                        nxt = f.read(chunk_size)
+                        is_last = not nxt
                         write_request = clouddrive_pb2.WriteFileRequest(
                             fileHandle=file_handle,
                             startPos=uploaded_bytes,
-                            length=len(chunk),
-                            buffer=chunk,
-                            closeFile=False
+                            length=len(prev),
+                            buffer=prev,
+                            closeFile=is_last
                         )
                         write_response = await self.stub.official_stub.WriteToFile(
                             write_request,
@@ -781,6 +785,7 @@ class CloudDrive2Client:
                             await progress_callback(uploaded_bytes, file_size)
                         progress_percent = (uploaded_bytes / file_size * 100) if file_size > 0 else 100
                         logger.info(f"   块 {chunk_index}: {uploaded_bytes}/{file_size} ({progress_percent:.1f}%)")
+                        prev = nxt
             
             # 步骤3: 关闭文件（流式已完成也建议调用一次，确保服务端一致性）
             logger.info("🔒 步骤3: 关闭文件...")
