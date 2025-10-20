@@ -182,9 +182,12 @@ class ResourceMonitorService:
             # 2. 创建记录
             record = await self._create_record(context, rule, link_type, link_url, link_hash)
             
-            # 3. 自动转存
+            # 3. 自动处理
             if rule.auto_save_to_115 and link_type == 'pan115':
                 await self._auto_save_to_115(record, rule)
+            # 磁力/ed2k 走 CloudDrive2 离线下载
+            if link_type in ('magnet', 'ed2k'):
+                await self._auto_offline_via_clouddrive2(record, rule)
                 
         except Exception as e:
             logger.error(f"处理链接失败: {e}", exc_info=True)
@@ -368,6 +371,46 @@ class ResourceMonitorService:
                 logger.info(f"已加入重试队列: record_id={record.id}")
             except Exception as retry_error:
                 logger.error(f"加入重试队列失败: {retry_error}")
+
+    async def _auto_offline_via_clouddrive2(self, record: ResourceRecord, rule: ResourceMonitorRule):
+        """磁力/ed2k 通过 CloudDrive2 添加离线任务"""
+        try:
+            # 目标目录：规则 target_path 作为相对路径拼到 CloudDrive2 默认根
+            from services.clouddrive2_client import create_clouddrive2_client
+            import os
+
+            default_root = os.getenv('CLOUDDRIVE2_API_ROOT') or os.getenv('CLOUDDRIVE2_MOUNT_POINT', '/115open')
+
+            client = create_clouddrive2_client()
+            await client.connect()
+
+            # 计算最终目录（使用已有解析逻辑）
+            _, final_path = await client._resolve_target_path(default_root, rule.target_path or '/')
+            to_folder = os.path.dirname(final_path) if final_path != '/' else '/'
+            if (rule.target_path or '/').endswith('/'):
+                to_folder = final_path
+
+            # 提交离线任务
+            logger.info(f"⚡ 提交离线任务: url={record.link_url[:60]}..., folder={to_folder}")
+            res = await client.add_offline_file(record.link_url, to_folder)
+            await client.disconnect()
+
+            if res.get('success'):
+                record.save_status = 'queued'
+                record.save_path = res.get('folder') or to_folder
+                record.save_time = get_user_now()
+                record.save_error = None
+                await self.db.commit()
+                logger.info(f"✅ 已提交离线任务: record_id={record.id}")
+            else:
+                raise ValueError(res.get('message', '提交离线任务失败'))
+
+        except Exception as e:
+            logger.error(f"CloudDrive2 离线任务失败: {e}", exc_info=True)
+            record.save_status = 'failed'
+            record.save_error = str(e)
+            record.retry_count += 1
+            await self.db.commit()
 
 
 # 创建资源监控处理器

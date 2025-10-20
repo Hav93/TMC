@@ -1626,6 +1626,43 @@ class CloudDrive2Client:
     
     # ==================== 离线下载（如果支持）====================
     
+    async def add_offline_file(self, url: str, to_folder: str) -> Dict[str, Any]:
+        """
+        通过 CloudDrive2 向云端添加离线下载任务（单个URL）。
+        使用 AddOfflineFiles(urls, toFolder)。
+        """
+        try:
+            from protos import clouddrive_pb2
+        except Exception as e:
+            return {'success': False, 'message': f'协议未生成: {e}'}
+
+        if not self.stub or not getattr(self.stub, 'official_stub', None):
+            return {'success': False, 'message': 'CloudDrive2 未连接'}
+
+        # 目标目录规范化
+        folder = to_folder.replace('\\', '/').strip() or '/'
+        if not folder.startswith('/'):
+            folder = '/' + folder
+
+        # 确保父目录存在（会逐级创建）
+        try:
+            await self._ensure_remote_parent_dirs(folder.rstrip('/') + '/dummy.file')
+        except Exception as e:
+            return {'success': False, 'message': f'目标目录不可用: {folder} - {e}'}
+
+        try:
+            req = clouddrive_pb2.AddOfflineFileRequest(urls=url, toFolder=folder)
+            res = await self.stub.official_stub.AddOfflineFiles(
+                req, metadata=self.stub._get_metadata()
+            )
+            ok = bool(getattr(res, 'success', False))
+            if ok:
+                return {'success': True, 'message': '已提交离线下载', 'folder': folder}
+            return {'success': False, 'message': getattr(res, 'errorMessage', '提交失败'), 'folder': folder}
+        except Exception as e:
+            logger.error(f"❌ 提交离线下载失败: {e}", exc_info=True)
+            return {'success': False, 'message': str(e)}
+
     async def create_offline_download(
         self,
         url: str,
