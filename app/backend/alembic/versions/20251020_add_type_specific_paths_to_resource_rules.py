@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20251020_add_type_specific_paths_to_resource_rules'
-down_revision = '20250114_add_notification_system'
+down_revision = '20251018_add_app_secret'
 branch_labels = None
 depends_on = None
 
