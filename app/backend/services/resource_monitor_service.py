@@ -182,12 +182,11 @@ class ResourceMonitorService:
             # 2. 创建记录
             record = await self._create_record(context, rule, link_type, link_url, link_hash)
             
-            # 3. 自动处理
+            # 3. 自动处理（统一路由 + 变量渲染）
             if rule.auto_save_to_115 and link_type == 'pan115':
-                await self._auto_save_to_115(record, rule)
-            # 磁力/ed2k 走 CloudDrive2 离线下载
+                await self._auto_save_to_115(record, rule, context)
             if link_type in ('magnet', 'ed2k'):
-                await self._auto_offline_via_clouddrive2(record, rule)
+                await self._auto_offline_via_clouddrive2(record, rule, context)
                 
         except Exception as e:
             logger.error(f"处理链接失败: {e}", exc_info=True)
@@ -248,7 +247,62 @@ class ResourceMonitorService:
         logger.info(f"✅ 创建资源记录: ID={record.id}, 类型={link_type}, 链接={link_url[:50]}...")
         return record
     
-    async def _auto_save_to_115(self, record: ResourceRecord, rule: ResourceMonitorRule):
+    def _get_cd2_api_root(self) -> str:
+        """读取 CloudDrive2 在线根（优先 CLOUDDRIVE2_API_ROOT，否则从 MOUNT_POINT 推导）。"""
+        import os
+        api_root = os.getenv('CLOUDDRIVE2_API_ROOT', '').strip()
+        if api_root:
+            return api_root if api_root.startswith('/') else '/' + api_root
+        mount_point = os.getenv('CLOUDDRIVE2_MOUNT_POINT', '').strip()
+        if mount_point.startswith('/CloudNAS/'):
+            return '/' + mount_point.split('/')[-1]
+        return '/115open'
+
+    def _expand_variables(self, pattern: str, context: 'MessageContext', rule: ResourceMonitorRule) -> str:
+        """展开 {YYYY}/{MM}/{DD}/{chat}/{rule} 变量。"""
+        try:
+            now = get_user_now()
+            mapping = {
+                'YYYY': f"{now.year:04d}",
+                'MM': f"{now.month:02d}",
+                'DD': f"{now.day:02d}",
+                'chat': str(context.chat_id),
+                'rule': rule.name or 'rule'
+            }
+            out = pattern or ''
+            for k, v in mapping.items():
+                out = out.replace('{' + k + '}', v)
+            return out
+        except Exception:
+            return pattern or ''
+
+    def _normalize_relative_path(self, path: str, api_root: str) -> str:
+        """规范为相对层级：剥离 /CloudNAS/<root> 或 api_root。"""
+        p = (path or '').replace('\\', '/').strip()
+        if not p:
+            return ''
+        if p.startswith('/'):
+            if p.startswith('/CloudNAS/'):
+                parts = p.split('/')
+                p = '/'.join(parts[3:])
+            elif api_root and p.startswith(api_root.rstrip('/') + '/'):
+                p = p[len(api_root.rstrip('/')) + 1:]
+            elif api_root and p == api_root:
+                p = ''
+            else:
+                p = p.lstrip('/')
+        return p.strip('/')
+
+    def _compute_final_paths(self, raw_target_path: str, context: 'MessageContext', rule: ResourceMonitorRule) -> Dict[str, str]:
+        """返回 {'relative','cd2_folder','pan115_folder'}"""
+        api_root = self._get_cd2_api_root()
+        expanded = self._expand_variables(raw_target_path or '', context, rule)
+        rel = self._normalize_relative_path(expanded, api_root)
+        pan115_folder = '/' + rel if rel else '/'
+        cd2_folder = (api_root.rstrip('/') + '/' + rel).rstrip('/') if rel else api_root
+        return {'relative': rel, 'cd2_folder': cd2_folder, 'pan115_folder': pan115_folder}
+
+    async def _auto_save_to_115(self, record: ResourceRecord, rule: ResourceMonitorRule, context: 'MessageContext'):
         """自动转存到115"""
         try:
             # 更新状态为"转存中"
@@ -297,8 +351,9 @@ class ResourceMonitorService:
                 use_proxy=getattr(settings, 'pan115_use_proxy', False)
             )
             
-            # 获取或创建目标目录
-            target_path = rule.target_path or "/"
+            # 统一路由 + 变量展开
+            routed = self._compute_final_paths(rule.target_path or '/', context, rule)
+            target_path = routed['pan115_folder']
             target_dir_id = "0"  # 默认根目录
             
             if target_path and target_path != "/":
@@ -372,23 +427,19 @@ class ResourceMonitorService:
             except Exception as retry_error:
                 logger.error(f"加入重试队列失败: {retry_error}")
 
-    async def _auto_offline_via_clouddrive2(self, record: ResourceRecord, rule: ResourceMonitorRule):
+    async def _auto_offline_via_clouddrive2(self, record: ResourceRecord, rule: ResourceMonitorRule, context: 'MessageContext'):
         """磁力/ed2k 通过 CloudDrive2 添加离线任务"""
         try:
             # 目标目录：规则 target_path 作为相对路径拼到 CloudDrive2 默认根
             from services.clouddrive2_client import create_clouddrive2_client
             import os
 
-            default_root = os.getenv('CLOUDDRIVE2_API_ROOT') or os.getenv('CLOUDDRIVE2_MOUNT_POINT', '/115open')
-
             client = create_clouddrive2_client()
             await client.connect()
 
-            # 计算最终目录（使用已有解析逻辑）
-            _, final_path = await client._resolve_target_path(default_root, rule.target_path or '/')
-            to_folder = os.path.dirname(final_path) if final_path != '/' else '/'
-            if (rule.target_path or '/').endswith('/'):
-                to_folder = final_path
+            # 统一路由（绝对CD2目录）
+            routed = self._compute_final_paths(rule.target_path or '/', context, rule)
+            to_folder = routed['cd2_folder']
 
             # 提交离线任务
             logger.info(f"⚡ 提交离线任务: url={record.link_url[:60]}..., folder={to_folder}")
