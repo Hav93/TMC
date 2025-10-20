@@ -182,11 +182,13 @@ class ResourceMonitorService:
             # 2. 创建记录
             record = await self._create_record(context, rule, link_type, link_url, link_hash)
             
-            # 3. 自动处理（统一路由 + 变量渲染）
+            # 3. 自动处理（统一路由 + 变量渲染 + 类型专属路径覆盖）
+            # 规则可选字段：target_path_pan115 / target_path_magnet / target_path_ed2k
+            override_path = getattr(rule, f"target_path_{link_type}", None) if hasattr(rule, f"target_path_{link_type}") else None
             if rule.auto_save_to_115 and link_type == 'pan115':
-                await self._auto_save_to_115(record, rule, context)
+                await self._auto_save_to_115(record, rule, context, override_path)
             if link_type in ('magnet', 'ed2k'):
-                await self._auto_offline_via_clouddrive2(record, rule, context)
+                await self._auto_offline_via_clouddrive2(record, rule, context, override_path)
                 
         except Exception as e:
             logger.error(f"处理链接失败: {e}", exc_info=True)
@@ -302,7 +304,7 @@ class ResourceMonitorService:
         cd2_folder = (api_root.rstrip('/') + '/' + rel).rstrip('/') if rel else api_root
         return {'relative': rel, 'cd2_folder': cd2_folder, 'pan115_folder': pan115_folder}
 
-    async def _auto_save_to_115(self, record: ResourceRecord, rule: ResourceMonitorRule, context: 'MessageContext'):
+    async def _auto_save_to_115(self, record: ResourceRecord, rule: ResourceMonitorRule, context: 'MessageContext', override_path: str | None = None):
         """自动转存到115"""
         try:
             # 更新状态为"转存中"
@@ -351,8 +353,9 @@ class ResourceMonitorService:
                 use_proxy=getattr(settings, 'pan115_use_proxy', False)
             )
             
-            # 统一路由 + 变量展开
-            routed = self._compute_final_paths(rule.target_path or '/', context, rule)
+            # 统一路由 + 变量展开（支持类型专属覆盖）
+            raw_path = override_path if (override_path and str(override_path).strip() != '') else (rule.target_path or '/')
+            routed = self._compute_final_paths(raw_path, context, rule)
             target_path = routed['pan115_folder']
             target_dir_id = "0"  # 默认根目录
             
@@ -381,13 +384,13 @@ class ResourceMonitorService:
                 if save_result.get('duplicate'):
                     logger.info(f"⚠️ 115转存重复: record_id={record.id}, 文件已存在")
                     record.save_status = 'duplicate'
-                    record.save_path = rule.target_path or "/"
+                    record.save_path = target_path or "/"
                     record.save_time = get_user_now()
                     record.save_error = "文件已存在（之前已转存）"
                 else:
                     logger.info(f"✅ 115转存成功: record_id={record.id}, 转存了{saved_count}个文件")
                     record.save_status = 'success'
-                    record.save_path = rule.target_path or "/"
+                    record.save_path = target_path or "/"
                     record.save_time = get_user_now()
                 
                 await self.db.commit()
@@ -417,7 +420,7 @@ class ResourceMonitorService:
                         'rule_id': rule.id,
                         'share_code': share_code,
                         'receive_code': receive_code,
-                        'target_path': rule.target_path
+                        'target_path': target_path
                     },
                     max_retries=3,
                     strategy=RetryStrategy.EXPONENTIAL,
@@ -427,7 +430,7 @@ class ResourceMonitorService:
             except Exception as retry_error:
                 logger.error(f"加入重试队列失败: {retry_error}")
 
-    async def _auto_offline_via_clouddrive2(self, record: ResourceRecord, rule: ResourceMonitorRule, context: 'MessageContext'):
+    async def _auto_offline_via_clouddrive2(self, record: ResourceRecord, rule: ResourceMonitorRule, context: 'MessageContext', override_path: str | None = None):
         """磁力/ed2k 通过 CloudDrive2 添加离线任务"""
         try:
             # 目标目录：规则 target_path 作为相对路径拼到 CloudDrive2 默认根
@@ -437,8 +440,9 @@ class ResourceMonitorService:
             client = create_clouddrive2_client()
             await client.connect()
 
-            # 统一路由（绝对CD2目录）
-            routed = self._compute_final_paths(rule.target_path or '/', context, rule)
+            # 统一路由（绝对CD2目录）- 支持类型专属覆盖
+            raw_path = override_path if (override_path and str(override_path).strip() != '') else (rule.target_path or '/')
+            routed = self._compute_final_paths(raw_path, context, rule)
             to_folder = routed['cd2_folder']
 
             # 提交离线任务
