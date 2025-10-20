@@ -590,13 +590,42 @@ class CloudDrive2Client:
                     import grpc  # 延迟导入避免环境无grpc时报错
                     if hasattr(create_err, 'code') and callable(create_err.code):
                         if create_err.code() == grpc.StatusCode.ALREADY_EXISTS:
-                            logger.info("ℹ️ 目标文件已存在，视为上传成功（跳过写入）")
-                            return {
-                                'success': True,
-                                'message': 'File already exists',
-                                'file_path': remote_path,
-                                'duplicate': True
-                            }
+                            logger.info("ℹ️ 目标文件已存在，检查大小/占位文件...")
+                            # 查询已存在文件信息
+                            try:
+                                info_req = clouddrive_pb2.FindFileByPathRequest(parentPath=parent_path, path=file_name)
+                                exists_file = await self.stub.official_stub.FindFileByPath(
+                                    info_req, metadata=self.stub._get_metadata()
+                                )
+                                exist_size = getattr(exists_file, 'size', -1)
+                            except Exception:
+                                exist_size = -1
+
+                            # 如果已存在且大小与本地一致，则视为重复成功
+                            if exist_size == file_size and file_size > 0:
+                                logger.info("✅ 远端已存在同大小文件，判定为已上传（重复）")
+                                return {
+                                    'success': True,
+                                    'message': 'File already exists with same size',
+                                    'file_path': remote_path,
+                                    'duplicate': True
+                                }
+
+                            # 否则删除占位/不完整文件后重试创建
+                            logger.info(f"🧹 删除已存在但大小不匹配/占位文件: size={exist_size}")
+                            try:
+                                del_req = clouddrive_pb2.FileRequest(path=remote_path)
+                                await self.stub.official_stub.DeleteFile(del_req, metadata=self.stub._get_metadata())
+                                logger.info("🗑️ 已删除旧文件，重新创建...")
+                                create_response = await self.stub.official_stub.CreateFile(
+                                    create_request,
+                                    metadata=self.stub._get_metadata()
+                                )
+                                file_handle = create_response.fileHandle
+                                logger.info(f"✅ 文件已重新创建，fileHandle={file_handle}")
+                            except Exception as del_err:
+                                logger.error(f"❌ 删除或重新创建失败: {del_err}")
+                                raise
                 except Exception:
                     pass
                 raise
