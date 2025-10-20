@@ -64,6 +64,48 @@ async def get_rules(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/rules/{rule_id}")
+async def get_rule_detail(
+    rule_id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取单个资源监控规则详情"""
+    try:
+        result = await db.execute(
+            select(ResourceMonitorRule).where(ResourceMonitorRule.id == rule_id)
+        )
+        rule = result.scalar_one_or_none()
+        if not rule:
+            raise HTTPException(status_code=404, detail="规则不存在")
+
+        return {
+            "success": True,
+            "data": {
+                "id": rule.id,
+                "name": rule.name,
+                "source_chats": json.loads(rule.source_chats) if rule.source_chats else [],
+                "is_active": rule.is_active,
+                "link_types": json.loads(rule.link_types) if rule.link_types else [],
+                "keywords": json.loads(rule.keywords) if rule.keywords else [],
+                "auto_save_to_115": rule.auto_save_to_115,
+                "target_path": rule.target_path,
+                "target_path_pan115": getattr(rule, 'target_path_pan115', None),
+                "target_path_magnet": getattr(rule, 'target_path_magnet', None),
+                "target_path_ed2k": getattr(rule, 'target_path_ed2k', None),
+                "default_tags": json.loads(rule.default_tags) if rule.default_tags else [],
+                "enable_deduplication": rule.enable_deduplication,
+                "dedup_time_window": rule.dedup_time_window,
+                "created_at": rule.created_at.isoformat() if rule.created_at else None,
+                "updated_at": rule.updated_at.isoformat() if rule.updated_at else None
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取规则详情失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/rules")
 async def create_rule(
     rule_data: dict,

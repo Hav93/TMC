@@ -129,7 +129,7 @@ class ResourceMonitorService {
    */
   async getRules(): Promise<ResourceMonitorRule[]> {
     const response = await api.get<{ success: boolean; data: ResourceMonitorRule[] }>(`${this.baseUrl}/rules`);
-    return response.data;
+    return response.data.data;
   }
 
   /**
@@ -137,7 +137,7 @@ class ResourceMonitorService {
    */
   async getRule(ruleId: number): Promise<ResourceMonitorRule> {
     const response = await api.get<{ success: boolean; data: ResourceMonitorRule }>(`${this.baseUrl}/rules/${ruleId}`);
-    return response.data;
+    return response.data.data;
   }
 
   /**
