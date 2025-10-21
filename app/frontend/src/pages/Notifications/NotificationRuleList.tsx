@@ -42,6 +42,7 @@ import {
 } from '@ant-design/icons';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { notificationService } from '../../services/notifications';
+import { clientsApi } from '../../services/clients';
 import type { NotificationRule, NotificationType } from '../../services/notifications';
 
 const { TextArea } = Input;
@@ -175,6 +176,29 @@ const NotificationRuleList: React.FC = () => {
   const [editRule, setEditRule] = useState<NotificationRule | null>(null);
   const [createForm] = Form.useForm();
   const [editForm] = Form.useForm();
+  const [clientOptions, setClientOptions] = useState<{label: string; value: string; type: 'user'|'bot';}[]>([]);
+
+  // 加载客户端选项
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const resp = await clientsApi.getClients();
+        const items: {label: string; value: string; type: 'user'|'bot'}[] = [];
+        const clients = resp?.clients || {} as any;
+        Object.keys(clients).forEach((id) => {
+          const c = (clients as any)[id];
+          if (c) {
+            items.push({
+              label: `${id} (${c.client_type}${c.connected ? '·在线' : ''})`,
+              value: id,
+              type: c.client_type,
+            });
+          }
+        });
+        setClientOptions(items);
+      } catch {}
+    })();
+  }, []);
 
   // 获取所有规则
   const { data: rules = [], isLoading } = useQuery({
@@ -636,6 +660,22 @@ const NotificationRuleList: React.FC = () => {
               )
             }
           </Form.Item>
+          <Form.Item noStyle shouldUpdate={(p,c)=>p.telegram_enabled!==c.telegram_enabled}>
+            {({getFieldValue}) => getFieldValue('telegram_enabled') && (
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item name="telegram_client_id" label="发送客户端">
+                    <Select allowClear options={clientOptions} placeholder="不选则自动选择可用客户端" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="telegram_client_type" label="客户端类型">
+                    <Select allowClear options={[{label:'用户', value:'user'},{label:'机器人', value:'bot'}]} placeholder="可选（用于偏好类型）" />
+                  </Form.Item>
+                </Col>
+              </Row>
+            )}
+          </Form.Item>
 
           <Form.Item name="webhook_enabled" valuePropName="checked">
             <Checkbox>
@@ -762,6 +802,22 @@ const NotificationRuleList: React.FC = () => {
               <Form.Item name="telegram_chat_id" label="Telegram聊天ID" rules={[{ required: true, message: '请输入Telegram聊天ID' }]}> 
                 <Input placeholder="例如: 123456789" />
               </Form.Item>
+            )}
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(p,c)=>p.telegram_enabled!==c.telegram_enabled}>
+            {({getFieldValue}) => getFieldValue('telegram_enabled') && (
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item name="telegram_client_id" label="发送客户端">
+                    <Select allowClear options={clientOptions} placeholder="不选则自动选择可用客户端" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="telegram_client_type" label="客户端类型">
+                    <Select allowClear options={[{label:'用户', value:'user'},{label:'机器人', value:'bot'}]} placeholder="可选（用于偏好类型）" />
+                  </Form.Item>
+                </Col>
+              </Row>
             )}
           </Form.Item>
           <Form.Item name="webhook_enabled" valuePropName="checked">

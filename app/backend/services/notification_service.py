@@ -256,7 +256,7 @@ class NotificationService:
         """发送到指定渠道"""
         try:
             if channel == NotificationChannel.TELEGRAM:
-                return await self._send_telegram(message, rule.telegram_chat_id)
+                return await self._send_telegram(message, rule.telegram_chat_id, rule)
             
             elif channel == NotificationChannel.WEBHOOK:
                 return await self._send_webhook(message, data, rule.webhook_url)
@@ -272,7 +272,7 @@ class NotificationService:
             logger.error(f"发送到渠道 {channel.value} 失败: {e}", exc_info=True)
             return False
     
-    async def _send_telegram(self, message: str, chat_id: str) -> bool:
+    async def _send_telegram(self, message: str, chat_id: str, rule: NotificationRule | None = None) -> bool:
         """发送Telegram消息"""
         try:
             # 优先使用显式设置的客户端
@@ -283,7 +283,22 @@ class NotificationService:
                 )
                 return True
             
-            # 回退：使用全局多客户端管理器中第一个已连接的客户端
+            # 如果规则指定了客户端，优先匹配
+            if rule and getattr(rule, 'telegram_client_id', None):
+                client = multi_client_manager.clients.get(rule.telegram_client_id)
+                if client and client.connected:
+                    await client._safe_send_message(int(chat_id), message)
+                    return True
+            
+            # 回退：按类型优先
+            preferred_type = getattr(rule, 'telegram_client_type', None) if rule else None
+            if preferred_type in ('user', 'bot'):
+                for _, client in multi_client_manager.clients.items():
+                    if client and client.connected and client.client_type == preferred_type:
+                        await client._safe_send_message(int(chat_id), message)
+                        return True
+            
+            # 最后回退：使用任何已连接客户端
             for _, client in multi_client_manager.clients.items():
                 if client and client.connected:
                     await client._safe_send_message(int(chat_id), message)

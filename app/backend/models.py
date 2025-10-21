@@ -676,6 +676,8 @@ class NotificationRule(Base):
     # 通知渠道配置
     telegram_chat_id = Column(String(50), comment='Telegram聊天ID')
     telegram_enabled = Column(Boolean, default=True, comment='是否启用Telegram通知')
+    telegram_client_id = Column(String(100), comment='发送所用Telegram客户端ID')
+    telegram_client_type = Column(String(20), comment='发送所用Telegram客户端类型（user/bot）')
     webhook_url = Column(String(500), comment='Webhook URL')
     webhook_enabled = Column(Boolean, default=False, comment='是否启用Webhook')
     email_address = Column(String(200), comment='邮箱地址')

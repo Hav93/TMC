@@ -49,6 +49,8 @@ export interface NotificationRule {
   
   // Telegram配置
   telegram_chat_id?: string;
+  telegram_client_id?: string;
+  telegram_client_type?: 'user' | 'bot';
   telegram_enabled: boolean;
   
   // Webhook配置
@@ -130,6 +132,8 @@ export interface RuleFormData {
   is_active: boolean;
   telegram_chat_id?: string;
   telegram_enabled: boolean;
+  telegram_client_id?: string;
+  telegram_client_type?: 'user' | 'bot';
   webhook_url?: string;
   webhook_enabled: boolean;
   email_address?: string;

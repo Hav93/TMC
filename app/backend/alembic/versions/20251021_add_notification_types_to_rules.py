@@ -21,11 +21,27 @@ def upgrade():
         op.add_column('notification_rules', sa.Column('notification_types', sa.Text(), nullable=True))
     except Exception:
         pass
+    try:
+        op.add_column('notification_rules', sa.Column('telegram_client_id', sa.String(length=100), nullable=True))
+    except Exception:
+        pass
+    try:
+        op.add_column('notification_rules', sa.Column('telegram_client_type', sa.String(length=20), nullable=True))
+    except Exception:
+        pass
 
 
 def downgrade():
     try:
         op.drop_column('notification_rules', 'notification_types')
+    except Exception:
+        pass
+    try:
+        op.drop_column('notification_rules', 'telegram_client_id')
+    except Exception:
+        pass
+    try:
+        op.drop_column('notification_rules', 'telegram_client_type')
     except Exception:
         pass
 
