@@ -100,7 +100,7 @@ def check_and_migrate(auto_migrate: bool = True, backup_first: bool = True) -> b
 def _post_migration_fix(db_url: str) -> None:
     """迁移后的兼容性修复。
 
-    目前主要修复早期版本缺失 message_logs.original_text 等列的问题。
+    目前主要修复早期版本缺失列的问题（在未安装 alembic 或迁移失败时的兜底处理）。
     """
     if not db_url.startswith("sqlite:///"):
         return
@@ -109,17 +109,24 @@ def _post_migration_fix(db_url: str) -> None:
     conn = sqlite3.connect(db_file)
     try:
         cur = conn.cursor()
+        # 1) message_logs 兼容列
         cur.execute("PRAGMA table_info('message_logs')")
-        cols = {row[1] for row in cur.fetchall()}  # 第二列是列名
-        # 需要确保存在的列（与 models.MessageLog 保持一致）
-        required = {
-            "original_text": "TEXT",
-            "processed_text": "TEXT",
-        }
-        for col, typ in required.items():
-            if col not in cols:
+        msg_cols = {row[1] for row in cur.fetchall()}  # 第二列是列名
+        msg_required = {"original_text": "TEXT", "processed_text": "TEXT"}
+        for col, typ in msg_required.items():
+            if col not in msg_cols:
                 cur.execute(f"ALTER TABLE message_logs ADD COLUMN {col} {typ}")
                 logger.info(f"✅ 修复: 为 message_logs 添加缺失列 {col}")
+
+        # 2) notification_rules 新增列（telegram_client_id / telegram_client_type）
+        cur.execute("PRAGMA table_info('notification_rules')")
+        notif_cols = {row[1] for row in cur.fetchall()}
+        if 'telegram_client_id' not in notif_cols:
+            cur.execute("ALTER TABLE notification_rules ADD COLUMN telegram_client_id VARCHAR(100)")
+            logger.info("✅ 修复: 为 notification_rules 添加缺失列 telegram_client_id")
+        if 'telegram_client_type' not in notif_cols:
+            cur.execute("ALTER TABLE notification_rules ADD COLUMN telegram_client_type VARCHAR(20)")
+            logger.info("✅ 修复: 为 notification_rules 添加缺失列 telegram_client_type")
         conn.commit()
     finally:
         conn.close()
