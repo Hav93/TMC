@@ -172,30 +172,32 @@ class NotificationService:
         notification_type: NotificationType,
         user_id: Optional[int] = None
     ) -> List[NotificationRule]:
-        """获取适用的通知规则"""
+        """获取适用的通知规则（支持单类型与多类型规则）"""
         try:
-            query = select(NotificationRule).where(
-                and_(
-                    NotificationRule.notification_type == notification_type.value,
-                    NotificationRule.is_active == True
-                )
-            )
-            
+            # 先取所有激活规则，后在内存中过滤（规则量通常很小）
+            query = select(NotificationRule).where(NotificationRule.is_active == True)
             if user_id is not None:
-                # 获取用户特定规则或全局规则
-                query = query.where(
-                    (NotificationRule.user_id == user_id) | 
-                    (NotificationRule.user_id == None)
-                )
+                query = query.where((NotificationRule.user_id == user_id) | (NotificationRule.user_id == None))
             else:
-                # 只获取全局规则
                 query = query.where(NotificationRule.user_id == None)
-            
             result = await self.db.execute(query)
-            rules = result.scalars().all()
-            
-            return list(rules)
-            
+            all_rules = list(result.scalars().all())
+
+            wanted = notification_type.value
+            applicable: List[NotificationRule] = []
+            for rule in all_rules:
+                try:
+                    if rule.notification_type == wanted:
+                        applicable.append(rule)
+                        continue
+                    if getattr(rule, 'notification_types', None):
+                        types = json.loads(rule.notification_types) if isinstance(rule.notification_types, str) else (rule.notification_types or [])
+                        if wanted in types:
+                            applicable.append(rule)
+                except Exception:
+                    # 解析失败时忽略该规则的多类型字段
+                    pass
+            return applicable
         except Exception as e:
             logger.error(f"获取通知规则失败: {e}", exc_info=True)
             return []
@@ -391,13 +393,15 @@ class NotificationService:
         min_interval: int = 0,
         max_per_hour: int = 0,
         custom_template: Optional[str] = None,
-        include_details: bool = True
+        include_details: bool = True,
+        notification_types: Optional[List[str]] = None
     ) -> NotificationRule:
         """创建通知规则"""
         try:
             rule = NotificationRule(
                 user_id=user_id,
                 notification_type=notification_type,
+                notification_types=json.dumps(notification_types, ensure_ascii=False) if notification_types else None,
                 is_active=is_active,
                 telegram_chat_id=telegram_chat_id,
                 telegram_enabled=telegram_enabled,
@@ -445,7 +449,10 @@ class NotificationService:
             
             for key, value in kwargs.items():
                 if hasattr(rule, key):
-                    setattr(rule, key, value)
+                    if key == 'notification_types' and isinstance(value, list):
+                        setattr(rule, key, json.dumps(value, ensure_ascii=False))
+                    else:
+                        setattr(rule, key, value)
             
             await self.db.commit()
             await self.db.refresh(rule)

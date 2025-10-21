@@ -27,6 +27,7 @@ router = APIRouter(tags=["通知系统"])
 class NotificationRuleCreate(BaseModel):
     """创建通知规则请求"""
     notification_type: str = Field(..., description="通知类型")
+    notification_types: Optional[List[str]] = Field(None, description="通知类型列表（可多选，存在时优先生效）")
     is_active: bool = Field(..., description="是否启用规则")
     user_id: Optional[int] = Field(None, description="用户ID（NULL表示全局规则）")
     
@@ -50,6 +51,7 @@ class NotificationRuleCreate(BaseModel):
 class NotificationRuleUpdate(BaseModel):
     """更新通知规则请求"""
     is_active: Optional[bool] = None
+    notification_types: Optional[List[str]] = None
     telegram_chat_id: Optional[str] = None
     telegram_enabled: Optional[bool] = None
     webhook_url: Optional[str] = None
@@ -85,6 +87,7 @@ async def create_notification_rule(
             notification_type=rule_data.notification_type,
             user_id=rule_data.user_id,
             is_active=rule_data.is_active,
+            notification_types=rule_data.notification_types,
             telegram_chat_id=rule_data.telegram_chat_id,
             telegram_enabled=rule_data.telegram_enabled,
             webhook_url=rule_data.webhook_url,
@@ -103,6 +106,7 @@ async def create_notification_rule(
             "data": {
                 "id": rule.id,
                 "notification_type": rule.notification_type,
+                "notification_types": getattr(rule, 'notification_types', None),
                 "is_active": rule.is_active,
                 "telegram_enabled": rule.telegram_enabled,
                 "webhook_enabled": rule.webhook_enabled,
@@ -151,6 +155,7 @@ async def get_notification_rules(
                     "id": rule.id,
                     "user_id": rule.user_id,
                     "notification_type": rule.notification_type,
+                    "notification_types": getattr(rule, 'notification_types', None),
                     "is_active": rule.is_active,
                     "telegram_chat_id": rule.telegram_chat_id,
                     "telegram_enabled": rule.telegram_enabled,
@@ -196,6 +201,7 @@ async def get_notification_rule(
                 "id": rule.id,
                 "user_id": rule.user_id,
                 "notification_type": rule.notification_type,
+                "notification_types": getattr(rule, 'notification_types', None),
                 "is_active": rule.is_active,
                 "telegram_chat_id": rule.telegram_chat_id,
                 "telegram_enabled": rule.telegram_enabled,

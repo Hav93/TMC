@@ -669,6 +669,8 @@ class NotificationRule(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=True, comment='用户ID（NULL表示全局规则）')
     notification_type = Column(String(50), nullable=False, index=True, comment='通知类型')
+    # 可选：多通知类型（JSON数组字符串）。存在时表示此规则适用于多个类型
+    notification_types = Column(Text, comment='通知类型列表(JSON)')
     is_active = Column(Boolean, default=True, comment='是否启用')
     
     # 通知渠道配置
