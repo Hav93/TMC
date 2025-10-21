@@ -93,6 +93,13 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
         target_path_magnet: (rule as any).target_path_magnet || '',
         target_path_ed2k: (rule as any).target_path_ed2k || '',
       });
+      // 根据是否存在类型专属路径，恢复开关显示为开启
+      const anyOverride = Boolean(
+        (rule as any).target_path_pan115 ||
+        (rule as any).target_path_magnet ||
+        (rule as any).target_path_ed2k
+      );
+      setShowTypeOverrides(anyOverride);
     }
   }, [rule, form]);
 
@@ -337,7 +344,20 @@ const RuleForm: React.FC<RuleFormProps> = ({ rule, onSuccess, onCancel }) => {
 
                 <Divider style={{ margin: '12px 0' }} />
                 <Space align="center" style={{ marginBottom: 8 }}>
-                  <Switch checked={showTypeOverrides} onChange={setShowTypeOverrides} />
+                  <Switch
+                    checked={showTypeOverrides}
+                    onChange={(checked) => {
+                      setShowTypeOverrides(checked);
+                      // 若关闭开关，清空类型专属路径，确保后端不再使用覆盖路径
+                      if (!checked) {
+                        form.setFieldsValue({
+                          target_path_pan115: '',
+                          target_path_magnet: '',
+                          target_path_ed2k: ''
+                        });
+                      }
+                    }}
+                  />
                   <span>按类型使用不同目录（可选）</span>
                 </Space>
                 {showTypeOverrides && (
