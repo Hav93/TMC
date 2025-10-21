@@ -654,8 +654,9 @@ const NotificationRuleList: React.FC = () => {
                   name="telegram_chat_id"
                   label="Telegram聊天ID"
                   rules={[{ required: true, message: '请输入Telegram聊天ID' }]}
+                  extra="群/频道请填带 -100 的聊天 ID；私聊填纯数字 ID"
                 >
-                  <Input placeholder="例如: 123456789" />
+                  <Input placeholder="例如: -1001234567890（群/频道）或 123456789（私聊）" />
                 </Form.Item>
               )
             }
@@ -799,8 +800,8 @@ const NotificationRuleList: React.FC = () => {
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(p,c)=>p.telegram_enabled!==c.telegram_enabled}>
             {({getFieldValue}) => getFieldValue('telegram_enabled') && (
-              <Form.Item name="telegram_chat_id" label="Telegram聊天ID" rules={[{ required: true, message: '请输入Telegram聊天ID' }]}> 
-                <Input placeholder="例如: 123456789" />
+              <Form.Item name="telegram_chat_id" label="Telegram聊天ID" rules={[{ required: true, message: '请输入Telegram聊天ID' }]} extra="群/频道请填带 -100 的聊天 ID；私聊填纯数字 ID"> 
+                <Input placeholder="例如: -1001234567890（群/频道）或 123456789（私聊）" />
               </Form.Item>
             )}
           </Form.Item>
