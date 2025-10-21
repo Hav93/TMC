@@ -1835,8 +1835,13 @@ class CloudDrive2Client:
                 return {'success': True, 'message': '已提交离线下载', 'folder': folder}
             return {'success': False, 'message': getattr(res, 'errorMessage', '提交失败'), 'folder': folder}
         except Exception as e:
+            # 将“任务已存在”等幂等错误当做成功处理，避免前端显示失败
+            msg = str(e)
+            if ('任务已存在' in msg) or ('already exists' in msg):
+                logger.info("ℹ️ 离线任务已存在，视为已提交")
+                return {'success': True, 'message': '任务已存在，视为已提交', 'folder': folder, 'duplicate': True}
             logger.error(f"❌ 提交离线下载失败: {e}", exc_info=True)
-            return {'success': False, 'message': str(e)}
+            return {'success': False, 'message': msg}
 
     async def create_offline_download(
         self,
