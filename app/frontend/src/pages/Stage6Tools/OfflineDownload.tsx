@@ -103,6 +103,15 @@ export const OfflineDownload: React.FC = () => {
     failed: 0,
   });
 
+  // 统一显示状态（容错）：percentDone>=100 或有 file_id 时强制视为已完成
+  const computeDisplayStatus = (task: OfflineTask): OfflineTaskStatus => {
+    if (!task) return OfflineTaskStatus.WAITING;
+    if ((task.percentDone ?? 0) >= 100 || (task.file_id && String(task.file_id).trim() !== '')) {
+      return OfflineTaskStatus.COMPLETED;
+    }
+    return task.status;
+  };
+
   /**
    * 加载离线任务列表
    */
@@ -136,7 +145,8 @@ export const OfflineDownload: React.FC = () => {
     };
 
     taskList.forEach((task) => {
-      switch (task.status) {
+      const displayStatus = computeDisplayStatus(task);
+      switch (displayStatus) {
         case OfflineTaskStatus.WAITING:
           newStats.waiting++;
           break;
@@ -290,8 +300,11 @@ export const OfflineDownload: React.FC = () => {
       dataIndex: 'status',
       key: 'status',
       width: 120,
-      render: (status: OfflineTaskStatus, record: OfflineTask) =>
-        getStatusTag(status, record.status_text),
+      render: (_: OfflineTaskStatus, record: OfflineTask) => {
+        const displayStatus = computeDisplayStatus(record);
+        const text = displayStatus === OfflineTaskStatus.COMPLETED ? '已完成' : record.status_text;
+        return getStatusTag(displayStatus, text);
+      },
     },
     {
       title: '进度',
@@ -299,15 +312,17 @@ export const OfflineDownload: React.FC = () => {
       key: 'percentDone',
       width: 200,
       render: (percentDone: number, record: OfflineTask) => {
-        const isDownloading = record.status === OfflineTaskStatus.DOWNLOADING;
+        const displayStatus = computeDisplayStatus(record);
+        const isDownloading = displayStatus === OfflineTaskStatus.DOWNLOADING;
+        const displayPercent = displayStatus === OfflineTaskStatus.COMPLETED ? 100 : percentDone;
         return (
           <Progress
-            percent={percentDone}
+            percent={displayPercent}
             size="small"
             status={
-              record.status === OfflineTaskStatus.COMPLETED
+              displayStatus === OfflineTaskStatus.COMPLETED
                 ? 'success'
-                : record.status === OfflineTaskStatus.FAILED
+                : displayStatus === OfflineTaskStatus.FAILED
                 ? 'exception'
                 : isDownloading
                 ? 'active'
