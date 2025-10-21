@@ -59,6 +59,18 @@ def check_and_migrate(auto_migrate: bool = True, backup_first: bool = True) -> b
             logger.warning("⚠️ 未找到 alembic.ini，跳过数据库迁移")
             return True
 
+        # 先检测 alembic 是否可用
+        alembic_path = shutil.which("alembic")
+        if not alembic_path:
+            logger.warning("⚠️ 未找到 alembic 可执行文件（PATH 中不存在 'alembic'），将跳过迁移并执行兼容性补丁")
+            try:
+                _post_migration_fix(Config.DATABASE_URL)
+            except Exception as fix_err:
+                logger.warning(f"⚠️ 迁移后兼容性补丁失败: {fix_err}")
+            return True
+
+        logger.info(f"🧭 检测到 alembic: {alembic_path}")
+
         # SQLite 先做备份
         if backup_first:
             _backup_sqlite_db(Config.DATABASE_URL)
@@ -90,7 +102,11 @@ def check_and_migrate(auto_migrate: bool = True, backup_first: bool = True) -> b
             return False
     except FileNotFoundError:
         # 容器/环境未安装 alembic 命令
-        logger.warning("⚠️ 未安装 alembic 命令，跳过迁移")
+        logger.warning("⚠️ 未安装 alembic 命令，跳过迁移并执行兼容性补丁")
+        try:
+            _post_migration_fix(Config.DATABASE_URL)
+        except Exception as fix_err:
+            logger.warning(f"⚠️ 迁移后兼容性补丁失败: {fix_err}")
         return True
     except Exception as e:
         logger.error(f"❌ 执行数据库迁移异常: {e}")
