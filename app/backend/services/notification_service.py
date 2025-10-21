@@ -276,7 +276,7 @@ class NotificationService:
         """发送Telegram消息"""
         try:
             # 优先使用显式设置的客户端
-            if self._telegram_client:
+            if self._telegram_client and hasattr(self._telegram_client, 'send_message'):
                 await self._telegram_client.send_message(
                     chat_id=int(chat_id),
                     message=message
@@ -400,6 +400,8 @@ class NotificationService:
         is_active: bool,
         user_id: Optional[int] = None,
         telegram_chat_id: Optional[str] = None,
+        telegram_client_id: Optional[str] = None,
+        telegram_client_type: Optional[str] = None,
         telegram_enabled: bool = False,
         webhook_url: Optional[str] = None,
         webhook_enabled: bool = False,
@@ -419,6 +421,8 @@ class NotificationService:
                 notification_types=json.dumps(notification_types, ensure_ascii=False) if notification_types else None,
                 is_active=is_active,
                 telegram_chat_id=telegram_chat_id,
+                telegram_client_id=telegram_client_id,
+                telegram_client_type=telegram_client_type,
                 telegram_enabled=telegram_enabled,
                 webhook_url=webhook_url,
                 webhook_enabled=webhook_enabled,
@@ -551,11 +555,6 @@ async def notify(
 ) -> bool:
     async for db in get_db():
         service = NotificationService(db)
-        # 尝试注入全局客户端（如果有）
-        try:
-            service.set_telegram_client(multi_client_manager)
-        except Exception:
-            pass
         return await service.send_notification(
             notification_type=notification_type,
             data=data,
