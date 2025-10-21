@@ -51,6 +51,7 @@ class NotificationType(Enum):
 class NotificationChannel(Enum):
     """通知渠道"""
     TELEGRAM = "telegram"        # Telegram消息
+    BOT = "bot"                  # 直接通过Telegram Bot API
     WEBHOOK = "webhook"          # Webhook
     EMAIL = "email"              # 邮件
 
@@ -257,6 +258,8 @@ class NotificationService:
         try:
             if channel == NotificationChannel.TELEGRAM:
                 return await self._send_telegram(message, rule.telegram_chat_id, rule)
+            elif channel == NotificationChannel.BOT:
+                return await self._send_bot(message, rule)
             
             elif channel == NotificationChannel.WEBHOOK:
                 return await self._send_webhook(message, data, rule.webhook_url)
@@ -335,6 +338,59 @@ class NotificationService:
                         
         except Exception as e:
             logger.error(f"发送Webhook失败: {e}", exc_info=True)
+            return False
+
+    async def _send_bot(self, message: str, rule) -> bool:
+        """通过 Telegram Bot API 发送消息。
+        需要环境变量 NOTIFY_BOT_TOKEN（或 TELEGRAM_BOT_TOKEN）。
+        收件人：优先 rule.bot_recipients（JSON数组）；其次回退到 rule.telegram_chat_id（单个）。
+        白名单：环境变量 NOTIFY_BOT_WHITELIST=以逗号分隔的chat_id列表；如设置则强校验。
+        """
+        try:
+            import os
+            import aiohttp
+            token = os.getenv('NOTIFY_BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
+            if not token:
+                logger.warning("Bot通知：未配置 NOTIFY_BOT_TOKEN/TELEGRAM_BOT_TOKEN")
+                return False
+            # 解析收件人
+            recipients: list[str] = []
+            try:
+                import json
+                if getattr(rule, 'bot_recipients', None):
+                    arr = rule.bot_recipients if isinstance(rule.bot_recipients, list) else json.loads(rule.bot_recipients)
+                    recipients = [str(x).strip() for x in arr if str(x).strip()]
+            except Exception:
+                pass
+            if not recipients and getattr(rule, 'telegram_chat_id', None):
+                recipients = [str(rule.telegram_chat_id)]
+            if not recipients:
+                logger.warning("Bot通知：无收件人")
+                return False
+            # 白名单
+            whitelist_env = os.getenv('NOTIFY_BOT_WHITELIST', '').strip()
+            whitelist = [x.strip() for x in whitelist_env.split(',') if x.strip()] if whitelist_env else None
+            if whitelist is not None:
+                for rid in recipients:
+                    if rid not in whitelist:
+                        logger.warning(f"Bot通知：接收者 {rid} 不在白名单，已拒绝")
+                        return False
+            api_base = f"https://api.telegram.org/bot{token}"
+            async with aiohttp.ClientSession() as session:
+                ok_any = False
+                for rid in recipients:
+                    payload = {"chat_id": rid, "text": message, "parse_mode": "HTML", "disable_web_page_preview": True}
+                    try:
+                        async with session.post(f"{api_base}/sendMessage", json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                            if resp.status == 429:
+                                # 简单退避
+                                await asyncio.sleep(1.5)
+                            ok_any = ok_any or (resp.status == 200)
+                    except Exception as e:
+                        logger.warning(f"Bot通知发送失败(chat_id={rid}): {e}")
+                return ok_any
+        except Exception as e:
+            logger.error(f"发送Bot通知失败: {e}", exc_info=True)
             return False
     
     async def _send_email(self, message: str, email_address: str) -> bool:

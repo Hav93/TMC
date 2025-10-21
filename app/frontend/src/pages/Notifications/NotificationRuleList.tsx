@@ -644,6 +644,30 @@ const NotificationRuleList: React.FC = () => {
               </Space>
             </Checkbox>
           </Form.Item>
+          <Form.Item name="bot_enabled" valuePropName="checked">
+            <Checkbox>
+              <Space>
+                <Tag color="geekblue">Bot</Tag>
+                启用Bot直发（令牌通过环境变量配置）
+              </Space>
+            </Checkbox>
+          </Form.Item>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, current) => prev.bot_enabled !== current.bot_enabled}
+          >
+            {({ getFieldValue }) =>
+              getFieldValue('bot_enabled') && (
+                <Form.Item
+                  name="bot_recipients"
+                  label="Bot接收者chat_id（多个）"
+                  tooltip="从白名单中匹配：NOTIFY_BOT_WHITELIST；为空则不限制"
+                >
+                  <Select mode="tags" placeholder="输入chat_id后回车，可添加多个" />
+                </Form.Item>
+              )
+            }
+          </Form.Item>
           <Form.Item
             noStyle
             shouldUpdate={(prev, current) => prev.telegram_enabled !== current.telegram_enabled}
@@ -797,6 +821,21 @@ const NotificationRuleList: React.FC = () => {
                 启用Telegram通知
               </Space>
             </Checkbox>
+          </Form.Item>
+          <Form.Item name="bot_enabled" valuePropName="checked">
+            <Checkbox>
+              <Space>
+                <Tag color="geekblue">Bot</Tag>
+                启用Bot直发（令牌通过环境变量配置）
+              </Space>
+            </Checkbox>
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(p,c)=>p.bot_enabled!==c.bot_enabled}>
+            {({getFieldValue}) => getFieldValue('bot_enabled') && (
+              <Form.Item name="bot_recipients" label="Bot接收者chat_id（多个）" tooltip="从白名单中匹配：NOTIFY_BOT_WHITELIST；为空则不限制">
+                <Select mode="tags" placeholder="输入chat_id后回车，可添加多个" />
+              </Form.Item>
+            )}
           </Form.Item>
           <Form.Item noStyle shouldUpdate={(p,c)=>p.telegram_enabled!==c.telegram_enabled}>
             {({getFieldValue}) => getFieldValue('telegram_enabled') && (

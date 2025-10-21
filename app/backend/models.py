@@ -682,6 +682,9 @@ class NotificationRule(Base):
     webhook_enabled = Column(Boolean, default=False, comment='是否启用Webhook')
     email_address = Column(String(200), comment='邮箱地址')
     email_enabled = Column(Boolean, default=False, comment='是否启用邮件通知')
+    # Bot 直发
+    bot_enabled = Column(Boolean, default=False, comment='是否启用Bot直发')
+    bot_recipients = Column(Text, comment='Bot接收者列表(JSON数组)')
     
     # 通知频率控制
     min_interval = Column(Integer, default=0, comment='最小间隔（秒），0表示不限制')

@@ -143,6 +143,12 @@ def _post_migration_fix(db_url: str) -> None:
         if 'telegram_client_type' not in notif_cols:
             cur.execute("ALTER TABLE notification_rules ADD COLUMN telegram_client_type VARCHAR(20)")
             logger.info("✅ 修复: 为 notification_rules 添加缺失列 telegram_client_type")
+        if 'bot_enabled' not in notif_cols:
+            cur.execute("ALTER TABLE notification_rules ADD COLUMN bot_enabled BOOLEAN")
+            logger.info("✅ 修复: 为 notification_rules 添加缺失列 bot_enabled")
+        if 'bot_recipients' not in notif_cols:
+            cur.execute("ALTER TABLE notification_rules ADD COLUMN bot_recipients TEXT")
+            logger.info("✅ 修复: 为 notification_rules 添加缺失列 bot_recipients")
         conn.commit()
     finally:
         conn.close()

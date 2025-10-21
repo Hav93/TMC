@@ -36,6 +36,9 @@ class NotificationRuleCreate(BaseModel):
     telegram_client_id: Optional[str] = Field(None, description="发送所用Telegram客户端ID")
     telegram_client_type: Optional[str] = Field(None, description="发送所用Telegram客户端类型（user/bot）")
     telegram_enabled: bool = Field(False, description="是否启用Telegram通知")
+    # Bot直发
+    bot_enabled: bool = Field(False, description="是否启用Bot直发")
+    bot_recipients: Optional[List[str]] = Field(None, description="Bot接收者chat_id列表")
     webhook_url: Optional[str] = Field(None, description="Webhook URL")
     webhook_enabled: bool = Field(False, description="是否启用Webhook")
     email_address: Optional[str] = Field(None, description="邮箱地址")
@@ -58,6 +61,8 @@ class NotificationRuleUpdate(BaseModel):
     telegram_client_id: Optional[str] = None
     telegram_client_type: Optional[str] = None
     telegram_enabled: Optional[bool] = None
+    bot_enabled: Optional[bool] = None
+    bot_recipients: Optional[List[str]] = None
     webhook_url: Optional[str] = None
     webhook_enabled: Optional[bool] = None
     email_address: Optional[str] = None
@@ -96,6 +101,8 @@ async def create_notification_rule(
             telegram_client_id=rule_data.telegram_client_id,
             telegram_client_type=rule_data.telegram_client_type,
             telegram_enabled=rule_data.telegram_enabled,
+            bot_enabled=rule_data.bot_enabled,
+            bot_recipients=rule_data.bot_recipients,
             webhook_url=rule_data.webhook_url,
             webhook_enabled=rule_data.webhook_enabled,
             email_address=rule_data.email_address,
@@ -117,6 +124,8 @@ async def create_notification_rule(
                 "telegram_client_id": getattr(rule, 'telegram_client_id', None),
                 "telegram_client_type": getattr(rule, 'telegram_client_type', None),
                 "telegram_enabled": rule.telegram_enabled,
+                "bot_enabled": getattr(rule, 'bot_enabled', False),
+                "bot_recipients": getattr(rule, 'bot_recipients', None),
                 "webhook_enabled": rule.webhook_enabled,
                 "email_enabled": rule.email_enabled,
                 "created_at": rule.created_at.isoformat() if rule.created_at else None
@@ -169,6 +178,8 @@ async def get_notification_rules(
                     "telegram_client_id": getattr(rule, 'telegram_client_id', None),
                     "telegram_client_type": getattr(rule, 'telegram_client_type', None),
                     "telegram_enabled": rule.telegram_enabled,
+                    "bot_enabled": getattr(rule, 'bot_enabled', False),
+                    "bot_recipients": getattr(rule, 'bot_recipients', None),
                     "webhook_url": rule.webhook_url,
                     "webhook_enabled": rule.webhook_enabled,
                     "email_address": rule.email_address,
@@ -217,6 +228,8 @@ async def get_notification_rule(
                 "telegram_client_type": getattr(rule, 'telegram_client_type', None),
                 "telegram_chat_id": rule.telegram_chat_id,
                 "telegram_enabled": rule.telegram_enabled,
+                "bot_enabled": getattr(rule, 'bot_enabled', False),
+                "bot_recipients": getattr(rule, 'bot_recipients', None),
                 "webhook_url": rule.webhook_url,
                 "webhook_enabled": rule.webhook_enabled,
                 "email_address": rule.email_address,
