@@ -14,14 +14,22 @@ import {
   Row, 
   Col, 
   Statistic,
-  Typography
+  Typography,
+  Button,
+  Modal,
+  Form,
+  Select,
+  Checkbox,
+  message,
+  Space
 } from 'antd';
 import { 
   BellOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   BarChartOutlined,
-  FileTextOutlined
+  FileTextOutlined,
+  ExperimentOutlined
 } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { notificationService } from '../../services/notifications';
@@ -32,6 +40,8 @@ const { Title } = Typography;
 
 const NotificationsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState('rules');
+  const [testVisible, setTestVisible] = useState(false);
+  const [testForm] = Form.useForm();
 
   // 获取统计信息
   const { data: stats } = useQuery({
@@ -39,6 +49,33 @@ const NotificationsPage: React.FC = () => {
     queryFn: () => notificationService.getStats(),
     refetchInterval: 30000, // 每30秒刷新一次
   });
+
+  // 通知类型列表（用于测试发送）
+  const { data: typeList } = useQuery({
+    queryKey: ['notification-types'],
+    queryFn: () => notificationService.getTypes(),
+  });
+
+  const handleOpenTest = () => {
+    setTestVisible(true);
+    testForm.setFieldsValue({
+      notification_type: typeList?.[0]?.type,
+      channels: ['telegram'],
+    });
+  };
+
+  const handleSendTest = async () => {
+    try {
+      const values = await testForm.validateFields();
+      const ok = await notificationService.testNotification(values.notification_type, values.channels);
+      if (ok?.success !== false) {
+        message.success('测试通知已发送');
+      } else {
+        message.error(ok?.message || '测试发送失败');
+      }
+      setTestVisible(false);
+    } catch {}
+  };
 
   // Tab配置
   const tabItems = [
@@ -68,9 +105,14 @@ const NotificationsPage: React.FC = () => {
     <div style={{ padding: '24px' }}>
       {/* 页面标题 */}
       <div style={{ marginBottom: '24px' }}>
-        <Title level={2}>
-          <BellOutlined /> 推送通知系统
-        </Title>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Title level={2} style={{ marginBottom: 0 }}>
+            <BellOutlined /> 推送通知系统
+          </Title>
+          <Space>
+            <Button icon={<ExperimentOutlined />} onClick={handleOpenTest}>测试通知</Button>
+          </Space>
+        </div>
         <div style={{ color: '#666', fontSize: '14px', marginTop: '8px' }}>
           为每个通知类型配置推送规则，支持Telegram和Webhook两种通知方式
         </div>
@@ -126,6 +168,31 @@ const NotificationsPage: React.FC = () => {
           items={tabItems}
         />
       </Card>
+
+      {/* 测试通知弹窗 */}
+      <Modal
+        title="发送测试通知"
+        open={testVisible}
+        onCancel={() => setTestVisible(false)}
+        onOk={handleSendTest}
+        destroyOnClose
+      >
+        <Form form={testForm} layout="vertical">
+          <Form.Item name="notification_type" label="通知类型" rules={[{ required: true, message: '请选择通知类型' }]}> 
+            <Select
+              options={(typeList || []).map((t) => ({ label: t.name || t.type, value: t.type }))}
+              placeholder="选择要测试的通知类型"
+            />
+          </Form.Item>
+          <Form.Item name="channels" label="通知方式" rules={[{ required: true, message: '请选择通知方式' }]}> 
+            <Checkbox.Group options={[
+              { label: 'Telegram', value: 'telegram' },
+              { label: 'Webhook', value: 'webhook' },
+              // { label: 'Email', value: 'email' },
+            ]} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 };
