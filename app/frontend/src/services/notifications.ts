@@ -44,6 +44,7 @@ export interface NotificationRule {
   id?: number;
   user_id?: number;
   notification_type: NotificationType;
+  notification_types?: NotificationType[] | string;
   is_active: boolean;
   
   // Telegram配置
@@ -125,6 +126,7 @@ export interface NotificationTypeInfo {
  */
 export interface RuleFormData {
   notification_type: NotificationType;
+  notification_types?: NotificationType[];
   is_active: boolean;
   telegram_chat_id?: string;
   telegram_enabled: boolean;
@@ -161,32 +163,63 @@ class NotificationService {
    * 获取所有通知规则
    */
   async getRules(): Promise<NotificationRule[]> {
-    const response = await api.get<{ success: boolean; data: NotificationRule[] }>(`${this.baseUrl}/rules`);
-    return response.data;
+    const response = await api.get<{ success: boolean; data: any[] }>(`${this.baseUrl}/rules`);
+    return (response.data || []).map((r: any) => ({
+      ...r,
+      notification_types: Array.isArray(r.notification_types)
+        ? r.notification_types
+        : (typeof r.notification_types === 'string' && r.notification_types.trim()
+            ? safeParseArray(r.notification_types)
+            : undefined),
+    }));
   }
 
   /**
    * 获取指定通知规则
    */
   async getRule(ruleId: number): Promise<NotificationRule> {
-    const response = await api.get<{ success: boolean; data: NotificationRule }>(`${this.baseUrl}/rules/${ruleId}`);
-    return response.data;
+    const response = await api.get<{ success: boolean; data: any }>(`${this.baseUrl}/rules/${ruleId}`);
+    const r = response.data;
+    return {
+      ...r,
+      notification_types: Array.isArray(r.notification_types)
+        ? r.notification_types
+        : (typeof r.notification_types === 'string' && r.notification_types.trim()
+            ? safeParseArray(r.notification_types)
+            : undefined),
+    } as NotificationRule;
   }
 
   /**
    * 创建通知规则
    */
   async createRule(data: RuleFormData): Promise<NotificationRule> {
-    const response = await api.post<{ success: boolean; data: NotificationRule }>(`${this.baseUrl}/rules`, data);
-    return response.data;
+    const response = await api.post<{ success: boolean; data: any }>(`${this.baseUrl}/rules`, data);
+    const r = response.data;
+    return {
+      ...r,
+      notification_types: Array.isArray(r.notification_types)
+        ? r.notification_types
+        : (typeof r.notification_types === 'string' && r.notification_types.trim()
+            ? safeParseArray(r.notification_types)
+            : undefined),
+    } as NotificationRule;
   }
 
   /**
    * 更新通知规则
    */
   async updateRule(ruleId: number, data: Partial<RuleFormData>): Promise<NotificationRule> {
-    const response = await api.put<{ success: boolean; data: NotificationRule }>(`${this.baseUrl}/rules/${ruleId}`, data);
-    return response.data;
+    const response = await api.put<{ success: boolean; data: any }>(`${this.baseUrl}/rules/${ruleId}`, data);
+    const r = response.data;
+    return {
+      ...r,
+      notification_types: Array.isArray(r.notification_types)
+        ? r.notification_types
+        : (typeof r.notification_types === 'string' && r.notification_types.trim()
+            ? safeParseArray(r.notification_types)
+            : undefined),
+    } as NotificationRule;
   }
 
   /**
@@ -274,4 +307,13 @@ class NotificationService {
 // 导出单例
 export const notificationService = new NotificationService();
 export default notificationService;
+
+function safeParseArray(input: string): any[] | undefined {
+  try {
+    const v = JSON.parse(input);
+    return Array.isArray(v) ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
 

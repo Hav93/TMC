@@ -21,16 +21,16 @@ import {
   InputNumber,
   Checkbox,
   message,
-  Tooltip,
   Alert,
   Divider,
-  Modal
+  Modal,
+  Table,
+  Select,
+  Popconfirm
 } from 'antd';
 import { 
-  BellOutlined,
   SettingOutlined,
   SendOutlined,
-  ThunderboltOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   DownloadOutlined,
@@ -170,6 +170,11 @@ const NotificationRuleList: React.FC = () => {
   const queryClient = useQueryClient();
   const [editingType, setEditingType] = useState<NotificationType | null>(null);
   const [form] = Form.useForm();
+  // 多类型规则 - 创建/编辑
+  const [createVisible, setCreateVisible] = useState(false);
+  const [editRule, setEditRule] = useState<NotificationRule | null>(null);
+  const [createForm] = Form.useForm();
+  const [editForm] = Form.useForm();
 
   // 获取所有规则
   const { data: rules = [], isLoading } = useQuery({
@@ -202,6 +207,7 @@ const NotificationRuleList: React.FC = () => {
           telegram_chat_id: '',
           webhook_enabled: false,
           webhook_url: '',
+          email_enabled: false,
           min_interval: 0,
           max_per_hour: 0,
           include_details: true,
@@ -233,6 +239,19 @@ const NotificationRuleList: React.FC = () => {
     },
     onError: (error: any) => {
       message.error(error.response?.data?.detail || '保存失败');
+    },
+  });
+
+  // 删除规则
+  const deleteMutation = useMutation({
+    mutationFn: async (ruleId: number) => notificationService.deleteRule(ruleId),
+    onSuccess: () => {
+      message.success('规则已删除');
+      queryClient.invalidateQueries({ queryKey: ['notification-rules'] });
+      queryClient.invalidateQueries({ queryKey: ['notification-stats'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.detail || '删除失败');
     },
   });
 
@@ -409,8 +428,157 @@ const NotificationRuleList: React.FC = () => {
   // 当前编辑的配置
   const currentConfig = editingType ? notificationTypeConfigs[editingType] : null;
 
+  // ========== 多类型规则：Table + 创建/编辑 ========== 
+  const typeOptions = Object.keys(notificationTypeConfigs).map(t => ({ label: notificationTypeConfigs[t as NotificationType].name, value: t }));
+
+  const openCreate = () => {
+    createForm.resetFields();
+    createForm.setFieldsValue({
+      notification_types: ['resource_captured'],
+      is_active: true,
+      telegram_enabled: false,
+      webhook_enabled: false,
+      min_interval: 0,
+      max_per_hour: 0,
+      include_details: true,
+    });
+    setCreateVisible(true);
+  };
+
+  const handleCreate = async () => {
+    try {
+      const values = await createForm.validateFields();
+      const types: NotificationType[] = values.notification_types || [];
+      if (!types.length) {
+        message.warning('请至少选择一种通知类型');
+        return;
+      }
+      const payload = {
+        notification_type: types[0],
+        notification_types: types,
+        is_active: values.is_active !== false,
+        telegram_enabled: !!values.telegram_enabled,
+        telegram_chat_id: values.telegram_chat_id || '',
+        webhook_enabled: !!values.webhook_enabled,
+        webhook_url: values.webhook_url || '',
+        email_enabled: false,
+        min_interval: values.min_interval ?? 0,
+        max_per_hour: values.max_per_hour ?? 0,
+        include_details: values.include_details !== false,
+        custom_template: values.custom_template || '',
+      };
+      await notificationService.createRule(payload as any);
+      message.success('规则已创建');
+      setCreateVisible(false);
+      queryClient.invalidateQueries({ queryKey: ['notification-rules'] });
+      queryClient.invalidateQueries({ queryKey: ['notification-stats'] });
+    } catch (e) {
+      // ignore - antd 会自行提示
+    }
+  };
+
+  const openEditRule = (rule: NotificationRule) => {
+    setEditRule(rule);
+    const types = Array.isArray(rule.notification_types)
+      ? rule.notification_types
+      : (typeof rule.notification_types === 'string' && rule.notification_types.trim()
+          ? (JSON.parse(rule.notification_types) as NotificationType[])
+          : [rule.notification_type]);
+    editForm.setFieldsValue({
+      notification_types: types,
+      is_active: rule.is_active,
+      telegram_enabled: rule.telegram_enabled,
+      telegram_chat_id: rule.telegram_chat_id,
+      webhook_enabled: rule.webhook_enabled,
+      webhook_url: rule.webhook_url,
+      min_interval: rule.min_interval,
+      max_per_hour: rule.max_per_hour,
+      include_details: rule.include_details,
+      custom_template: rule.custom_template || '',
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (!editRule?.id) return;
+    try {
+      const values = await editForm.validateFields();
+      await notificationService.updateRule(editRule.id, values);
+      message.success('规则已更新');
+      setEditRule(null);
+      queryClient.invalidateQueries({ queryKey: ['notification-rules'] });
+      queryClient.invalidateQueries({ queryKey: ['notification-stats'] });
+    } catch (e) {
+      // ignore
+    }
+  };
+
+  const columns: any[] = [
+    { title: 'ID', dataIndex: 'id', key: 'id', width: 80 },
+    { title: '通知类型', key: 'types', render: (_: any, r: NotificationRule) => {
+        const types = Array.isArray(r.notification_types)
+          ? r.notification_types
+          : (typeof r.notification_types === 'string' && r.notification_types.trim()
+              ? (JSON.parse(r.notification_types) as NotificationType[])
+              : [r.notification_type]);
+        return (
+          <Space size={4} wrap>
+            {types.map(t => (
+              <Tag key={t} color={notificationTypeConfigs[t].color} style={{ margin: 0 }}>
+                {notificationTypeConfigs[t].name}
+              </Tag>
+            ))}
+          </Space>
+        );
+      }
+    },
+    { title: '方式', key: 'channels', render: (_: any, r: NotificationRule) => (
+        <Space size={4} wrap>
+          {r.telegram_enabled && <Tag color="blue" style={{ margin: 0 }}>Telegram</Tag>}
+          {r.webhook_enabled && <Tag color="green" style={{ margin: 0 }}>Webhook</Tag>}
+          {r.email_enabled && <Tag color="purple" style={{ margin: 0 }}>Email</Tag>}
+        </Space>
+      )
+    },
+    { title: '限流', key: 'rate', render: (_: any, r: NotificationRule) => (
+        <span>间隔{r.min_interval || 0}s / 每小时{r.max_per_hour || 0}</span>
+      )
+    },
+    { title: '状态', key: 'active', width: 100, render: (_: any, r: NotificationRule) => (
+        <Switch
+          checked={r.is_active}
+          onChange={() => toggleMutation.mutate({ type: r.notification_type, isActive: !r.is_active, ruleId: r.id })}
+          size="small"
+        />
+      )
+    },
+    { title: '操作', key: 'action', width: 160, render: (_: any, r: NotificationRule) => (
+        <Space size={8}>
+          <Button size="small" type="link" onClick={() => openEditRule(r)}>编辑</Button>
+          <Popconfirm title="确定删除该规则？" onConfirm={() => r.id && deleteMutation.mutate(r.id)}>
+            <Button size="small" type="link" danger loading={deleteMutation.isPending}>删除</Button>
+          </Popconfirm>
+        </Space>
+      )
+    },
+  ];
+
   return (
     <div>
+      {/* 多类型规则 - 顶部操作与规则表 */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ fontWeight: 600 }}>规则列表（多类型合并配置）</div>
+        <Button type="primary" onClick={openCreate}>新建规则</Button>
+      </div>
+      <Card size="small" style={{ marginBottom: 24 }}>
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={rules}
+          size="small"
+          pagination={{ pageSize: 10 }}
+        />
+      </Card>
+
       {Object.entries(groupedTypes).map(([category, types]) => (
         <div key={category} style={{ marginBottom: '24px' }}>
           <div style={{ 
@@ -563,6 +731,142 @@ const NotificationRuleList: React.FC = () => {
               showIcon
             />
           )}
+        </Form>
+      </Modal>
+
+      {/* 新建规则弹窗（多类型） */}
+      <Modal
+        title="新建通知规则（多类型）"
+        open={createVisible}
+        onCancel={() => setCreateVisible(false)}
+        onOk={handleCreate}
+        confirmLoading={false}
+        width={760}
+        destroyOnClose
+      >
+        <Form form={createForm} layout="vertical">
+          <Form.Item name="notification_types" label="通知类型" rules={[{ required: true, message: '请选择通知类型' }]}> 
+            <Select mode="multiple" options={typeOptions} placeholder="选择要覆盖的通知类型" />
+          </Form.Item>
+          <Divider orientation="left" plain>通知方式</Divider>
+          <Form.Item name="telegram_enabled" valuePropName="checked">
+            <Checkbox>
+              <Space>
+                <Tag color="blue">Telegram</Tag>
+                启用Telegram通知
+              </Space>
+            </Checkbox>
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(p,c)=>p.telegram_enabled!==c.telegram_enabled}>
+            {({getFieldValue}) => getFieldValue('telegram_enabled') && (
+              <Form.Item name="telegram_chat_id" label="Telegram聊天ID" rules={[{ required: true, message: '请输入Telegram聊天ID' }]}> 
+                <Input placeholder="例如: 123456789" />
+              </Form.Item>
+            )}
+          </Form.Item>
+          <Form.Item name="webhook_enabled" valuePropName="checked">
+            <Checkbox>
+              <Space>
+                <Tag color="green">Webhook</Tag>
+                启用Webhook通知
+              </Space>
+            </Checkbox>
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(p,c)=>p.webhook_enabled!==c.webhook_enabled}>
+            {({getFieldValue}) => getFieldValue('webhook_enabled') && (
+              <Form.Item name="webhook_url" label="Webhook URL" rules={[{ required: true, message: '请输入Webhook URL' }, { type: 'url', message: '请输入有效的URL' }]}> 
+                <Input placeholder="https://example.com/webhook" />
+              </Form.Item>
+            )}
+          </Form.Item>
+          <Divider orientation="left" plain>频率控制</Divider>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="min_interval" label="最小间隔（秒）" extra="0 = 无限制">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="max_per_hour" label="每小时最大数量" extra="0 = 无限制">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Divider orientation="left" plain>高级选项</Divider>
+          <Form.Item name="include_details" valuePropName="checked">
+            <Checkbox>包含详细信息</Checkbox>
+          </Form.Item>
+          <Form.Item name="custom_template" label="自定义模板">
+            <TextArea rows={6} placeholder="留空使用默认模板" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* 编辑规则弹窗（多类型） */}
+      <Modal
+        title="编辑通知规则"
+        open={!!editRule}
+        onCancel={() => setEditRule(null)}
+        onOk={handleEditSave}
+        confirmLoading={updateMutation.isPending}
+        width={760}
+        destroyOnClose
+      >
+        <Form form={editForm} layout="vertical">
+          <Form.Item name="notification_types" label="通知类型" rules={[{ required: true, message: '请选择通知类型' }]}> 
+            <Select mode="multiple" options={typeOptions} placeholder="选择要覆盖的通知类型" />
+          </Form.Item>
+          <Divider orientation="left" plain>通知方式</Divider>
+          <Form.Item name="telegram_enabled" valuePropName="checked">
+            <Checkbox>
+              <Space>
+                <Tag color="blue">Telegram</Tag>
+                启用Telegram通知
+              </Space>
+            </Checkbox>
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(p,c)=>p.telegram_enabled!==c.telegram_enabled}>
+            {({getFieldValue}) => getFieldValue('telegram_enabled') && (
+              <Form.Item name="telegram_chat_id" label="Telegram聊天ID" rules={[{ required: true, message: '请输入Telegram聊天ID' }]}> 
+                <Input placeholder="例如: 123456789" />
+              </Form.Item>
+            )}
+          </Form.Item>
+          <Form.Item name="webhook_enabled" valuePropName="checked">
+            <Checkbox>
+              <Space>
+                <Tag color="green">Webhook</Tag>
+                启用Webhook通知
+              </Space>
+            </Checkbox>
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(p,c)=>p.webhook_enabled!==c.webhook_enabled}>
+            {({getFieldValue}) => getFieldValue('webhook_enabled') && (
+              <Form.Item name="webhook_url" label="Webhook URL" rules={[{ required: true, message: '请输入Webhook URL' }, { type: 'url', message: '请输入有效的URL' }]}> 
+                <Input placeholder="https://example.com/webhook" />
+              </Form.Item>
+            )}
+          </Form.Item>
+          <Divider orientation="left" plain>频率控制</Divider>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="min_interval" label="最小间隔（秒）" extra="0 = 无限制">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="max_per_hour" label="每小时最大数量" extra="0 = 无限制">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Divider orientation="left" plain>高级选项</Divider>
+          <Form.Item name="include_details" valuePropName="checked">
+            <Checkbox>包含详细信息</Checkbox>
+          </Form.Item>
+          <Form.Item name="custom_template" label="自定义模板">
+            <TextArea rows={6} placeholder="留空使用默认模板" />
+          </Form.Item>
         </Form>
       </Modal>
     </div>
