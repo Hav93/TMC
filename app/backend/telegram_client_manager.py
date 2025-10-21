@@ -2735,6 +2735,21 @@ class MultiClientManager:
             
             # 使用客户端包装器的日志记录方法
             await client_wrapper._log_message(rule.id, message, 'success', None, rule.name, rule.target_chat_id)
+            # 通知：转发成功
+            try:
+                from services.notification_service import notify, NotificationType
+                await notify(
+                    NotificationType.FORWARD_SUCCESS,
+                    data={
+                        'rule_name': getattr(rule, 'name', ''),
+                        'source_chat_id': getattr(rule, 'source_chat_id', ''),
+                        'target_chat_id': getattr(rule, 'target_chat_id', ''),
+                        'message_id': getattr(message, 'id', None)
+                    },
+                    related_type='forward'
+                )
+            except Exception:
+                pass
             return True
             
         except Exception as e:
@@ -2744,6 +2759,22 @@ class MultiClientManager:
                 await client_wrapper._log_message(rule.id, message, 'failed', str(e), rule.name)
             except Exception as log_error:
                 self.logger.error(f"❌ 记录转发日志失败: {log_error}")
+            # 通知：转发失败
+            try:
+                from services.notification_service import notify, NotificationType
+                await notify(
+                    NotificationType.FORWARD_FAILED,
+                    data={
+                        'rule_name': getattr(rule, 'name', ''),
+                        'source_chat_id': getattr(rule, 'source_chat_id', ''),
+                        'target_chat_id': getattr(rule, 'target_chat_id', ''),
+                        'message_id': getattr(message, 'id', None),
+                        'error': str(e)
+                    },
+                    related_type='forward'
+                )
+            except Exception:
+                pass
             return False
     
 

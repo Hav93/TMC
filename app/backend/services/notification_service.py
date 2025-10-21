@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from log_manager import get_logger
 from database import get_db
 from models import NotificationRule, NotificationLog, get_local_now
+from telegram_client_manager import multi_client_manager
 
 logger = get_logger("notification", "enhanced_bot.log")
 
@@ -272,18 +273,21 @@ class NotificationService:
     async def _send_telegram(self, message: str, chat_id: str) -> bool:
         """发送Telegram消息"""
         try:
-            if not self._telegram_client:
-                logger.warning("Telegram客户端未初始化")
-                return False
+            # 优先使用显式设置的客户端
+            if self._telegram_client:
+                await self._telegram_client.send_message(
+                    chat_id=int(chat_id),
+                    message=message
+                )
+                return True
             
-            # 使用客户端管理器发送消息
-            # 注意：这里需要确保在正确的事件循环中调用
-            await self._telegram_client.send_message(
-                chat_id=int(chat_id),
-                message=message
-            )
+            # 回退：使用全局多客户端管理器中第一个已连接的客户端
+            for _, client in multi_client_manager.clients.items():
+                if client and client.connected:
+                    await client._safe_send_message(int(chat_id), message)
+                    return True
             
-            return True
+            logger.warning("Telegram无可用客户端：未初始化或未连接")
             
         except Exception as e:
             logger.error(f"发送Telegram消息失败: {e}", exc_info=True)
@@ -512,4 +516,31 @@ def set_notification_service(service: NotificationService):
     """设置通知服务单例"""
     global _notification_service_instance
     _notification_service_instance = service
+
+
+# 便捷函数：在非请求上下文中发送通知（自动管理数据库会话）
+async def notify(
+    notification_type: NotificationType,
+    data: Dict[str, Any],
+    channels: Optional[List[NotificationChannel]] = None,
+    user_id: Optional[int] = None,
+    related_type: Optional[str] = None,
+    related_id: Optional[int] = None
+) -> bool:
+    async for db in get_db():
+        service = NotificationService(db)
+        # 尝试注入全局客户端（如果有）
+        try:
+            service.set_telegram_client(multi_client_manager)
+        except Exception:
+            pass
+        return await service.send_notification(
+            notification_type=notification_type,
+            data=data,
+            channels=channels,
+            user_id=user_id,
+            related_type=related_type,
+            related_id=related_id
+        )
+    return False
 

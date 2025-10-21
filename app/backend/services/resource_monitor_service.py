@@ -387,11 +387,42 @@ class ResourceMonitorService:
                     record.save_path = target_path or "/"
                     record.save_time = get_user_now()
                     record.save_error = "文件已存在（之前已转存）"
+                    # 通知：转存重复（按成功处理）
+                    try:
+                        from services.notification_service import notify, NotificationType
+                        await notify(
+                            NotificationType.SAVE_115_SUCCESS,
+                            data={
+                                'rule_name': rule.name,
+                                'target_path': target_path,
+                                'saved_count': saved_count,
+                                'duplicate': True
+                            },
+                            related_type='resource',
+                            related_id=record.id
+                        )
+                    except Exception:
+                        pass
                 else:
                     logger.info(f"✅ 115转存成功: record_id={record.id}, 转存了{saved_count}个文件")
                     record.save_status = 'success'
                     record.save_path = target_path or "/"
                     record.save_time = get_user_now()
+                    # 通知：转存成功
+                    try:
+                        from services.notification_service import notify, NotificationType
+                        await notify(
+                            NotificationType.SAVE_115_SUCCESS,
+                            data={
+                                'rule_name': rule.name,
+                                'target_path': target_path,
+                                'saved_count': saved_count
+                            },
+                            related_type='resource',
+                            related_id=record.id
+                        )
+                    except Exception:
+                        pass
                 
                 await self.db.commit()
             else:
@@ -406,6 +437,21 @@ class ResourceMonitorService:
             record.save_error = str(e)
             record.retry_count += 1
             await self.db.commit()
+            # 通知：转存失败
+            try:
+                from services.notification_service import notify, NotificationType
+                await notify(
+                    NotificationType.SAVE_115_FAILED,
+                    data={
+                        'rule_name': rule.name,
+                        'target_path': rule.target_path,
+                        'error': str(e)
+                    },
+                    related_type='resource',
+                    related_id=record.id
+                )
+            except Exception:
+                pass
             
             # 加入重试队列
             try:
