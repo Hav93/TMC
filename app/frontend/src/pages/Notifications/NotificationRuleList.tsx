@@ -837,13 +837,7 @@ const NotificationRuleList: React.FC = () => {
               </Form.Item>
             )}
           </Form.Item>
-          <Form.Item noStyle shouldUpdate={(p,c)=>p.bot_enabled!==c.bot_enabled}>
-            {({getFieldValue}) => getFieldValue('bot_enabled') && (
-              <Form.Item name="bot_token" label="Bot令牌（可选）" tooltip="留空则使用环境变量 NOTIFY_BOT_TOKEN/TELEGRAM_BOT_TOKEN">
-                <Input.Password placeholder="123456:ABC-DEF..." />
-              </Form.Item>
-            )}
-          </Form.Item>
+          
           <Form.Item noStyle shouldUpdate={(p,c)=>p.bot_enabled!==c.bot_enabled}>
             {({getFieldValue}) => getFieldValue('bot_enabled') && (
               <Form.Item name="bot_token" label="Bot令牌（可选）" tooltip="留空则使用环境变量 NOTIFY_BOT_TOKEN/TELEGRAM_BOT_TOKEN">
