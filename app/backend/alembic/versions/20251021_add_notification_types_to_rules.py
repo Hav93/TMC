@@ -37,6 +37,10 @@ def upgrade():
         op.add_column('notification_rules', sa.Column('bot_recipients', sa.Text(), nullable=True))
     except Exception:
         pass
+    try:
+        op.add_column('notification_rules', sa.Column('bot_token', sa.String(length=200), nullable=True))
+    except Exception:
+        pass
 
 
 def downgrade():
@@ -58,6 +62,10 @@ def downgrade():
         pass
     try:
         op.drop_column('notification_rules', 'bot_recipients')
+    except Exception:
+        pass
+    try:
+        op.drop_column('notification_rules', 'bot_token')
     except Exception:
         pass
 

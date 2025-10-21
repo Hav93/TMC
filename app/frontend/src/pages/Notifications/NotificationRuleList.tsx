@@ -837,6 +837,20 @@ const NotificationRuleList: React.FC = () => {
               </Form.Item>
             )}
           </Form.Item>
+          <Form.Item noStyle shouldUpdate={(p,c)=>p.bot_enabled!==c.bot_enabled}>
+            {({getFieldValue}) => getFieldValue('bot_enabled') && (
+              <Form.Item name="bot_token" label="Bot令牌（可选）" tooltip="留空则使用环境变量 NOTIFY_BOT_TOKEN/TELEGRAM_BOT_TOKEN">
+                <Input.Password placeholder="123456:ABC-DEF..." />
+              </Form.Item>
+            )}
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(p,c)=>p.bot_enabled!==c.bot_enabled}>
+            {({getFieldValue}) => getFieldValue('bot_enabled') && (
+              <Form.Item name="bot_token" label="Bot令牌（可选）" tooltip="留空则使用环境变量 NOTIFY_BOT_TOKEN/TELEGRAM_BOT_TOKEN">
+                <Input.Password placeholder="123456:ABC-DEF..." />
+              </Form.Item>
+            )}
+          </Form.Item>
           <Form.Item noStyle shouldUpdate={(p,c)=>p.telegram_enabled!==c.telegram_enabled}>
             {({getFieldValue}) => getFieldValue('telegram_enabled') && (
               <Form.Item name="telegram_chat_id" label="Telegram聊天ID" rules={[{ required: true, message: '请输入Telegram聊天ID' }]} extra="群/频道请填带 -100 的聊天 ID；私聊填纯数字 ID"> 

@@ -685,6 +685,7 @@ class NotificationRule(Base):
     # Bot 直发
     bot_enabled = Column(Boolean, default=False, comment='是否启用Bot直发')
     bot_recipients = Column(Text, comment='Bot接收者列表(JSON数组)')
+    bot_token = Column(String(200), comment='Bot令牌（为空则使用环境变量）')
     
     # 通知频率控制
     min_interval = Column(Integer, default=0, comment='最小间隔（秒），0表示不限制')

@@ -349,7 +349,7 @@ class NotificationService:
         try:
             import os
             import aiohttp
-            token = os.getenv('NOTIFY_BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
+            token = getattr(rule, 'bot_token', None) or os.getenv('NOTIFY_BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
             if not token:
                 logger.warning("Bot通知：未配置 NOTIFY_BOT_TOKEN/TELEGRAM_BOT_TOKEN")
                 return False
@@ -459,6 +459,9 @@ class NotificationService:
         telegram_client_id: Optional[str] = None,
         telegram_client_type: Optional[str] = None,
         telegram_enabled: bool = False,
+        bot_enabled: bool = False,
+        bot_recipients: Optional[List[str]] = None,
+        bot_token: Optional[str] = None,
         webhook_url: Optional[str] = None,
         webhook_enabled: bool = False,
         email_address: Optional[str] = None,
@@ -480,6 +483,9 @@ class NotificationService:
                 telegram_client_id=telegram_client_id,
                 telegram_client_type=telegram_client_type,
                 telegram_enabled=telegram_enabled,
+                bot_enabled=bot_enabled,
+                bot_recipients=json.dumps(bot_recipients, ensure_ascii=False) if bot_recipients else None,
+                bot_token=bot_token,
                 webhook_url=webhook_url,
                 webhook_enabled=webhook_enabled,
                 email_address=email_address,
@@ -525,6 +531,8 @@ class NotificationService:
             for key, value in kwargs.items():
                 if hasattr(rule, key):
                     if key == 'notification_types' and isinstance(value, list):
+                        setattr(rule, key, json.dumps(value, ensure_ascii=False))
+                    elif key == 'bot_recipients' and isinstance(value, list):
                         setattr(rule, key, json.dumps(value, ensure_ascii=False))
                     else:
                         setattr(rule, key, value)

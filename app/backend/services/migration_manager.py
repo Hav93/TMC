@@ -149,6 +149,9 @@ def _post_migration_fix(db_url: str) -> None:
         if 'bot_recipients' not in notif_cols:
             cur.execute("ALTER TABLE notification_rules ADD COLUMN bot_recipients TEXT")
             logger.info("✅ 修复: 为 notification_rules 添加缺失列 bot_recipients")
+        if 'bot_token' not in notif_cols:
+            cur.execute("ALTER TABLE notification_rules ADD COLUMN bot_token VARCHAR(200)")
+            logger.info("✅ 修复: 为 notification_rules 添加缺失列 bot_token")
         conn.commit()
     finally:
         conn.close()
