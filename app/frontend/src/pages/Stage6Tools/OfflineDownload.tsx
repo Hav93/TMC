@@ -103,12 +103,18 @@ export const OfflineDownload: React.FC = () => {
     failed: 0,
   });
 
-  // 统一显示状态（容错）：percentDone>=100 或有 file_id 时强制视为已完成
+  // 统一显示状态（容错）
+  // 优先信任后端 status；其余情况下：
+  // - file_id 存在 => 已完成
+  // - percentDone>=100 且 size>0 且 非 failed => 已完成
   const computeDisplayStatus = (task: OfflineTask): OfflineTaskStatus => {
     if (!task) return OfflineTaskStatus.WAITING;
-    if ((task.percentDone ?? 0) >= 100 || (task.file_id && String(task.file_id).trim() !== '')) {
-      return OfflineTaskStatus.COMPLETED;
-    }
+    if (task.status === OfflineTaskStatus.FAILED) return OfflineTaskStatus.FAILED;
+    if (task.status === OfflineTaskStatus.COMPLETED) return OfflineTaskStatus.COMPLETED;
+    if (task.file_id && String(task.file_id).trim() !== '') return OfflineTaskStatus.COMPLETED;
+    const pct = Number.isFinite(task.percentDone) ? task.percentDone : 0;
+    const sizeOk = (task.size ?? 0) > 0;
+    if (pct >= 100 && sizeOk) return OfflineTaskStatus.COMPLETED;
     return task.status;
   };
 
@@ -314,7 +320,9 @@ export const OfflineDownload: React.FC = () => {
       render: (percentDone: number, record: OfflineTask) => {
         const displayStatus = computeDisplayStatus(record);
         const isDownloading = displayStatus === OfflineTaskStatus.DOWNLOADING;
-        const displayPercent = displayStatus === OfflineTaskStatus.COMPLETED ? 100 : percentDone;
+        const displayPercent = displayStatus === OfflineTaskStatus.COMPLETED
+          ? 100
+          : (Number.isFinite(percentDone) ? percentDone : 0);
         return (
           <Progress
             percent={displayPercent}
